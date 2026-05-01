@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import re
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
@@ -27,6 +28,18 @@ def load_products():
         return json.load(f)
 
 
+def get_active_products():
+    products = load_products()
+    active = {}
+
+    for category, items in products.items():
+        active_items = [item for item in items if item.get("active", True)]
+        if active_items:
+            active[category] = active_items
+
+    return active
+
+
 def main_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -38,7 +51,7 @@ def main_keyboard():
 
 
 def categories_keyboard():
-    products = load_products()
+    products = get_active_products()
     keyboard = [[KeyboardButton(text=category)] for category in products.keys()]
     keyboard.append([KeyboardButton(text="🛒 הסל שלי")])
     keyboard.append([KeyboardButton(text="⬅️ חזרה")])
@@ -46,7 +59,7 @@ def categories_keyboard():
 
 
 def products_keyboard(category):
-    products = load_products()
+    products = get_active_products()
     keyboard = []
 
     for product in products.get(category, []):
@@ -58,20 +71,19 @@ def products_keyboard(category):
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
-def confirm_keyboard():
+def cart_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="➕ הוסף עוד מוצר")],
             [KeyboardButton(text="✅ המשך להזמנה")],
-            [KeyboardButton(text="🛒 הסל שלי")],
-            [KeyboardButton(text="❌ בטל")]
+            [KeyboardButton(text="❌ בטל הזמנה")]
         ],
         resize_keyboard=True
     )
 
 
 def find_product(product_name):
-    products = load_products()
+    products = get_active_products()
 
     for category, items in products.items():
         for item in items:
@@ -81,29 +93,38 @@ def find_product(product_name):
     return None, None
 
 
+def calc_cart_total(cart):
+    return sum(item["price"] * item["qty"] for item in cart)
+
+
 def cart_text(cart):
     if not cart:
         return "🛒 הסל שלך ריק."
 
     text = "🛒 הסל שלך:\n\n"
-    total = 0
 
     for item in cart:
         line_total = item["price"] * item["qty"]
-        total += line_total
         text += f"• {item['name']} × {item['qty']} = ₪{line_total}\n"
 
-    text += f"\n💰 סה״כ: ₪{total}"
+    text += f"\n💰 סה״כ: ₪{calc_cart_total(cart)}"
     return text
 
 
-def clean_phone_number(phone):
-    return (
-        phone.replace("-", "")
-        .replace(" ", "")
-        .replace("+972", "0")
-        .strip()
-    )
+def clean_phone(phone):
+    phone = phone.strip()
+    phone = phone.replace(" ", "").replace("-", "")
+    phone = phone.replace("+972", "0")
+    return phone
+
+
+def is_valid_phone(phone):
+    phone = clean_phone(phone)
+    return phone.isdigit() and phone.startswith("05") and len(phone) == 10
+
+
+def has_digit(text):
+    return any(ch.isdigit() for ch in text)
 
 
 @dp.message(CommandStart())
@@ -133,20 +154,18 @@ async def back_main(message: Message):
 
 @dp.message(F.text == "⬅️ חזרה לקטגוריות")
 async def back_categories(message: Message):
+    uid = message.from_user.id
+    users.setdefault(uid, {"cart": [], "step": None})
+    users[uid]["step"] = None
     await message.answer("בחר קטגוריה:", reply_markup=categories_keyboard())
 
 
-@dp.message(F.text == "❌ בטל")
-async def cancel(message: Message):
-    users.pop(message.from_user.id, None)
-    await message.answer("ההזמנה בוטלה.", reply_markup=main_keyboard())
-
-
-@dp.message(F.text == "📞 שירות לקוחות")
-async def support(message: Message):
+@dp.message(F.text == "➕ הוסף עוד מוצר")
+async def add_more(message: Message):
     uid = message.from_user.id
-    users[uid] = {"step": "support", "cart": []}
-    await message.answer("כתוב כאן את ההודעה שלך ונעביר אותה לנציג.")
+    users.setdefault(uid, {"cart": [], "step": None})
+    users[uid]["step"] = None
+    await message.answer("בחר קטגוריה:", reply_markup=categories_keyboard())
 
 
 @dp.message(F.text == "🛒 הסל שלי")
@@ -154,12 +173,20 @@ async def show_cart(message: Message):
     uid = message.from_user.id
     data = users.setdefault(uid, {"cart": [], "step": None})
 
-    await message.answer(cart_text(data["cart"]), reply_markup=confirm_keyboard())
+    await message.answer(cart_text(data["cart"]), reply_markup=cart_keyboard())
 
 
-@dp.message(F.text == "➕ הוסף עוד מוצר")
-async def add_more(message: Message):
-    await message.answer("בחר קטגוריה:", reply_markup=categories_keyboard())
+@dp.message(F.text == "❌ בטל הזמנה")
+async def cancel_order(message: Message):
+    users.pop(message.from_user.id, None)
+    await message.answer("ההזמנה בוטלה.", reply_markup=main_keyboard())
+
+
+@dp.message(F.text == "📞 שירות לקוחות")
+async def support(message: Message):
+    uid = message.from_user.id
+    users[uid] = {"cart": [], "step": "support"}
+    await message.answer("כתוב כאן את ההודעה שלך ונעביר אותה לנציג.")
 
 
 @dp.message(F.text == "✅ המשך להזמנה")
@@ -181,11 +208,13 @@ async def handle_message(message: Message):
     uid = message.from_user.id
     txt = (message.text or "").strip()
 
-    products = load_products()
+    active_products = get_active_products()
 
-    if txt in products.keys():
+    if txt in active_products.keys():
         users.setdefault(uid, {"cart": [], "step": None})
         users[uid]["category"] = txt
+        users[uid]["step"] = None
+
         await message.answer(
             f"בחר מוצר מתוך {txt}:",
             reply_markup=products_keyboard(txt)
@@ -199,9 +228,14 @@ async def handle_message(message: Message):
         users[uid]["selected_product"] = product
         users[uid]["step"] = "qty"
 
+        description = product.get("description", "")
+        max_qty = int(product.get("max_qty", 100))
+
         await message.answer(
             f"בחרת: {product['name']}\n"
-            f"מחיר ליחידה: ₪{product['price']}\n\n"
+            f"{description}\n\n"
+            f"מחיר ליחידה: ₪{product['price']}\n"
+            f"כמות מקסימלית להזמנה: {max_qty}\n\n"
             f"כמה יחידות תרצה?"
         )
         return
@@ -213,6 +247,10 @@ async def handle_message(message: Message):
         return
 
     if data.get("step") == "support":
+        if len(txt) < 2:
+            await message.answer("נא לרשום הודעה לנציג.")
+            return
+
         await bot.send_message(
             ADMIN_ID,
             f"📩 פנייה חדשה לשירות לקוחות\n\n"
@@ -220,6 +258,7 @@ async def handle_message(message: Message):
             f"🆔 Telegram ID: {uid}\n"
             f"💬 הודעה: {txt}"
         )
+
         users.pop(uid, None)
         await message.answer(
             "✅ קיבלנו את הפנייה שלך. נחזור אליך בהקדם.",
@@ -233,12 +272,22 @@ async def handle_message(message: Message):
             return
 
         qty = int(txt)
+        product = data.get("selected_product")
+
+        if not product:
+            data["step"] = None
+            await message.answer("אירעה תקלה בבחירת המוצר. בחר מוצר מחדש.", reply_markup=categories_keyboard())
+            return
+
+        max_qty = int(product.get("max_qty", 100))
 
         if qty <= 0:
             await message.answer("הכמות חייבת להיות גדולה מ־0.")
             return
 
-        product = data["selected_product"]
+        if qty > max_qty:
+            await message.answer(f"ניתן להזמין עד {max_qty} יחידות מהמוצר הזה.")
+            return
 
         data["cart"].append({
             "name": product["name"],
@@ -247,12 +296,13 @@ async def handle_message(message: Message):
         })
 
         data["step"] = None
+        data.pop("selected_product", None)
 
         await message.answer(
             f"✅ נוסף לסל:\n"
             f"{product['name']} × {qty} = ₪{product['price'] * qty}\n\n"
             f"{cart_text(data['cart'])}",
-            reply_markup=confirm_keyboard()
+            reply_markup=cart_keyboard()
         )
         return
 
@@ -267,10 +317,10 @@ async def handle_message(message: Message):
         return
 
     if data.get("step") == "phone":
-        phone = clean_phone_number(txt)
+        phone = clean_phone(txt)
 
-        if not phone.isdigit() or not phone.startswith("05") or len(phone) != 10:
-            await message.answer("נא לרשום מספר פלאפון תקין. לדוגמה: 0547937503")
+        if not is_valid_phone(phone):
+            await message.answer("נא לרשום מספר פלאפון ישראלי תקין. לדוגמה: 0547937503")
             return
 
         data["phone"] = phone
@@ -279,7 +329,7 @@ async def handle_message(message: Message):
         return
 
     if data.get("step") == "city":
-        if len(txt) < 2:
+        if len(txt) < 2 or has_digit(txt):
             await message.answer("נא לרשום עיר תקינה. לדוגמה: אשדוד")
             return
 
@@ -289,7 +339,7 @@ async def handle_message(message: Message):
         return
 
     if data.get("step") == "street":
-        if len(txt) < 5 or not any(char.isdigit() for char in txt):
+        if len(txt) < 5 or not has_digit(txt):
             await message.answer("נא לרשום רחוב + מספר בית. לדוגמה: שדרות הרצל 18")
             return
 
