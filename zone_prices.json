@@ -1,1 +1,7 @@
-
+{
+  "zone_a": 25,
+  "zone_b": 45,
+  "zone_c": 60,
+  "zone_d": 90,
+  "zone_remote": 150
+}
