@@ -5,20 +5,19 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID_RAW = os.getenv("ADMIN_ID")
-
-if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN is missing in Railway Variables")
-
-if not ADMIN_ID_RAW:
-    raise RuntimeError("ADMIN_ID is missing in Railway Variables")
-
-ADMIN_ID = int(ADMIN_ID_RAW)
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 users = {}
+
+prices = {
+    "📦 קרטונים": 8,
+    "🧻 ניילון פצפצים": 25,
+    "📍 סרט הדבקה": 6,
+    "🚚 חבילת מעבר דירה": 199
+}
 
 main_kb = ReplyKeyboardMarkup(
     keyboard=[
@@ -39,25 +38,30 @@ products_kb = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+confirm_kb = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="✅ אשר הזמנה")],
+        [KeyboardButton(text="❌ בטל")]
+    ],
+    resize_keyboard=True
+)
+
 @dp.message(CommandStart())
 async def start(message: Message):
     users.pop(message.from_user.id, None)
-    await message.answer(
-        "🔥 ברוך הבא ל-Vendora Shop\nחנות ציוד הובלות ושילוח",
-        reply_markup=main_kb
-    )
-
-@dp.message(F.text == "⬅️ חזרה")
-async def back(message: Message):
-    users.pop(message.from_user.id, None)
-    await message.answer("חזרת לתפריט הראשי.", reply_markup=main_kb)
+    await message.answer("🔥 ברוך הבא ל-Vendora PRO", reply_markup=main_kb)
 
 @dp.message(F.text == "📦 מוצרים")
 async def products(message: Message):
     users.pop(message.from_user.id, None)
     await message.answer("בחר מוצר:", reply_markup=products_kb)
 
-@dp.message(F.text.in_(["📦 קרטונים", "🧻 ניילון פצפצים", "📍 סרט הדבקה", "🚚 חבילת מעבר דירה"]))
+@dp.message(F.text == "⬅️ חזרה")
+async def back(message: Message):
+    users.pop(message.from_user.id, None)
+    await message.answer("חזרת לתפריט הראשי", reply_markup=main_kb)
+
+@dp.message(F.text.in_(prices.keys()))
 async def choose_product(message: Message):
     users[message.from_user.id] = {
         "step": "qty",
@@ -67,52 +71,68 @@ async def choose_product(message: Message):
 
 @dp.message(F.text == "📞 שירות לקוחות")
 async def support(message: Message):
+    await message.answer("כתוב כאן הודעה ונחזור אליך.")
+
+@dp.message(F.text == "❌ בטל")
+async def cancel(message: Message):
     users.pop(message.from_user.id, None)
-    await message.answer("כתוב כאן את ההודעה שלך ונעביר אותה לנציג.")
+    await message.answer("ההזמנה בוטלה.", reply_markup=main_kb)
+
+@dp.message(F.text == "✅ אשר הזמנה")
+async def approve(message: Message):
+    uid = message.from_user.id
+    if uid not in users:
+        return
+
+    data = users[uid]
+    data["step"] = "name"
+    await message.answer("מה השם שלך?")
 
 @dp.message()
 async def flow(message: Message):
     uid = message.from_user.id
-    text = message.text or ""
+    txt = message.text
 
     if uid not in users:
-        await bot.send_message(
-            ADMIN_ID,
-            f"📩 פנייה חדשה מהבוט\n\n"
-            f"👤 שם בטלגרם: {message.from_user.full_name}\n"
-            f"🆔 Telegram ID: {uid}\n"
-            f"💬 הודעה: {text}"
-        )
-        await message.answer("✅ קיבלנו את הפנייה שלך. נחזור אליך בהקדם.")
         return
 
     data = users[uid]
 
     if data["step"] == "qty":
-        if not text.isdigit():
-            await message.answer("נא לרשום כמות במספרים בלבד. לדוגמה: 10")
+        if not txt.isdigit():
+            await message.answer("רשום מספר בלבד.")
             return
-        data["qty"] = int(text)
-        data["step"] = "name"
-        await message.answer("מה השם שלך?")
+
+        qty = int(txt)
+        product = data["product"]
+        total = qty * prices[product]
+
+        data["qty"] = qty
+        data["total"] = total
+        data["step"] = "confirm"
+
+        await message.answer(
+            f"{product}\nכמות: {qty}\n\n💰 סה״כ: ₪{total}\n\nלאשר הזמנה?",
+            reply_markup=confirm_kb
+        )
         return
 
     if data["step"] == "name":
-        data["name"] = text
+        data["name"] = txt
         data["step"] = "phone"
-        await message.answer("מה מספר הטלפון שלך?")
+        await message.answer("מספר טלפון?")
         return
 
     if data["step"] == "phone":
-        data["phone"] = text
+        data["phone"] = txt
         data["step"] = "address"
-        await message.answer("מה כתובת המשלוח?")
+        await message.answer("כתובת משלוח?")
         return
 
     if data["step"] == "address":
-        data["address"] = text
+        data["address"] = txt
 
-        order_text = f"""📦 הזמנה חדשה מ-Vendora Shop
+        text = f"""📦 הזמנה חדשה
 
 👤 שם: {data['name']}
 📞 טלפון: {data['phone']}
@@ -120,14 +140,12 @@ async def flow(message: Message):
 
 🛒 מוצר: {data['product']}
 🔢 כמות: {data['qty']}
-
-🆔 Telegram ID: {uid}
-👤 Telegram: {message.from_user.full_name}
+💰 סה״כ: ₪{data['total']}
 """
 
-        await bot.send_message(ADMIN_ID, order_text)
-        await message.answer("✅ ההזמנה התקבלה! נחזור אליך לאישור משלוח.", reply_markup=main_kb)
-        users.pop(uid, None)
+        await bot.send_message(ADMIN_ID, text)
+        await message.answer("✅ ההזמנה התקבלה!", reply_markup=main_kb)
+        users.pop(uid)
 
 async def main():
     await dp.start_polling(bot)
