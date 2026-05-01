@@ -6,7 +6,15 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+ADMIN_ID_RAW = os.getenv("ADMIN_ID")
+
+if not BOT_TOKEN:
+    raise RuntimeError("BOT_TOKEN is missing")
+
+if not ADMIN_ID_RAW:
+    raise RuntimeError("ADMIN_ID is missing")
+
+ADMIN_ID = int(ADMIN_ID_RAW)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -89,6 +97,15 @@ def cart_text(cart):
     return text
 
 
+def clean_phone_number(phone):
+    return (
+        phone.replace("-", "")
+        .replace(" ", "")
+        .replace("+972", "0")
+        .strip()
+    )
+
+
 @dp.message(CommandStart())
 async def start(message: Message):
     users.pop(message.from_user.id, None)
@@ -105,10 +122,7 @@ async def shop(message: Message):
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
 
-    await message.answer(
-        "בחר קטגוריה:",
-        reply_markup=categories_keyboard()
-    )
+    await message.answer("בחר קטגוריה:", reply_markup=categories_keyboard())
 
 
 @dp.message(F.text == "⬅️ חזרה")
@@ -158,20 +172,24 @@ async def checkout(message: Message):
         return
 
     data["step"] = "name"
-    await message.answer("מה השם שלך?")
+    await message.answer("מה השם המלא שלך?")
+    return
 
 
 @dp.message()
 async def handle_message(message: Message):
     uid = message.from_user.id
-    txt = message.text or ""
+    txt = (message.text or "").strip()
 
     products = load_products()
 
     if txt in products.keys():
         users.setdefault(uid, {"cart": [], "step": None})
         users[uid]["category"] = txt
-        await message.answer(f"בחר מוצר מתוך {txt}:", reply_markup=products_keyboard(txt))
+        await message.answer(
+            f"בחר מוצר מתוך {txt}:",
+            reply_markup=products_keyboard(txt)
+        )
         return
 
     product, category = find_product(txt)
@@ -203,7 +221,10 @@ async def handle_message(message: Message):
             f"💬 הודעה: {txt}"
         )
         users.pop(uid, None)
-        await message.answer("✅ קיבלנו את הפנייה שלך. נחזור אליך בהקדם.", reply_markup=main_keyboard())
+        await message.answer(
+            "✅ קיבלנו את הפנייה שלך. נחזור אליך בהקדם.",
+            reply_markup=main_keyboard()
+        )
         return
 
     if data.get("step") == "qty":
@@ -236,24 +257,77 @@ async def handle_message(message: Message):
         return
 
     if data.get("step") == "name":
+        if len(txt) < 2:
+            await message.answer("נא לרשום שם מלא תקין.")
+            return
+
         data["name"] = txt
         data["step"] = "phone"
-        await message.answer("מה מספר הטלפון שלך?")
+        await message.answer("מה מספר הפלאפון שלך? לדוגמה: 0547937503")
         return
 
     if data.get("step") == "phone":
-        data["phone"] = txt
-        data["step"] = "address"
-        await message.answer("מה כתובת המשלוח?")
+        phone = clean_phone_number(txt)
+
+        if not phone.isdigit() or not phone.startswith("05") or len(phone) != 10:
+            await message.answer("נא לרשום מספר פלאפון תקין. לדוגמה: 0547937503")
+            return
+
+        data["phone"] = phone
+        data["step"] = "city"
+        await message.answer("באיזו עיר המשלוח? לדוגמה: אשדוד")
         return
 
-    if data.get("step") == "address":
-        data["address"] = txt
+    if data.get("step") == "city":
+        if len(txt) < 2:
+            await message.answer("נא לרשום עיר תקינה. לדוגמה: אשדוד")
+            return
+
+        data["city"] = txt
+        data["step"] = "street"
+        await message.answer("רחוב ומספר בית? לדוגמה: שדרות הרצל 18")
+        return
+
+    if data.get("step") == "street":
+        if len(txt) < 5 or not any(char.isdigit() for char in txt):
+            await message.answer("נא לרשום רחוב + מספר בית. לדוגמה: שדרות הרצל 18")
+            return
+
+        data["street"] = txt
+        data["step"] = "floor"
+        await message.answer("איזו קומה? אם זה קרקע תרשום 0")
+        return
+
+    if data.get("step") == "floor":
+        if not txt.lstrip("-").isdigit():
+            await message.answer("נא לרשום קומה במספרים בלבד. לדוגמה: 3 או 0 לקרקע")
+            return
+
+        data["floor"] = txt
+        data["step"] = "apartment"
+        await message.answer("מספר דירה? אם אין דירה תרשום 0")
+        return
+
+    if data.get("step") == "apartment":
+        if not txt.isdigit():
+            await message.answer("נא לרשום מספר דירה במספרים בלבד. אם אין דירה תרשום 0")
+            return
+
+        data["apartment"] = txt
+
+        full_address = (
+            f"{data['city']}, {data['street']}, "
+            f"קומה {data['floor']}, דירה {data['apartment']}"
+        )
 
         order = "📦 הזמנה חדשה מ-Vendora Shop\n\n"
         order += f"👤 שם: {data['name']}\n"
         order += f"📞 טלפון: {data['phone']}\n"
-        order += f"📍 כתובת: {data['address']}\n\n"
+        order += f"🏙 עיר: {data['city']}\n"
+        order += f"🏠 רחוב ובית: {data['street']}\n"
+        order += f"⬆️ קומה: {data['floor']}\n"
+        order += f"🚪 דירה: {data['apartment']}\n"
+        order += f"📍 כתובת מלאה: {full_address}\n\n"
         order += cart_text(data["cart"])
         order += f"\n\n🆔 Telegram ID: {uid}"
         order += f"\n👤 Telegram: {message.from_user.full_name}"
