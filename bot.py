@@ -1,7 +1,7 @@
 import os
 import json
+import math
 import asyncio
-import re
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
@@ -19,13 +19,31 @@ ADMIN_ID = int(ADMIN_ID_RAW)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-
 users = {}
 
 
+def load_json(filename, default=None):
+    try:
+        with open(filename, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return default if default is not None else {}
+
+
 def load_products():
-    with open("products.json", "r", encoding="utf-8") as f:
-        return json.load(f)
+    return load_json("products.json", {})
+
+
+def load_locations():
+    return load_json("settlements_locations.json", {})
+
+
+def load_central_zones():
+    return load_json("central_delivery_zones.json", {})
+
+
+def load_manual_prices():
+    return load_json("manual_delivery_prices.json", {})
 
 
 def get_active_products():
@@ -38,6 +56,68 @@ def get_active_products():
             active[category] = active_items
 
     return active
+
+
+def distance_km(lat1, lng1, lat2, lng2):
+    r = 6371
+    d_lat = math.radians(lat2 - lat1)
+    d_lng = math.radians(lng2 - lng1)
+
+    a = (
+        math.sin(d_lat / 2) ** 2
+        + math.cos(math.radians(lat1))
+        * math.cos(math.radians(lat2))
+        * math.sin(d_lng / 2) ** 2
+    )
+
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return r * c
+
+
+def get_delivery_price(city):
+    locations = load_locations()
+    central_zones = load_central_zones()
+    manual_prices = load_manual_prices()
+
+    if city not in locations:
+        return None, None, "city_not_found"
+
+    if city in manual_prices:
+        return manual_prices[city], "מחיר ידני", "ok"
+
+    city_location = locations[city]
+    city_lat = city_location["lat"]
+    city_lng = city_location["lng"]
+
+    best_match = None
+
+    for central_city, zone_data in central_zones.items():
+        if central_city not in locations:
+            continue
+
+        central_location = locations[central_city]
+
+        dist = distance_km(
+            city_lat,
+            city_lng,
+            central_location["lat"],
+            central_location["lng"]
+        )
+
+        radius = float(zone_data.get("radius_km", 0))
+
+        if dist <= radius:
+            if best_match is None or dist < best_match["distance"]:
+                best_match = {
+                    "central_city": central_city,
+                    "price": zone_data["price"],
+                    "distance": dist
+                }
+
+    if best_match:
+        return best_match["price"], best_match["central_city"], "ok"
+
+    return None, None, "no_delivery_price"
 
 
 def main_keyboard():
@@ -88,13 +168,13 @@ def find_product(product_name):
     for category, items in products.items():
         for item in items:
             if item["name"] == product_name:
-                return item, category
+                return item
 
-    return None, None
+    return None
 
 
 def calc_cart_total(cart):
-    return sum(item["price"] * item["qty"] for item in cart)
+    return sum(float(item["price"]) * int(item["qty"]) for item in cart)
 
 
 def cart_text(cart):
@@ -104,10 +184,10 @@ def cart_text(cart):
     text = "🛒 הסל שלך:\n\n"
 
     for item in cart:
-        line_total = item["price"] * item["qty"]
-        text += f"• {item['name']} × {item['qty']} = ₪{line_total}\n"
+        line_total = float(item["price"]) * int(item["qty"])
+        text += f"• {item['name']} × {item['qty']} = ₪{line_total:g}\n"
 
-    text += f"\n💰 סה״כ: ₪{calc_cart_total(cart)}"
+    text += f"\n💰 סה״כ מוצרים: ₪{calc_cart_total(cart):g}"
     return text
 
 
@@ -142,7 +222,6 @@ async def start(message: Message):
 async def shop(message: Message):
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
-
     await message.answer("בחר קטגוריה:", reply_markup=categories_keyboard())
 
 
@@ -172,7 +251,6 @@ async def add_more(message: Message):
 async def show_cart(message: Message):
     uid = message.from_user.id
     data = users.setdefault(uid, {"cart": [], "step": None})
-
     await message.answer(cart_text(data["cart"]), reply_markup=cart_keyboard())
 
 
@@ -200,7 +278,6 @@ async def checkout(message: Message):
 
     data["step"] = "name"
     await message.answer("מה השם המלא שלך?")
-    return
 
 
 @dp.message()
@@ -212,7 +289,6 @@ async def handle_message(message: Message):
 
     if txt in active_products.keys():
         users.setdefault(uid, {"cart": [], "step": None})
-        users[uid]["category"] = txt
         users[uid]["step"] = None
 
         await message.answer(
@@ -221,7 +297,7 @@ async def handle_message(message: Message):
         )
         return
 
-    product, category = find_product(txt)
+    product = find_product(txt)
 
     if product:
         users.setdefault(uid, {"cart": [], "step": None})
@@ -276,7 +352,10 @@ async def handle_message(message: Message):
 
         if not product:
             data["step"] = None
-            await message.answer("אירעה תקלה בבחירת המוצר. בחר מוצר מחדש.", reply_markup=categories_keyboard())
+            await message.answer(
+                "אירעה תקלה בבחירת המוצר. בחר מוצר מחדש.",
+                reply_markup=categories_keyboard()
+            )
             return
 
         max_qty = int(product.get("max_qty", 100))
@@ -291,7 +370,7 @@ async def handle_message(message: Message):
 
         data["cart"].append({
             "name": product["name"],
-            "price": product["price"],
+            "price": float(product["price"]),
             "qty": qty
         })
 
@@ -300,7 +379,7 @@ async def handle_message(message: Message):
 
         await message.answer(
             f"✅ נוסף לסל:\n"
-            f"{product['name']} × {qty} = ₪{product['price'] * qty}\n\n"
+            f"{product['name']} × {qty} = ₪{float(product['price']) * qty:g}\n\n"
             f"{cart_text(data['cart'])}",
             reply_markup=cart_keyboard()
         )
@@ -325,17 +404,39 @@ async def handle_message(message: Message):
 
         data["phone"] = phone
         data["step"] = "city"
-        await message.answer("באיזו עיר המשלוח? לדוגמה: אשדוד")
+        await message.answer("באיזה יישוב המשלוח? לדוגמה: אשדוד")
         return
 
     if data.get("step") == "city":
         if len(txt) < 2 or has_digit(txt):
-            await message.answer("נא לרשום עיר תקינה. לדוגמה: אשדוד")
+            await message.answer("נא לרשום שם יישוב תקין בטקסט בלבד. לדוגמה: אשדוד")
+            return
+
+        delivery_price, delivery_zone, status = get_delivery_price(txt)
+
+        if status == "city_not_found":
+            await message.answer(
+                "היישוב שרשמת לא נמצא במאגר היישובים.\n"
+                "נא לרשום יישוב תקין, לדוגמה: אשדוד"
+            )
+            return
+
+        if status == "no_delivery_price":
+            await message.answer(
+                "היישוב קיים, אבל כרגע אין מחיר משלוח אוטומטי לאזור הזה.\n"
+                "אפשר לפנות לשירות לקוחות לקבלת מחיר מדויק."
+            )
             return
 
         data["city"] = txt
+        data["delivery_price"] = float(delivery_price)
+        data["delivery_zone"] = delivery_zone
         data["step"] = "street"
-        await message.answer("רחוב ומספר בית? לדוגמה: שדרות הרצל 18")
+
+        await message.answer(
+            f"דמי משלוח ל{txt}: ₪{float(delivery_price):g}\n\n"
+            "רחוב ומספר בית? לדוגמה: שדרות הרצל 18"
+        )
         return
 
     if data.get("step") == "street":
@@ -365,6 +466,10 @@ async def handle_message(message: Message):
 
         data["apartment"] = txt
 
+        products_total = calc_cart_total(data["cart"])
+        delivery_price = float(data.get("delivery_price", 0))
+        final_total = products_total + delivery_price
+
         full_address = (
             f"{data['city']}, {data['street']}, "
             f"קומה {data['floor']}, דירה {data['apartment']}"
@@ -373,13 +478,16 @@ async def handle_message(message: Message):
         order = "📦 הזמנה חדשה מ-Vendora Shop\n\n"
         order += f"👤 שם: {data['name']}\n"
         order += f"📞 טלפון: {data['phone']}\n"
-        order += f"🏙 עיר: {data['city']}\n"
+        order += f"🏙 יישוב: {data['city']}\n"
         order += f"🏠 רחוב ובית: {data['street']}\n"
         order += f"⬆️ קומה: {data['floor']}\n"
         order += f"🚪 דירה: {data['apartment']}\n"
         order += f"📍 כתובת מלאה: {full_address}\n\n"
         order += cart_text(data["cart"])
-        order += f"\n\n🆔 Telegram ID: {uid}"
+        order += f"\n🚚 דמי משלוח: ₪{delivery_price:g}"
+        order += f"\n💳 סה״כ לתשלום: ₪{final_total:g}"
+        order += f"\n\n📍 אזור משלוח/עיר בסיס: {data.get('delivery_zone')}"
+        order += f"\n🆔 Telegram ID: {uid}"
         order += f"\n👤 Telegram: {message.from_user.full_name}"
 
         await bot.send_message(ADMIN_ID, order)
@@ -387,7 +495,9 @@ async def handle_message(message: Message):
         users.pop(uid, None)
 
         await message.answer(
-            "✅ ההזמנה התקבלה!\nנחזור אליך לאישור משלוח.",
+            f"✅ ההזמנה התקבלה!\n"
+            f"סה״כ לתשלום כולל משלוח: ₪{final_total:g}\n"
+            f"נחזור אליך לאישור ותשלום.",
             reply_markup=main_keyboard()
         )
         return
