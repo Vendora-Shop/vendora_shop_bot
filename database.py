@@ -1,6 +1,20 @@
+import os
 import sqlite3
 
-DB_PATH = "/data/vendora_shop.db"
+DB_DIR = "/data"
+LOCAL_DB = "vendora_shop.db"
+
+try:
+    os.makedirs(DB_DIR, exist_ok=True)
+    test_path = os.path.join(DB_DIR, ".test")
+    with open(test_path, "w") as f:
+        f.write("ok")
+    os.remove(test_path)
+    DB_PATH = os.path.join(DB_DIR, "vendora_shop.db")
+except Exception:
+    DB_PATH = LOCAL_DB
+
+print(f"Using database: {DB_PATH}")
 
 
 def get_connection():
@@ -53,15 +67,8 @@ def add_product(category, name, price, description="", max_qty=100, stock=0, sku
         (category, name, price, description, max_qty, stock, sku, image_file_id, active)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        category,
-        name,
-        float(price),
-        description,
-        int(max_qty),
-        int(stock),
-        sku,
-        image_file_id,
-        int(active)
+        category, name, float(price), description, int(max_qty),
+        int(stock), sku, image_file_id, int(active)
     ))
 
     conn.commit()
