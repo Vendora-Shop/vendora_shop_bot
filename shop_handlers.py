@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from aiogram.filters import CommandStart
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, FSInputFile
 
 from config import ADMIN_ID
 from keyboards import main_keyboard
@@ -8,9 +8,11 @@ from database import (
     get_active_products,
     get_product_by_name,
     reduce_stock,
-    create_order
+    create_order,
+    get_order_by_number
 )
 from delivery import get_delivery_price
+from pdf_generator import create_invoice_pdf
 
 router = Router()
 users = {}
@@ -302,6 +304,17 @@ async def confirm_order(message: Message):
     order += "\n\nסטטוס: 🆕 הזמנה חדשה"
 
     await message.bot.send_message(ADMIN_ID, order)
+
+    saved_order = get_order_by_number(order_number)
+    if saved_order:
+        try:
+            pdf_path = create_invoice_pdf(saved_order)
+            await message.answer_document(
+                FSInputFile(pdf_path),
+                caption=f"📄 סיכום הזמנה {order_number}"
+            )
+        except Exception:
+            await message.answer("⚠️ ההזמנה נשמרה, אבל לא הצלחתי ליצור PDF כרגע.")
 
     users.pop(uid, None)
 
