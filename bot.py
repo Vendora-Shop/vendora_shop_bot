@@ -4,14 +4,7 @@ import math
 import asyncio
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import (
-    Message,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    CallbackQuery
-)
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 
 from database import (
     create_tables,
@@ -24,15 +17,7 @@ from database import (
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID_RAW = os.getenv("ADMIN_ID")
-
-if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN is missing")
-
-if not ADMIN_ID_RAW:
-    raise RuntimeError("ADMIN_ID is missing")
-
-ADMIN_ID = int(ADMIN_ID_RAW)
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -41,7 +26,7 @@ users = {}
 create_tables()
 
 
-def is_admin_id(user_id):
+def is_admin(user_id):
     return user_id == ADMIN_ID
 
 
@@ -133,6 +118,19 @@ def main_keyboard():
     )
 
 
+def admin_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="➕ הוסף מוצר"), KeyboardButton(text="✏️ שנה מחיר")],
+            [KeyboardButton(text="📦 רשימת מוצרים")],
+            [KeyboardButton(text="🔴 כבה מוצר"), KeyboardButton(text="🟢 הפעל מוצר")],
+            [KeyboardButton(text="🗑️ מחק מוצר")],
+            [KeyboardButton(text="⬅️ יציאה מניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
 def categories_keyboard():
     products = get_active_products()
     keyboard = [[KeyboardButton(text=cat)] for cat in products.keys()]
@@ -161,19 +159,6 @@ def cart_keyboard():
             [KeyboardButton(text="❌ בטל הזמנה")]
         ],
         resize_keyboard=True
-    )
-
-
-def admin_keyboard():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📦 רשימת מוצרים", callback_data="admin_products")],
-            [InlineKeyboardButton(text="➕ הוסף מוצר", callback_data="admin_add_product_help")],
-            [InlineKeyboardButton(text="✏️ שנה מחיר", callback_data="admin_set_price_help")],
-            [InlineKeyboardButton(text="🔴 כבה מוצר", callback_data="admin_off_help")],
-            [InlineKeyboardButton(text="🟢 הפעל מוצר", callback_data="admin_on_help")],
-            [InlineKeyboardButton(text="🗑️ מחק מוצר", callback_data="admin_delete_help")]
-        ]
     )
 
 
@@ -219,132 +204,7 @@ def has_digit(text):
     return any(ch.isdigit() for ch in text)
 
 
-@dp.message(CommandStart())
-async def start(message: Message):
-    users.pop(message.from_user.id, None)
-
-    await message.answer(
-        "🔥 ברוך הבא ל-Vendora Shop\n"
-        "חנות לציוד הובלות, שילוח ושליחים.",
-        reply_markup=main_keyboard()
-    )
-
-
-@dp.message(Command("admin"))
-async def admin_panel(message: Message):
-    if not is_admin_id(message.from_user.id):
-        return
-
-    await message.answer(
-        "🔐 לוח ניהול Vendora Shop\nבחר פעולה:",
-        reply_markup=admin_keyboard()
-    )
-
-
-@dp.callback_query(F.data == "admin_products")
-async def admin_products_button(callback: CallbackQuery):
-    if not is_admin_id(callback.from_user.id):
-        return
-
-    rows = get_all_products()
-
-    if not rows:
-        await callback.message.answer("אין מוצרים במערכת.")
-        await callback.answer()
-        return
-
-    text = "📦 רשימת מוצרים:\n\n"
-
-    for row in rows:
-        product_id, category, name, price, description, max_qty, active = row
-        status = "✅ פעיל" if active else "❌ כבוי"
-        text += (
-            f"{status}\n"
-            f"קטגוריה: {category}\n"
-            f"מוצר: {name}\n"
-            f"מחיר: ₪{price:g}\n"
-            f"מקסימום להזמנה: {max_qty}\n\n"
-        )
-
-    await callback.message.answer(text)
-    await callback.answer()
-
-
-@dp.callback_query(F.data == "admin_add_product_help")
-async def admin_add_product_help(callback: CallbackQuery):
-    if not is_admin_id(callback.from_user.id):
-        return
-
-    await callback.message.answer(
-        "➕ להוספת מוצר תשלח:\n\n"
-        "/add_product קטגוריה | שם מוצר | מחיר | תיאור | כמות מקסימלית\n\n"
-        "דוגמה:\n"
-        "/add_product 📦 מוצרי הובלות ואריזה | רצ׳ט 5 מטר | 45 | רצ׳ט איכותי לקשירה | 50"
-    )
-    await callback.answer()
-
-
-@dp.callback_query(F.data == "admin_set_price_help")
-async def admin_set_price_help(callback: CallbackQuery):
-    if not is_admin_id(callback.from_user.id):
-        return
-
-    await callback.message.answer(
-        "✏️ לשינוי מחיר תשלח:\n\n"
-        "/set_price שם מוצר | מחיר חדש\n\n"
-        "דוגמה:\n"
-        "/set_price קרטונים | 10"
-    )
-    await callback.answer()
-
-
-@dp.callback_query(F.data == "admin_off_help")
-async def admin_off_help(callback: CallbackQuery):
-    if not is_admin_id(callback.from_user.id):
-        return
-
-    await callback.message.answer(
-        "🔴 לכיבוי מוצר תשלח:\n\n"
-        "/off שם מוצר\n\n"
-        "דוגמה:\n"
-        "/off קרטונים"
-    )
-    await callback.answer()
-
-
-@dp.callback_query(F.data == "admin_on_help")
-async def admin_on_help(callback: CallbackQuery):
-    if not is_admin_id(callback.from_user.id):
-        return
-
-    await callback.message.answer(
-        "🟢 להפעלת מוצר תשלח:\n\n"
-        "/on שם מוצר\n\n"
-        "דוגמה:\n"
-        "/on קרטונים"
-    )
-    await callback.answer()
-
-
-@dp.callback_query(F.data == "admin_delete_help")
-async def admin_delete_help(callback: CallbackQuery):
-    if not is_admin_id(callback.from_user.id):
-        return
-
-    await callback.message.answer(
-        "🗑️ למחיקת מוצר תשלח:\n\n"
-        "/delete_product שם מוצר\n\n"
-        "דוגמה:\n"
-        "/delete_product קרטונים"
-    )
-    await callback.answer()
-
-
-@dp.message(Command("products"))
-async def admin_products_command(message: Message):
-    if not is_admin_id(message.from_user.id):
-        return
-
+async def send_products_list(message: Message):
     rows = get_all_products()
 
     if not rows:
@@ -367,98 +227,114 @@ async def admin_products_command(message: Message):
     await message.answer(text)
 
 
-@dp.message(Command("add_product"))
-async def admin_add_product(message: Message):
-    if not is_admin_id(message.from_user.id):
+@dp.message(CommandStart())
+async def start(message: Message):
+    users.pop(message.from_user.id, None)
+
+    await message.answer(
+        "🔥 ברוך הבא ל-Vendora Shop\n"
+        "חנות לציוד הובלות, שילוח ושליחים.",
+        reply_markup=main_keyboard()
+    )
+
+
+@dp.message(Command("admin"))
+async def admin_panel(message: Message):
+    if not is_admin(message.from_user.id):
         return
 
-    try:
-        raw = message.text.replace("/add_product", "", 1).strip()
-        category, name, price, description, max_qty = [x.strip() for x in raw.split("|")]
-
-        add_product(
-            category=category,
-            name=name,
-            price=float(price),
-            description=description,
-            max_qty=int(max_qty),
-            active=1
-        )
-
-        await message.answer(f"✅ המוצר נוסף/עודכן:\n{name} - ₪{float(price):g}")
-
-    except Exception:
-        await message.answer(
-            "שימוש נכון:\n"
-            "/add_product קטגוריה | שם מוצר | מחיר | תיאור | כמות מקסימלית\n\n"
-            "דוגמה:\n"
-            "/add_product 📦 מוצרי הובלות ואריזה | קרטונים | 8 | קרטון איכותי | 100"
-        )
+    users[message.from_user.id] = {"step": "admin"}
+    await message.answer("🔐 לוח ניהול Vendora Shop", reply_markup=admin_keyboard())
 
 
-@dp.message(Command("set_price"))
-async def admin_set_price(message: Message):
-    if not is_admin_id(message.from_user.id):
+@dp.message(Command("products"))
+async def products_command(message: Message):
+    if not is_admin(message.from_user.id):
         return
 
-    try:
-        raw = message.text.replace("/set_price", "", 1).strip()
-        name, price = [x.strip() for x in raw.split("|")]
-
-        ok = set_product_price(name, float(price))
-
-        if ok:
-            await message.answer(f"✅ המחיר עודכן:\n{name} → ₪{float(price):g}")
-        else:
-            await message.answer("המוצר לא נמצא.")
-
-    except Exception:
-        await message.answer("שימוש נכון:\n/set_price שם מוצר | מחיר חדש")
+    await send_products_list(message)
 
 
-@dp.message(Command("off"))
-async def admin_off(message: Message):
-    if not is_admin_id(message.from_user.id):
+@dp.message(F.text == "⬅️ יציאה מניהול")
+async def exit_admin(message: Message):
+    if not is_admin(message.from_user.id):
         return
 
-    name = message.text.replace("/off", "", 1).strip()
+    users.pop(message.from_user.id, None)
+    await message.answer("יצאת מלוח הניהול.", reply_markup=main_keyboard())
 
-    if not name:
-        await message.answer("שימוש נכון:\n/off שם מוצר")
+
+@dp.message(F.text == "📦 רשימת מוצרים")
+async def products_button(message: Message):
+    if not is_admin(message.from_user.id):
         return
 
-    ok = set_product_active(name, 0)
-    await message.answer("✅ המוצר כובה." if ok else "המוצר לא נמצא.")
+    await send_products_list(message)
 
 
-@dp.message(Command("on"))
-async def admin_on(message: Message):
-    if not is_admin_id(message.from_user.id):
+@dp.message(F.text == "➕ הוסף מוצר")
+async def add_product_start(message: Message):
+    if not is_admin(message.from_user.id):
         return
 
-    name = message.text.replace("/on", "", 1).strip()
+    users[message.from_user.id] = {
+        "step": "admin_add_category",
+        "admin_action": "add_product"
+    }
 
-    if not name:
-        await message.answer("שימוש נכון:\n/on שם מוצר")
+    await message.answer("רשום קטגוריה למוצר.\nלדוגמה: 📦 מוצרי הובלות ואריזה")
+
+
+@dp.message(F.text == "✏️ שנה מחיר")
+async def change_price_start(message: Message):
+    if not is_admin(message.from_user.id):
         return
 
-    ok = set_product_active(name, 1)
-    await message.answer("✅ המוצר הופעל." if ok else "המוצר לא נמצא.")
+    users[message.from_user.id] = {
+        "step": "admin_price_name",
+        "admin_action": "change_price"
+    }
+
+    await message.answer("רשום את שם המוצר שתרצה לשנות לו מחיר.")
 
 
-@dp.message(Command("delete_product"))
-async def admin_delete_product(message: Message):
-    if not is_admin_id(message.from_user.id):
+@dp.message(F.text == "🔴 כבה מוצר")
+async def off_product_start(message: Message):
+    if not is_admin(message.from_user.id):
         return
 
-    name = message.text.replace("/delete_product", "", 1).strip()
+    users[message.from_user.id] = {
+        "step": "admin_off_name",
+        "admin_action": "off_product"
+    }
 
-    if not name:
-        await message.answer("שימוש נכון:\n/delete_product שם מוצר")
+    await message.answer("רשום את שם המוצר שתרצה לכבות.")
+
+
+@dp.message(F.text == "🟢 הפעל מוצר")
+async def on_product_start(message: Message):
+    if not is_admin(message.from_user.id):
         return
 
-    ok = delete_product(name)
-    await message.answer("🗑️ המוצר נמחק." if ok else "המוצר לא נמצא.")
+    users[message.from_user.id] = {
+        "step": "admin_on_name",
+        "admin_action": "on_product"
+    }
+
+    await message.answer("רשום את שם המוצר שתרצה להפעיל.")
+
+
+@dp.message(F.text == "🗑️ מחק מוצר")
+async def delete_product_start(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    users[message.from_user.id] = {
+        "step": "admin_delete_name",
+        "admin_action": "delete_product"
+    }
+
+    await message.answer("רשום את שם המוצר שתרצה למחוק.")
 
 
 @dp.message(F.text == "🛒 חנות")
@@ -534,7 +410,134 @@ async def checkout(message: Message):
 async def handle_message(message: Message):
     uid = message.from_user.id
     txt = (message.text or "").strip()
+    data = users.get(uid)
 
+    # ADMIN GUIDED FLOWS
+    if is_admin(uid) and data:
+        step = data.get("step")
+
+        if step == "admin_add_category":
+            if len(txt) < 2:
+                await message.answer("נא לרשום קטגוריה תקינה.")
+                return
+
+            data["category"] = txt
+            data["step"] = "admin_add_name"
+            await message.answer("רשום שם מוצר.")
+            return
+
+        if step == "admin_add_name":
+            if len(txt) < 2:
+                await message.answer("נא לרשום שם מוצר תקין.")
+                return
+
+            data["name"] = txt
+            data["step"] = "admin_add_price"
+            await message.answer("רשום מחיר. לדוגמה: 45")
+            return
+
+        if step == "admin_add_price":
+            try:
+                price = float(txt)
+                if price <= 0:
+                    raise ValueError
+            except Exception:
+                await message.answer("נא לרשום מחיר תקין במספרים בלבד.")
+                return
+
+            data["price"] = price
+            data["step"] = "admin_add_description"
+            await message.answer("רשום תיאור קצר למוצר.")
+            return
+
+        if step == "admin_add_description":
+            data["description"] = txt
+            data["step"] = "admin_add_max_qty"
+            await message.answer("רשום כמות מקסימלית להזמנה. לדוגמה: 100")
+            return
+
+        if step == "admin_add_max_qty":
+            if not txt.isdigit() or int(txt) <= 0:
+                await message.answer("נא לרשום כמות מקסימלית במספרים בלבד.")
+                return
+
+            add_product(
+                category=data["category"],
+                name=data["name"],
+                price=float(data["price"]),
+                description=data["description"],
+                max_qty=int(txt),
+                active=1
+            )
+
+            users[uid] = {"step": "admin"}
+
+            await message.answer(
+                f"✅ המוצר נוסף בהצלחה:\n\n"
+                f"קטגוריה: {data['category']}\n"
+                f"מוצר: {data['name']}\n"
+                f"מחיר: ₪{float(data['price']):g}\n"
+                f"מקסימום: {txt}",
+                reply_markup=admin_keyboard()
+            )
+            return
+
+        if step == "admin_price_name":
+            if len(txt) < 2:
+                await message.answer("נא לרשום שם מוצר תקין.")
+                return
+
+            data["product_name"] = txt
+            data["step"] = "admin_price_value"
+            await message.answer("רשום מחיר חדש.")
+            return
+
+        if step == "admin_price_value":
+            try:
+                price = float(txt)
+                if price <= 0:
+                    raise ValueError
+            except Exception:
+                await message.answer("נא לרשום מחיר תקין.")
+                return
+
+            ok = set_product_price(data["product_name"], price)
+            users[uid] = {"step": "admin"}
+
+            await message.answer(
+                f"✅ המחיר עודכן ל־₪{price:g}" if ok else "המוצר לא נמצא.",
+                reply_markup=admin_keyboard()
+            )
+            return
+
+        if step == "admin_off_name":
+            ok = set_product_active(txt, 0)
+            users[uid] = {"step": "admin"}
+            await message.answer(
+                "✅ המוצר כובה." if ok else "המוצר לא נמצא.",
+                reply_markup=admin_keyboard()
+            )
+            return
+
+        if step == "admin_on_name":
+            ok = set_product_active(txt, 1)
+            users[uid] = {"step": "admin"}
+            await message.answer(
+                "✅ המוצר הופעל." if ok else "המוצר לא נמצא.",
+                reply_markup=admin_keyboard()
+            )
+            return
+
+        if step == "admin_delete_name":
+            ok = delete_product(txt)
+            users[uid] = {"step": "admin"}
+            await message.answer(
+                "🗑️ המוצר נמחק." if ok else "המוצר לא נמצא.",
+                reply_markup=admin_keyboard()
+            )
+            return
+
+    # SHOP FLOWS
     products = get_active_products()
 
     if txt in products:
@@ -715,7 +718,6 @@ async def handle_message(message: Message):
         order += f"\n👤 Telegram: {message.from_user.full_name}"
 
         await bot.send_message(ADMIN_ID, order)
-
         users.pop(uid, None)
 
         await message.answer(
