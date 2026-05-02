@@ -25,6 +25,30 @@ def is_admin(user_id):
     return user_id == ADMIN_ID
 
 
+def is_admin_active_step(message: Message):
+    uid = message.from_user.id
+
+    if not is_admin(uid):
+        return False
+
+    txt = (message.text or "").strip()
+
+    if txt.startswith("/"):
+        return False
+
+    state = admin_states.get(uid)
+
+    if not state:
+        return False
+
+    step = state.get("step")
+
+    if step == "admin":
+        return False
+
+    return True
+
+
 def product_names_keyboard():
     rows = get_all_products()
     keyboard = []
@@ -34,6 +58,7 @@ def product_names_keyboard():
         keyboard.append([KeyboardButton(text=name)])
 
     keyboard.append([KeyboardButton(text="⬅️ חזרה לניהול")])
+
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
@@ -43,7 +68,11 @@ async def admin_panel(message: Message):
         return
 
     admin_states[message.from_user.id] = {"step": "admin"}
-    await message.answer("🔐 פאנל ניהול Vendora", reply_markup=admin_keyboard())
+
+    await message.answer(
+        "🔐 פאנל ניהול Vendora",
+        reply_markup=admin_keyboard()
+    )
 
 
 @router.message(F.text == "⬅️ יציאה מניהול")
@@ -52,7 +81,11 @@ async def exit_admin(message: Message):
         return
 
     admin_states.pop(message.from_user.id, None)
-    await message.answer("יצאת מפאנל הניהול.", reply_markup=main_keyboard())
+
+    await message.answer(
+        "יצאת מפאנל הניהול.",
+        reply_markup=main_keyboard()
+    )
 
 
 @router.message(F.text == "⬅️ חזרה לניהול")
@@ -61,7 +94,11 @@ async def back_admin(message: Message):
         return
 
     admin_states[message.from_user.id] = {"step": "admin"}
-    await message.answer("חזרת לפאנל הניהול.", reply_markup=admin_keyboard())
+
+    await message.answer(
+        "חזרת לפאנל הניהול.",
+        reply_markup=admin_keyboard()
+    )
 
 
 @router.message(F.text == "📦 רשימת מוצרים")
@@ -79,6 +116,7 @@ async def products_list(message: Message):
 
     for row in rows:
         product_id, category, name, price, description, max_qty, stock, sku, image_file_id, active = row
+
         status = "✅ פעיל" if active else "❌ כבוי"
         image = "🖼️ יש תמונה" if image_file_id else "⚠️ ללא תמונה"
         stock_text = "❌ אזל מהמלאי" if int(stock) <= 0 else f"📦 מלאי: {stock}"
@@ -203,28 +241,12 @@ async def handle_photo(message: Message):
     )
 
 
-@router.message()
+@router.message(is_admin_active_step)
 async def admin_flow(message: Message):
     uid = message.from_user.id
-
-    if not is_admin(uid):
-        return
-
     txt = (message.text or "").strip()
-
-    # חשוב: לא לתפוס פקודות כמו /start
-    if txt.startswith("/"):
-        return
-
     state = admin_states.get(uid)
-    if not state:
-        return
-
     step = state.get("step")
-
-    # חשוב: אם האדמין רק נמצא בתפריט, לא לתפוס הודעות רגילות
-    if step == "admin":
-        return
 
     if step == "add_category":
         state["category"] = txt
@@ -329,7 +351,11 @@ async def admin_flow(message: Message):
 
         ok = set_product_price(state["product_name"], price)
         admin_states[uid] = {"step": "admin"}
-        await message.answer(f"✅ המחיר עודכן ל־₪{price:g}" if ok else "המוצר לא נמצא.", reply_markup=admin_keyboard())
+
+        await message.answer(
+            f"✅ המחיר עודכן ל־₪{price:g}" if ok else "המוצר לא נמצא.",
+            reply_markup=admin_keyboard()
+        )
         return
 
     if step == "description_name":
@@ -346,7 +372,11 @@ async def admin_flow(message: Message):
     if step == "description_text":
         ok = set_product_description(state["product_name"], txt)
         admin_states[uid] = {"step": "admin"}
-        await message.answer("✅ התיאור עודכן." if ok else "המוצר לא נמצא.", reply_markup=admin_keyboard())
+
+        await message.answer(
+            "✅ התיאור עודכן." if ok else "המוצר לא נמצא.",
+            reply_markup=admin_keyboard()
+        )
         return
 
     if step == "stock_name":
@@ -367,7 +397,11 @@ async def admin_flow(message: Message):
 
         ok = set_product_stock(state["product_name"], int(txt))
         admin_states[uid] = {"step": "admin"}
-        await message.answer("✅ המלאי עודכן." if ok else "המוצר לא נמצא.", reply_markup=admin_keyboard())
+
+        await message.answer(
+            "✅ המלאי עודכן." if ok else "המוצר לא נמצא.",
+            reply_markup=admin_keyboard()
+        )
         return
 
     if step == "add_stock_name":
@@ -388,7 +422,11 @@ async def admin_flow(message: Message):
 
         ok = add_stock(state["product_name"], int(txt))
         admin_states[uid] = {"step": "admin"}
-        await message.answer(f"✅ נוספו {txt} יחידות למלאי." if ok else "המוצר לא נמצא.", reply_markup=admin_keyboard())
+
+        await message.answer(
+            f"✅ נוספו {txt} יחידות למלאי." if ok else "המוצר לא נמצא.",
+            reply_markup=admin_keyboard()
+        )
         return
 
     if step == "image_name":
@@ -399,23 +437,36 @@ async def admin_flow(message: Message):
 
         state["product_name"] = txt
         state["step"] = "image_photo"
+
         await message.answer(f"נבחר מוצר: {txt}\nעכשיו שלח תמונה של המוצר.")
         return
 
     if step == "off_name":
         ok = set_product_active(txt, 0)
         admin_states[uid] = {"step": "admin"}
-        await message.answer("✅ המוצר כובה." if ok else "המוצר לא נמצא.", reply_markup=admin_keyboard())
+
+        await message.answer(
+            "✅ המוצר כובה." if ok else "המוצר לא נמצא.",
+            reply_markup=admin_keyboard()
+        )
         return
 
     if step == "on_name":
         ok = set_product_active(txt, 1)
         admin_states[uid] = {"step": "admin"}
-        await message.answer("✅ המוצר הופעל." if ok else "המוצר לא נמצא.", reply_markup=admin_keyboard())
+
+        await message.answer(
+            "✅ המוצר הופעל." if ok else "המוצר לא נמצא.",
+            reply_markup=admin_keyboard()
+        )
         return
 
     if step == "delete_name":
         ok = delete_product(txt)
         admin_states[uid] = {"step": "admin"}
-        await message.answer("🗑️ המוצר נמחק." if ok else "המוצר לא נמצא.", reply_markup=admin_keyboard())
+
+        await message.answer(
+            "🗑️ המוצר נמחק." if ok else "המוצר לא נמצא.",
+            reply_markup=admin_keyboard()
+        )
         return
