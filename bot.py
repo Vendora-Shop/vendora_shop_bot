@@ -9,7 +9,6 @@ from shop_handlers import router as shop_router
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# חשוב: קודם אדמין, אחר כך חנות
 dp.include_router(admin_router)
 dp.include_router(shop_router)
 
