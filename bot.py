@@ -2,6 +2,7 @@ import os
 import json
 import math
 import asyncio
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
@@ -19,11 +20,19 @@ from database import (
     set_product_image,
     set_product_active,
     delete_product,
-    reduce_stock
+    reduce_stock,
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+ADMIN_ID_RAW = os.getenv("ADMIN_ID")
+
+if not BOT_TOKEN:
+    raise RuntimeError("BOT_TOKEN is missing")
+
+if not ADMIN_ID_RAW:
+    raise RuntimeError("ADMIN_ID is missing")
+
+ADMIN_ID = int(ADMIN_ID_RAW)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -32,7 +41,7 @@ users = {}
 create_tables()
 
 
-def is_admin(user_id):
+def is_admin(user_id: int) -> bool:
     return user_id == ADMIN_ID
 
 
@@ -60,12 +69,14 @@ def distance_km(lat1, lng1, lat2, lng2):
     r = 6371
     d_lat = math.radians(lat2 - lat1)
     d_lng = math.radians(lng2 - lng1)
+
     a = (
         math.sin(d_lat / 2) ** 2
         + math.cos(math.radians(lat1))
         * math.cos(math.radians(lat2))
         * math.sin(d_lng / 2) ** 2
     )
+
     return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
@@ -93,7 +104,7 @@ def get_delivery_price(city):
             city_location["lat"],
             city_location["lng"],
             central_location["lat"],
-            central_location["lng"]
+            central_location["lng"],
         )
 
         radius = float(zone.get("radius_km", 0))
@@ -103,7 +114,7 @@ def get_delivery_price(city):
                 best = {
                     "price": float(zone["price"]),
                     "base_city": central_city,
-                    "distance": round(dist, 1)
+                    "distance": round(dist, 1),
                 }
 
     if best:
@@ -116,9 +127,9 @@ def main_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🛒 חנות")],
-            [KeyboardButton(text="📞 שירות לקוחות")]
+            [KeyboardButton(text="📞 שירות לקוחות")],
         ],
-        resize_keyboard=True
+        resize_keyboard=True,
     )
 
 
@@ -131,9 +142,9 @@ def admin_keyboard():
             [KeyboardButton(text="🖼️ עדכן תמונה")],
             [KeyboardButton(text="🔴 כבה מוצר"), KeyboardButton(text="🟢 הפעל מוצר")],
             [KeyboardButton(text="🗑️ מחק מוצר")],
-            [KeyboardButton(text="⬅️ יציאה מניהול")]
+            [KeyboardButton(text="⬅️ יציאה מניהול")],
         ],
-        resize_keyboard=True
+        resize_keyboard=True,
     )
 
 
@@ -151,6 +162,7 @@ def products_keyboard(category):
 
     for product in products.get(category, []):
         stock = int(product.get("stock", 0))
+
         if stock <= 0:
             keyboard.append([KeyboardButton(text=f"❌ {product['name']} - אזל מהמלאי")])
         else:
@@ -158,6 +170,7 @@ def products_keyboard(category):
 
     keyboard.append([KeyboardButton(text="🛒 הסל שלי")])
     keyboard.append([KeyboardButton(text="⬅️ חזרה לקטגוריות")])
+
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
@@ -166,26 +179,32 @@ def cart_keyboard():
         keyboard=[
             [KeyboardButton(text="➕ הוסף עוד מוצר")],
             [KeyboardButton(text="✅ המשך להזמנה")],
-            [KeyboardButton(text="❌ בטל הזמנה")]
+            [KeyboardButton(text="❌ בטל הזמנה")],
         ],
-        resize_keyboard=True
+        resize_keyboard=True,
     )
 
 
 def product_names_keyboard():
     rows = get_all_products()
     keyboard = []
+
     for row in rows:
         product_id, category, name, price, description, max_qty, stock, sku, image_file_id, active = row
         keyboard.append([KeyboardButton(text=name)])
+
     keyboard.append([KeyboardButton(text="⬅️ חזרה לניהול")])
+
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+
+def clean_product_button_name(text):
+    return text.replace("❌ ", "").replace(" - אזל מהמלאי", "").strip()
 
 
 def find_product(name):
     products = get_active_products()
-
-    clean_name = name.replace("❌ ", "").replace(" - אזל מהמלאי", "").strip()
+    clean_name = clean_product_button_name(name)
 
     for category, items in products.items():
         for item in items:
@@ -204,6 +223,7 @@ def cart_text(cart):
         return "🛒 הסל שלך ריק."
 
     text = "🛒 הסל שלך:\n\n"
+
     for item in cart:
         line_total = float(item["price"]) * int(item["qty"])
         text += f"• {item['name']} × {item['qty']} = ₪{line_total:g}\n"
@@ -236,6 +256,7 @@ async def send_products_list(message: Message):
 
     for row in rows:
         product_id, category, name, price, description, max_qty, stock, sku, image_file_id, active = row
+
         status = "✅ פעיל" if active else "❌ כבוי"
         stock_status = "❌ אזל מהמלאי" if int(stock) <= 0 else f"📦 מלאי: {stock}"
         image_status = "🖼️ יש תמונה" if image_file_id else "⚠️ ללא תמונה"
@@ -273,13 +294,16 @@ async def send_product_card(message: Message, product):
         await message.answer_photo(photo=image_file_id, caption=caption)
     else:
         await message.answer(caption)
-        @dp.message(CommandStart())
+
+
+@dp.message(CommandStart())
 async def start(message: Message):
     users.pop(message.from_user.id, None)
+
     await message.answer(
         "🔥 ברוך הבא ל-Vendora Shop\n"
         "חנות לציוד הובלות, שילוח ושליחים.",
-        reply_markup=main_keyboard()
+        reply_markup=main_keyboard(),
     )
 
 
@@ -493,7 +517,7 @@ async def handle_photo(message: Message):
 
     await message.answer(
         f"✅ התמונה עודכנה למוצר:\n{product_name}" if ok else "המוצר לא נמצא.",
-        reply_markup=admin_keyboard()
+        reply_markup=admin_keyboard(),
     )
 
 
@@ -503,7 +527,6 @@ async def handle_message(message: Message):
     txt = (message.text or "").strip()
     data = users.get(uid)
 
-    # ADMIN FLOWS
     if is_admin(uid) and data:
         step = data.get("step")
 
@@ -579,7 +602,7 @@ async def handle_message(message: Message):
                 stock=int(data["stock"]),
                 sku=sku,
                 image_file_id="",
-                active=1
+                active=1,
             )
 
             users[uid] = {"step": "admin"}
@@ -592,7 +615,7 @@ async def handle_message(message: Message):
                 f"מלאי: {data['stock']}\n"
                 f"מקסימום להזמנה: {data['max_qty']}\n\n"
                 f"כדי להוסיף תמונה לחץ: 🖼️ עדכן תמונה",
-                reply_markup=admin_keyboard()
+                reply_markup=admin_keyboard(),
             )
             return
 
@@ -621,7 +644,7 @@ async def handle_message(message: Message):
 
             await message.answer(
                 f"✅ המחיר עודכן ל־₪{price:g}" if ok else "המוצר לא נמצא.",
-                reply_markup=admin_keyboard()
+                reply_markup=admin_keyboard(),
             )
             return
 
@@ -642,7 +665,7 @@ async def handle_message(message: Message):
 
             await message.answer(
                 "✅ התיאור עודכן." if ok else "המוצר לא נמצא.",
-                reply_markup=admin_keyboard()
+                reply_markup=admin_keyboard(),
             )
             return
 
@@ -667,7 +690,7 @@ async def handle_message(message: Message):
 
             await message.answer(
                 "✅ המלאי עודכן." if ok else "המוצר לא נמצא.",
-                reply_markup=admin_keyboard()
+                reply_markup=admin_keyboard(),
             )
             return
 
@@ -692,7 +715,7 @@ async def handle_message(message: Message):
 
             await message.answer(
                 f"✅ נוספו {txt} יחידות למלאי." if ok else "המוצר לא נמצא.",
-                reply_markup=admin_keyboard()
+                reply_markup=admin_keyboard(),
             )
             return
 
@@ -725,7 +748,6 @@ async def handle_message(message: Message):
             await message.answer("🗑️ המוצר נמחק." if ok else "המוצר לא נמצא.", reply_markup=admin_keyboard())
             return
 
-    # SHOP FLOWS
     products = get_active_products()
 
     if txt in products:
@@ -767,7 +789,7 @@ async def handle_message(message: Message):
             f"📩 פנייה חדשה לשירות לקוחות\n\n"
             f"👤 שם בטלגרם: {message.from_user.full_name}\n"
             f"🆔 Telegram ID: {uid}\n"
-            f"💬 הודעה: {txt}"
+            f"💬 הודעה: {txt}",
         )
 
         users.pop(uid, None)
@@ -802,11 +824,13 @@ async def handle_message(message: Message):
             await message.answer(f"כרגע יש במלאי רק {stock} יחידות.")
             return
 
-        data["cart"].append({
-            "name": product["name"],
-            "price": float(product["price"]),
-            "qty": qty
-        })
+        data["cart"].append(
+            {
+                "name": product["name"],
+                "price": float(product["price"]),
+                "qty": qty,
+            }
+        )
 
         data["step"] = None
         data.pop("selected_product", None)
@@ -815,7 +839,7 @@ async def handle_message(message: Message):
             f"✅ נוסף לסל:\n"
             f"{product['name']} × {qty} = ₪{float(product['price']) * qty:g}\n\n"
             f"{cart_text(data['cart'])}",
-            reply_markup=cart_keyboard()
+            reply_markup=cart_keyboard(),
         )
         return
 
@@ -900,7 +924,7 @@ async def handle_message(message: Message):
             await message.answer(
                 f"יש בעיית מלאי במוצר: {problem_product}\n"
                 f"נא לעדכן את ההזמנה.",
-                reply_markup=cart_keyboard()
+                reply_markup=cart_keyboard(),
             )
             return
 
@@ -927,7 +951,7 @@ async def handle_message(message: Message):
         await message.answer(
             f"✅ ההזמנה התקבלה!\n"
             f"סה״כ כולל משלוח: ₪{final_total:g}",
-            reply_markup=main_keyboard()
+            reply_markup=main_keyboard(),
         )
         return
 
