@@ -4,7 +4,7 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 
 from config import ADMIN_ID
 from keyboards import main_keyboard
-from database import get_active_products, reduce_stock
+from database import get_active_products, get_product_by_name, reduce_stock
 from delivery import get_delivery_price
 
 router = Router()
@@ -14,7 +14,6 @@ users = {}
 @router.message(CommandStart())
 async def start(message: Message):
     users.pop(message.from_user.id, None)
-
     await message.answer(
         "🔥 ברוך הבא ל-Vendora Shop\n"
         "חנות לציוד הובלות, שילוח ושליחים.",
@@ -35,7 +34,8 @@ def products_keyboard(category):
     keyboard = []
 
     for product in products.get(category, []):
-        if int(product.get("stock", 0)) <= 0:
+        stock = int(product.get("stock", 0))
+        if stock <= 0:
             keyboard.append([KeyboardButton(text=f"❌ {product['name']} - אזל מהמלאי")])
         else:
             keyboard.append([KeyboardButton(text=product["name"])])
@@ -50,6 +50,18 @@ def cart_keyboard():
         keyboard=[
             [KeyboardButton(text="➕ הוסף עוד מוצר")],
             [KeyboardButton(text="✅ המשך להזמנה")],
+            [KeyboardButton(text="🧹 רוקן סל")],
+            [KeyboardButton(text="❌ בטל הזמנה")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def confirm_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✅ אשר הזמנה")],
+            [KeyboardButton(text="✏️ שנה פרטים")],
             [KeyboardButton(text="❌ בטל הזמנה")]
         ],
         resize_keyboard=True
@@ -76,11 +88,16 @@ def cart_total(cart):
     return sum(float(item["price"]) * int(item["qty"]) for item in cart)
 
 
+def product_qty_in_cart(cart, product_name):
+    return sum(int(item["qty"]) for item in cart if item["name"] == product_name)
+
+
 def cart_text(cart):
     if not cart:
         return "🛒 הסל שלך ריק."
 
     text = "🛒 הסל שלך:\n\n"
+
     for item in cart:
         total = float(item["price"]) * int(item["qty"])
         text += f"• {item['name']} × {item['qty']} = ₪{total:g}\n"
@@ -120,6 +137,28 @@ async def send_product_card(message: Message, product):
         await message.answer_photo(photo=image, caption=caption)
     else:
         await message.answer(caption)
+
+
+def build_order_summary(data):
+    products_total = cart_total(data["cart"])
+    delivery_price = float(data["delivery_price"])
+    final_total = products_total + delivery_price
+
+    address = (
+        f"{data['city']}, {data['street']}, "
+        f"קומה {data['floor']}, דירה {data['apartment']}"
+    )
+
+    text = "📦 סיכום הזמנה:\n\n"
+    text += f"👤 שם: {data['name']}\n"
+    text += f"📞 טלפון: {data['phone']}\n"
+    text += f"📍 כתובת: {address}\n\n"
+    text += cart_text(data["cart"])
+    text += f"\n🚚 משלוח: ₪{delivery_price:g}"
+    text += f"\n💳 סה״כ לתשלום בהמשך: ₪{final_total:g}"
+    text += "\n\n✅ אם הכול נכון לחץ אשר הזמנה."
+
+    return text
 
 
 @router.message(F.text == "🛒 חנות")
@@ -165,10 +204,30 @@ async def show_cart(message: Message):
     await message.answer(cart_text(data["cart"]), reply_markup=cart_keyboard())
 
 
+@router.message(F.text == "🧹 רוקן סל")
+async def clear_cart(message: Message):
+    uid = message.from_user.id
+    users[uid] = {"cart": [], "step": None}
+    await message.answer("הסל התרוקן.", reply_markup=categories_keyboard())
+
+
 @router.message(F.text == "❌ בטל הזמנה")
 async def cancel_order(message: Message):
     users.pop(message.from_user.id, None)
     await message.answer("ההזמנה בוטלה.", reply_markup=main_keyboard())
+
+
+@router.message(F.text == "✏️ שנה פרטים")
+async def edit_details(message: Message):
+    uid = message.from_user.id
+    data = users.get(uid)
+
+    if not data or not data.get("cart"):
+        await message.answer("אין הזמנה פעילה.", reply_markup=main_keyboard())
+        return
+
+    data["step"] = "name"
+    await message.answer("נעדכן את הפרטים מחדש.\nמה השם המלא שלך?")
 
 
 @router.message(F.text == "✅ המשך להזמנה")
@@ -182,6 +241,63 @@ async def checkout(message: Message):
 
     data["step"] = "name"
     await message.answer("מה השם המלא שלך?")
+
+
+@router.message(F.text == "✅ אשר הזמנה")
+async def confirm_order(message: Message):
+    uid = message.from_user.id
+    data = users.get(uid)
+
+    if not data or not data.get("cart"):
+        await message.answer("אין הזמנה פעילה.", reply_markup=main_keyboard())
+        return
+
+    required = ["name", "phone", "city", "street", "floor", "apartment", "delivery_price"]
+    if any(key not in data for key in required):
+        await message.answer("חסרים פרטים להזמנה. נתחיל מחדש.\nמה השם המלא שלך?")
+        data["step"] = "name"
+        return
+
+    stock_ok, problem_product = reduce_stock(data["cart"])
+
+    if not stock_ok:
+        await message.answer(
+            f"יש בעיית מלאי במוצר: {problem_product}\n"
+            f"נא לעדכן את ההזמנה.",
+            reply_markup=cart_keyboard()
+        )
+        return
+
+    products_total = cart_total(data["cart"])
+    delivery_price = float(data["delivery_price"])
+    final_total = products_total + delivery_price
+
+    address = (
+        f"{data['city']}, {data['street']}, "
+        f"קומה {data['floor']}, דירה {data['apartment']}"
+    )
+
+    order = "📦 הזמנה חדשה מ-Vendora Shop\n\n"
+    order += f"👤 שם: {data['name']}\n"
+    order += f"📞 טלפון: {data['phone']}\n"
+    order += f"📍 כתובת: {address}\n\n"
+    order += cart_text(data["cart"])
+    order += f"\n🚚 משלוח: ₪{delivery_price:g}"
+    order += f"\n💳 סה״כ לתשלום: ₪{final_total:g}"
+    order += f"\n\n📍 אזור/עיר בסיס: {data['base_city']}"
+    order += f"\n🆔 Telegram ID: {uid}"
+    order += f"\n👤 Telegram: {message.from_user.full_name}"
+
+    await message.bot.send_message(ADMIN_ID, order)
+
+    users.pop(uid, None)
+
+    await message.answer(
+        "✅ ההזמנה התקבלה!\n"
+        "נציג יחזור אליך לאישור סופי ותשלום.\n\n"
+        f"סה״כ כולל משלוח: ₪{final_total:g}",
+        reply_markup=main_keyboard()
+    )
 
 
 @router.message(F.text == "📞 שירות לקוחות")
@@ -209,17 +325,34 @@ async def handle_shop(message: Message):
 
     if product:
         users.setdefault(uid, {"cart": [], "step": None})
-        users[uid]["selected_product"] = product
+        data = users[uid]
+
+        fresh_product = get_product_by_name(product["name"])
+        if fresh_product:
+            product.update(fresh_product)
 
         await send_product_card(message, product)
 
-        if int(product.get("stock", 0)) <= 0:
+        stock = int(product.get("stock", 0))
+        if stock <= 0:
             await message.answer("המוצר אזל מהמלאי כרגע ולא ניתן להזמין אותו.")
-            users[uid]["step"] = None
+            data["step"] = None
             return
 
-        users[uid]["step"] = "qty"
-        await message.answer("כמה יחידות תרצה?")
+        already_in_cart = product_qty_in_cart(data["cart"], product["name"])
+        available_left = stock - already_in_cart
+
+        if available_left <= 0:
+            await message.answer("כל המלאי הזמין של המוצר כבר נמצא אצלך בסל.")
+            return
+
+        data["selected_product"] = product
+        data["step"] = "qty"
+
+        await message.answer(
+            f"כמה יחידות תרצה?\n"
+            f"זמין להזמנה כרגע: {available_left}"
+        )
         return
 
     if not data:
@@ -254,8 +387,16 @@ async def handle_shop(message: Message):
             await message.answer("בחר מוצר מחדש.", reply_markup=categories_keyboard())
             return
 
-        max_qty = int(product.get("max_qty", 100))
-        stock = int(product.get("stock", 0))
+        fresh_product = get_product_by_name(product["name"])
+        if not fresh_product or int(fresh_product.get("active", 0)) != 1:
+            await message.answer("המוצר לא זמין כרגע.")
+            data["step"] = None
+            return
+
+        max_qty = int(fresh_product.get("max_qty", 100))
+        stock = int(fresh_product.get("stock", 0))
+        already_in_cart = product_qty_in_cart(data["cart"], product["name"])
+        available_left = stock - already_in_cart
 
         if qty <= 0:
             await message.answer("הכמות חייבת להיות גדולה מ־0.")
@@ -265,13 +406,13 @@ async def handle_shop(message: Message):
             await message.answer(f"ניתן להזמין עד {max_qty} יחידות מהמוצר הזה.")
             return
 
-        if qty > stock:
-            await message.answer(f"כרגע יש במלאי רק {stock} יחידות.")
+        if qty > available_left:
+            await message.answer(f"כרגע ניתן להוסיף עוד {available_left} יחידות בלבד.")
             return
 
         data["cart"].append({
-            "name": product["name"],
-            "price": float(product["price"]),
+            "name": fresh_product["name"],
+            "price": float(fresh_product["price"]),
             "qty": qty
         })
 
@@ -280,7 +421,7 @@ async def handle_shop(message: Message):
 
         await message.answer(
             f"✅ נוסף לסל:\n"
-            f"{product['name']} × {qty}\n\n"
+            f"{fresh_product['name']} × {qty}\n\n"
             f"{cart_text(data['cart'])}",
             reply_markup=cart_keyboard()
         )
@@ -300,7 +441,7 @@ async def handle_shop(message: Message):
         phone = clean_phone(txt)
 
         if not valid_phone(phone):
-            await message.answer("נא לרשום מספר פלאפון ישראלי תקין.")
+            await message.answer("נא לרשום מספר פלאפון ישראלי תקין. לדוגמה: 0547937503")
             return
 
         data["phone"] = phone
@@ -360,39 +501,10 @@ async def handle_shop(message: Message):
             return
 
         data["apartment"] = txt
-
-        stock_ok, problem_product = reduce_stock(data["cart"])
-
-        if not stock_ok:
-            await message.answer(
-                f"יש בעיית מלאי במוצר: {problem_product}\n"
-                f"נא לעדכן את ההזמנה.",
-                reply_markup=cart_keyboard()
-            )
-            return
-
-        products_total = cart_total(data["cart"])
-        delivery_price = float(data["delivery_price"])
-        final_total = products_total + delivery_price
-        address = f"{data['city']}, {data['street']}, קומה {data['floor']}, דירה {data['apartment']}"
-
-        order = "📦 הזמנה חדשה מ-Vendora Shop\n\n"
-        order += f"👤 שם: {data['name']}\n"
-        order += f"📞 טלפון: {data['phone']}\n"
-        order += f"📍 כתובת: {address}\n\n"
-        order += cart_text(data["cart"])
-        order += f"\n🚚 משלוח: ₪{delivery_price:g}"
-        order += f"\n💳 סה״כ לתשלום: ₪{final_total:g}"
-        order += f"\n\n📍 אזור/עיר בסיס: {data['base_city']}"
-        order += f"\n🆔 Telegram ID: {uid}"
-        order += f"\n👤 Telegram: {message.from_user.full_name}"
-
-        await message.bot.send_message(ADMIN_ID, order)
-
-        users.pop(uid, None)
+        data["step"] = "confirm"
 
         await message.answer(
-            f"✅ ההזמנה התקבלה!\n"
-            f"סה״כ כולל משלוח: ₪{final_total:g}",
-            reply_markup=main_keyboard()
+            build_order_summary(data),
+            reply_markup=confirm_keyboard()
         )
+        return
