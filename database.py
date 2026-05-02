@@ -26,7 +26,6 @@ def create_tables():
         )
     """)
 
-    # מוסיף עמודות אם הטבלה כבר קיימת מגרסה ישנה
     existing_columns = [row[1] for row in cur.execute("PRAGMA table_info(products)").fetchall()]
 
     columns_to_add = {
@@ -52,15 +51,8 @@ def add_product(category, name, price, description="", max_qty=100, stock=0, sku
         (category, name, price, description, max_qty, stock, sku, image_file_id, active)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        category,
-        name,
-        float(price),
-        description,
-        int(max_qty),
-        int(stock),
-        sku,
-        image_file_id,
-        int(active)
+        category, name, float(price), description, int(max_qty),
+        int(stock), sku, image_file_id, int(active)
     ))
 
     conn.commit()
@@ -71,10 +63,11 @@ def get_active_products():
     conn = get_connection()
     cur = conn.cursor()
 
+    # חשוב: מציג גם מוצרים שאזלו מהמלאי, כל עוד הם פעילים
     cur.execute("""
         SELECT category, name, price, description, max_qty, stock, sku, image_file_id
         FROM products
-        WHERE active = 1 AND stock > 0
+        WHERE active = 1
         ORDER BY category, name
     """)
 
