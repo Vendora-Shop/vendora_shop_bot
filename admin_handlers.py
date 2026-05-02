@@ -19,7 +19,7 @@ async def admin_panel(message: Message):
         return
 
     await message.answer(
-        "🔐 Панель администратора Vendora",
+        "🔐 פאנל ניהול Vendora",
         reply_markup=admin_keyboard()
     )
 
@@ -30,7 +30,7 @@ async def exit_admin(message: Message):
         return
 
     await message.answer(
-        "Вышли из панели управления.",
+        "יצאת מפאנל הניהול.",
         reply_markup=main_keyboard()
     )
 
@@ -43,21 +43,21 @@ async def products_list(message: Message):
     rows = get_all_products()
 
     if not rows:
-        await message.answer("Нет товаров.")
+        await message.answer("אין מוצרים במערכת.")
         return
 
-    text = "📦 Список товаров:\n\n"
+    text = "📦 רשימת מוצרים:\n\n"
 
     for row in rows:
         product_id, category, name, price, description, max_qty, stock, sku, image_file_id, active = row
 
-        status = "✅ Активен" if active else "❌ Выключен"
+        status = "✅ פעיל" if active else "❌ כבוי"
 
         text += (
             f"🛍 {name}\n"
-            f"Категория: {category}\n"
-            f"Цена: ₪{price}\n"
-            f"Остаток: {stock}\n"
+            f"קטגוריה: {category}\n"
+            f"מחיר: ₪{price}\n"
+            f"מלאי: {stock}\n"
             f"{status}\n\n"
         )
 
