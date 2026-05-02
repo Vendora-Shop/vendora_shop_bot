@@ -11,9 +11,15 @@ from database import (
     add_product,
     get_active_products,
     get_all_products,
+    get_product_by_name,
     set_product_price,
+    set_product_description,
+    set_product_stock,
+    add_stock,
+    set_product_image,
     set_product_active,
-    delete_product
+    delete_product,
+    reduce_stock
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -121,8 +127,10 @@ def main_keyboard():
 def admin_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="➕ הוסף מוצר"), KeyboardButton(text="✏️ שנה מחיר")],
-            [KeyboardButton(text="📦 רשימת מוצרים")],
+            [KeyboardButton(text="➕ הוסף מוצר"), KeyboardButton(text="📦 רשימת מוצרים")],
+            [KeyboardButton(text="✏️ שנה מחיר"), KeyboardButton(text="📝 שנה תיאור")],
+            [KeyboardButton(text="📊 עדכן מלאי"), KeyboardButton(text="➕ הוסף למלאי")],
+            [KeyboardButton(text="🖼️ עדכן תמונה")],
             [KeyboardButton(text="🔴 כבה מוצר"), KeyboardButton(text="🟢 הפעל מוצר")],
             [KeyboardButton(text="🗑️ מחק מוצר")],
             [KeyboardButton(text="⬅️ יציאה מניהול")]
@@ -164,12 +172,10 @@ def cart_keyboard():
 
 def find_product(name):
     products = get_active_products()
-
     for category, items in products.items():
         for item in items:
             if item["name"] == name:
                 return item
-
     return None
 
 
@@ -214,17 +220,39 @@ async def send_products_list(message: Message):
     text = "📦 רשימת מוצרים:\n\n"
 
     for row in rows:
-        product_id, category, name, price, description, max_qty, active = row
+        product_id, category, name, price, description, max_qty, stock, sku, image_file_id, active = row
         status = "✅ פעיל" if active else "❌ כבוי"
+        image_status = "🖼️ יש תמונה" if image_file_id else "ללא תמונה"
+
         text += (
-            f"{status}\n"
+            f"{status} | {image_status}\n"
             f"קטגוריה: {category}\n"
             f"מוצר: {name}\n"
+            f"מק״ט: {sku or '-'}\n"
             f"מחיר: ₪{price:g}\n"
-            f"מקסימום להזמנה: {max_qty}\n\n"
+            f"מלאי: {stock}\n"
+            f"מקסימום להזמנה: {max_qty}\n"
+            f"תיאור: {description or '-'}\n\n"
         )
 
     await message.answer(text)
+
+
+async def send_product_card(message: Message, product):
+    caption = (
+        f"🛒 {product['name']}\n\n"
+        f"{product.get('description', '')}\n\n"
+        f"💰 מחיר: ₪{float(product['price']):g}\n"
+        f"📦 מלאי זמין: {product.get('stock', 0)}\n"
+        f"🔢 מקסימום להזמנה: {product.get('max_qty', 100)}"
+    )
+
+    image_file_id = product.get("image_file_id")
+
+    if image_file_id:
+        await message.answer_photo(photo=image_file_id, caption=caption)
+    else:
+        await message.answer(caption)
 
 
 @dp.message(CommandStart())
@@ -251,7 +279,6 @@ async def admin_panel(message: Message):
 async def products_command(message: Message):
     if not is_admin(message.from_user.id):
         return
-
     await send_products_list(message)
 
 
@@ -268,7 +295,6 @@ async def exit_admin(message: Message):
 async def products_button(message: Message):
     if not is_admin(message.from_user.id):
         return
-
     await send_products_list(message)
 
 
@@ -277,11 +303,7 @@ async def add_product_start(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    users[message.from_user.id] = {
-        "step": "admin_add_category",
-        "admin_action": "add_product"
-    }
-
+    users[message.from_user.id] = {"step": "admin_add_category"}
     await message.answer("רשום קטגוריה למוצר.\nלדוגמה: 📦 מוצרי הובלות ואריזה")
 
 
@@ -290,12 +312,44 @@ async def change_price_start(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    users[message.from_user.id] = {
-        "step": "admin_price_name",
-        "admin_action": "change_price"
-    }
-
+    users[message.from_user.id] = {"step": "admin_price_name"}
     await message.answer("רשום את שם המוצר שתרצה לשנות לו מחיר.")
+
+
+@dp.message(F.text == "📝 שנה תיאור")
+async def change_description_start(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    users[message.from_user.id] = {"step": "admin_description_name"}
+    await message.answer("רשום את שם המוצר שתרצה לשנות לו תיאור.")
+
+
+@dp.message(F.text == "📊 עדכן מלאי")
+async def set_stock_start(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    users[message.from_user.id] = {"step": "admin_stock_name"}
+    await message.answer("רשום את שם המוצר שתרצה לעדכן לו מלאי.")
+
+
+@dp.message(F.text == "➕ הוסף למלאי")
+async def add_stock_start(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    users[message.from_user.id] = {"step": "admin_add_stock_name"}
+    await message.answer("רשום את שם המוצר שתרצה להוסיף לו מלאי.")
+
+
+@dp.message(F.text == "🖼️ עדכן תמונה")
+async def set_image_start(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    users[message.from_user.id] = {"step": "admin_image_name"}
+    await message.answer("רשום את שם המוצר שתרצה לעדכן לו תמונה.")
 
 
 @dp.message(F.text == "🔴 כבה מוצר")
@@ -303,11 +357,7 @@ async def off_product_start(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    users[message.from_user.id] = {
-        "step": "admin_off_name",
-        "admin_action": "off_product"
-    }
-
+    users[message.from_user.id] = {"step": "admin_off_name"}
     await message.answer("רשום את שם המוצר שתרצה לכבות.")
 
 
@@ -316,11 +366,7 @@ async def on_product_start(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    users[message.from_user.id] = {
-        "step": "admin_on_name",
-        "admin_action": "on_product"
-    }
-
+    users[message.from_user.id] = {"step": "admin_on_name"}
     await message.answer("רשום את שם המוצר שתרצה להפעיל.")
 
 
@@ -329,11 +375,7 @@ async def delete_product_start(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    users[message.from_user.id] = {
-        "step": "admin_delete_name",
-        "admin_action": "delete_product"
-    }
-
+    users[message.from_user.id] = {"step": "admin_delete_name"}
     await message.answer("רשום את שם המוצר שתרצה למחוק.")
 
 
@@ -366,7 +408,7 @@ async def back_categories(message: Message):
 
 
 @dp.message(F.text == "➕ הוסף עוד מוצר")
-async def add_more(message: Message):
+async def add_more_product(message: Message):
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
     users[uid]["step"] = None
@@ -406,34 +448,47 @@ async def checkout(message: Message):
     await message.answer("מה השם המלא שלך?")
 
 
+@dp.message(F.photo)
+async def handle_photo(message: Message):
+    uid = message.from_user.id
+    data = users.get(uid)
+
+    if not is_admin(uid) or not data or data.get("step") != "admin_image_photo":
+        await message.answer("התמונה התקבלה, אבל לא נבחר מוצר לעדכון תמונה.")
+        return
+
+    file_id = message.photo[-1].file_id
+    product_name = data["product_name"]
+
+    ok = set_product_image(product_name, file_id)
+    users[uid] = {"step": "admin"}
+
+    await message.answer(
+        f"✅ התמונה עודכנה למוצר:\n{product_name}" if ok else "המוצר לא נמצא.",
+        reply_markup=admin_keyboard()
+    )
+
+
 @dp.message()
 async def handle_message(message: Message):
     uid = message.from_user.id
     txt = (message.text or "").strip()
     data = users.get(uid)
 
-    # ADMIN GUIDED FLOWS
+    # ADMIN FLOWS
     if is_admin(uid) and data:
         step = data.get("step")
 
         if step == "admin_add_category":
-            if len(txt) < 2:
-                await message.answer("נא לרשום קטגוריה תקינה.")
-                return
-
             data["category"] = txt
             data["step"] = "admin_add_name"
             await message.answer("רשום שם מוצר.")
             return
 
         if step == "admin_add_name":
-            if len(txt) < 2:
-                await message.answer("נא לרשום שם מוצר תקין.")
-                return
-
             data["name"] = txt
             data["step"] = "admin_add_price"
-            await message.answer("רשום מחיר. לדוגמה: 45")
+            await message.answer("רשום מחיר בשקלים. לדוגמה: 45")
             return
 
         if step == "admin_add_price":
@@ -453,20 +508,41 @@ async def handle_message(message: Message):
         if step == "admin_add_description":
             data["description"] = txt
             data["step"] = "admin_add_max_qty"
-            await message.answer("רשום כמות מקסימלית להזמנה. לדוגמה: 100")
+            await message.answer("רשום כמות מקסימלית להזמנה אחת. לדוגמה: 10")
             return
 
         if step == "admin_add_max_qty":
             if not txt.isdigit() or int(txt) <= 0:
-                await message.answer("נא לרשום כמות מקסימלית במספרים בלבד.")
+                await message.answer("נא לרשום מספר תקין.")
                 return
+
+            data["max_qty"] = int(txt)
+            data["step"] = "admin_add_stock"
+            await message.answer("רשום מלאי נוכחי. לדוגמה: 50")
+            return
+
+        if step == "admin_add_stock":
+            if not txt.isdigit() or int(txt) < 0:
+                await message.answer("נא לרשום מלאי תקין במספרים בלבד.")
+                return
+
+            data["stock"] = int(txt)
+            data["step"] = "admin_add_sku"
+            await message.answer("רשום מק״ט / קוד מוצר. אם אין, רשום 0")
+            return
+
+        if step == "admin_add_sku":
+            sku = "" if txt == "0" else txt
 
             add_product(
                 category=data["category"],
                 name=data["name"],
                 price=float(data["price"]),
                 description=data["description"],
-                max_qty=int(txt),
+                max_qty=int(data["max_qty"]),
+                stock=int(data["stock"]),
+                sku=sku,
+                image_file_id="",
                 active=1
             )
 
@@ -477,16 +553,14 @@ async def handle_message(message: Message):
                 f"קטגוריה: {data['category']}\n"
                 f"מוצר: {data['name']}\n"
                 f"מחיר: ₪{float(data['price']):g}\n"
-                f"מקסימום: {txt}",
+                f"מלאי: {data['stock']}\n"
+                f"מקסימום להזמנה: {data['max_qty']}\n\n"
+                f"כדי להוסיף תמונה לחץ: 🖼️ עדכן תמונה",
                 reply_markup=admin_keyboard()
             )
             return
 
         if step == "admin_price_name":
-            if len(txt) < 2:
-                await message.answer("נא לרשום שם מוצר תקין.")
-                return
-
             data["product_name"] = txt
             data["step"] = "admin_price_value"
             await message.answer("רשום מחיר חדש.")
@@ -510,31 +584,84 @@ async def handle_message(message: Message):
             )
             return
 
+        if step == "admin_description_name":
+            data["product_name"] = txt
+            data["step"] = "admin_description_text"
+            await message.answer("רשום תיאור חדש למוצר.")
+            return
+
+        if step == "admin_description_text":
+            ok = set_product_description(data["product_name"], txt)
+            users[uid] = {"step": "admin"}
+
+            await message.answer(
+                "✅ התיאור עודכן." if ok else "המוצר לא נמצא.",
+                reply_markup=admin_keyboard()
+            )
+            return
+
+        if step == "admin_stock_name":
+            data["product_name"] = txt
+            data["step"] = "admin_stock_value"
+            await message.answer("רשום מלאי חדש. לדוגמה: 40")
+            return
+
+        if step == "admin_stock_value":
+            if not txt.isdigit() or int(txt) < 0:
+                await message.answer("נא לרשום מלאי תקין.")
+                return
+
+            ok = set_product_stock(data["product_name"], int(txt))
+            users[uid] = {"step": "admin"}
+
+            await message.answer(
+                "✅ המלאי עודכן." if ok else "המוצר לא נמצא.",
+                reply_markup=admin_keyboard()
+            )
+            return
+
+        if step == "admin_add_stock_name":
+            data["product_name"] = txt
+            data["step"] = "admin_add_stock_value"
+            await message.answer("כמה יחידות להוסיף למלאי?")
+            return
+
+        if step == "admin_add_stock_value":
+            if not txt.isdigit() or int(txt) <= 0:
+                await message.answer("נא לרשום מספר חיובי.")
+                return
+
+            ok = add_stock(data["product_name"], int(txt))
+            users[uid] = {"step": "admin"}
+
+            await message.answer(
+                f"✅ נוספו {txt} יחידות למלאי." if ok else "המוצר לא נמצא.",
+                reply_markup=admin_keyboard()
+            )
+            return
+
+        if step == "admin_image_name":
+            data["product_name"] = txt
+            data["step"] = "admin_image_photo"
+            await message.answer("עכשיו שלח תמונה של המוצר.")
+            return
+
         if step == "admin_off_name":
             ok = set_product_active(txt, 0)
             users[uid] = {"step": "admin"}
-            await message.answer(
-                "✅ המוצר כובה." if ok else "המוצר לא נמצא.",
-                reply_markup=admin_keyboard()
-            )
+            await message.answer("✅ המוצר כובה." if ok else "המוצר לא נמצא.", reply_markup=admin_keyboard())
             return
 
         if step == "admin_on_name":
             ok = set_product_active(txt, 1)
             users[uid] = {"step": "admin"}
-            await message.answer(
-                "✅ המוצר הופעל." if ok else "המוצר לא נמצא.",
-                reply_markup=admin_keyboard()
-            )
+            await message.answer("✅ המוצר הופעל." if ok else "המוצר לא נמצא.", reply_markup=admin_keyboard())
             return
 
         if step == "admin_delete_name":
             ok = delete_product(txt)
             users[uid] = {"step": "admin"}
-            await message.answer(
-                "🗑️ המוצר נמחק." if ok else "המוצר לא נמצא.",
-                reply_markup=admin_keyboard()
-            )
+            await message.answer("🗑️ המוצר נמחק." if ok else "המוצר לא נמצא.", reply_markup=admin_keyboard())
             return
 
     # SHOP FLOWS
@@ -553,13 +680,8 @@ async def handle_message(message: Message):
         users[uid]["selected_product"] = product
         users[uid]["step"] = "qty"
 
-        await message.answer(
-            f"בחרת: {product['name']}\n"
-            f"{product.get('description', '')}\n\n"
-            f"מחיר ליחידה: ₪{product['price']:g}\n"
-            f"כמות מקסימלית להזמנה: {product.get('max_qty', 100)}\n\n"
-            f"כמה יחידות תרצה?"
-        )
+        await send_product_card(message, product)
+        await message.answer("כמה יחידות תרצה?")
         return
 
     data = users.get(uid)
@@ -599,6 +721,7 @@ async def handle_message(message: Message):
             return
 
         max_qty = int(product.get("max_qty", 100))
+        stock = int(product.get("stock", 0))
 
         if qty <= 0:
             await message.answer("הכמות חייבת להיות גדולה מ־0.")
@@ -606,6 +729,10 @@ async def handle_message(message: Message):
 
         if qty > max_qty:
             await message.answer(f"ניתן להזמין עד {max_qty} יחידות מהמוצר הזה.")
+            return
+
+        if qty > stock:
+            await message.answer(f"כרגע יש במלאי רק {stock} יחידות.")
             return
 
         data["cart"].append({
@@ -699,6 +826,16 @@ async def handle_message(message: Message):
             return
 
         data["apartment"] = txt
+
+        stock_ok, problem_product = reduce_stock(data["cart"])
+
+        if not stock_ok:
+            await message.answer(
+                f"יש בעיית מלאי במוצר: {problem_product}\n"
+                f"נא לעדכן את ההזמנה.",
+                reply_markup=cart_keyboard()
+            )
+            return
 
         products_total = cart_total(data["cart"])
         delivery_price = float(data["delivery_price"])
