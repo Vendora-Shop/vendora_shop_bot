@@ -1,4 +1,5 @@
 from aiogram import Router, F
+from aiogram.filters import CommandStart
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 
 from config import ADMIN_ID
@@ -8,6 +9,17 @@ from delivery import get_delivery_price
 
 router = Router()
 users = {}
+
+
+@router.message(CommandStart())
+async def start(message: Message):
+    users.pop(message.from_user.id, None)
+
+    await message.answer(
+        "🔥 ברוך הבא ל-Vendora Shop\n"
+        "חנות לציוד הובלות, שילוח ושליחים.",
+        reply_markup=main_keyboard()
+    )
 
 
 def categories_keyboard():
