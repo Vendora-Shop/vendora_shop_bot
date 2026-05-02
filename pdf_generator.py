@@ -1,109 +1,80 @@
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase import pdfmetrics
 from reportlab.lib import colors
 import os
 
-
-FONT_PATHS = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf",
-]
-
-FONT_NAME = "HebrewFont"
+FONT_FILE = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
 
 def register_font():
-    for path in FONT_PATHS:
-        if os.path.exists(path):
-            pdfmetrics.registerFont(TTFont(FONT_NAME, path))
-            return FONT_NAME
-    return "Helvetica"
+    pdfmetrics.registerFont(TTFont("DejaVu", FONT_FILE))
 
 
-def rtl(text):
-    text = str(text)
-    try:
-        from bidi.algorithm import get_display
-        return get_display(text)
-    except Exception:
-        return text[::-1]
-
-
-def money(value):
-    return f"₪{float(value):g}"
+def heb(text):
+    return str(text)[::-1]
 
 
 def create_invoice_pdf(order):
-    font = register_font()
-    file_name = f"/tmp/{order['order_number']}.pdf"
+    register_font()
 
-    c = canvas.Canvas(file_name, pagesize=A4)
+    filename = f"/tmp/{order['order_number']}.pdf"
+    c = canvas.Canvas(filename, pagesize=A4)
     width, height = A4
 
-    right = width - 40
-    left = 40
-    y = height - 45
+    c.setTitle(order["order_number"])
+    c.setFont("DejaVu", 12)
 
-    c.setFillColor(colors.HexColor("#2E7D32"))
-    c.rect(0, height - 90, width, 90, fill=1, stroke=0)
+    # Header
+    c.setFillColor(colors.green)
+    c.rect(0, height - 70, width, 70, fill=1)
 
     c.setFillColor(colors.white)
-    c.setFont(font, 22)
-    c.drawRightString(right, height - 45, rtl("Vendora Shop"))
+    c.setFont("DejaVu", 24)
+    c.drawRightString(width - 40, height - 40, "Vendora Shop")
 
-    c.setFont(font, 12)
-    c.drawRightString(right, height - 70, rtl("סיכום הזמנה / חשבונית עסקה"))
-
-    y = height - 125
+    y = height - 110
     c.setFillColor(colors.black)
-    c.setFont(font, 15)
-    c.drawRightString(right, y, rtl(f"מספר הזמנה: {order['order_number']}"))
-    y -= 28
+    c.setFont("DejaVu", 14)
 
-    c.setFont(font, 12)
-    c.drawRightString(right, y, rtl(f"שם לקוח: {order['customer_name']}"))
-    y -= 22
-    c.drawRightString(right, y, rtl(f"טלפון: {order['phone']}"))
-    y -= 22
-    c.drawRightString(right, y, rtl(f"כתובת: {order['address']}"))
-    y -= 35
-
-    c.setFont(font, 14)
-    c.setFillColor(colors.HexColor("#2E7D32"))
-    c.drawRightString(right, y, rtl("פרטי מוצרים"))
-    y -= 20
-
-    c.setFillColor(colors.black)
-    c.setFont(font, 11)
-
-    for item in order["cart"]:
-        total = float(item["price"]) * int(item["qty"])
-        line = f"{item['name']} × {item['qty']} = {money(total)}"
-        c.drawRightString(right, y, rtl(line))
-        y -= 20
-
-    y -= 15
-    c.line(left, y, right, y)
-    y -= 28
-
-    c.setFont(font, 12)
-    c.drawRightString(right, y, rtl(f"סה״כ מוצרים: {money(order['products_total'])}"))
-    y -= 22
-    c.drawRightString(right, y, rtl(f"דמי משלוח: {money(order['delivery_price'])}"))
-    y -= 22
-
-    c.setFont(font, 15)
-    c.setFillColor(colors.HexColor("#2E7D32"))
-    c.drawRightString(right, y, rtl(f"סה״כ לתשלום: {money(order['final_total'])}"))
+    c.drawRightString(width - 40, y, heb(f"מספר הזמנה: {order['order_number']}"))
+    y -= 30
+    c.drawRightString(width - 40, y, heb(f"שם: {order['customer_name']}"))
+    y -= 25
+    c.drawRightString(width - 40, y, heb(f"טלפון: {order['phone']}"))
+    y -= 25
+    c.drawRightString(width - 40, y, heb(f"כתובת: {order['address']}"))
     y -= 40
 
+    c.setFillColor(colors.green)
+    c.drawRightString(width - 40, y, heb("מוצרים"))
+    y -= 25
+
     c.setFillColor(colors.black)
-    c.setFont(font, 10)
-    c.drawRightString(right, y, rtl("המסמך מהווה סיכום הזמנה בלבד. התשלום יתבצע לאחר אישור נציג."))
-    y -= 18
-    c.drawRightString(right, y, rtl("תודה שקנית ב־Vendora Shop"))
+
+    for item in order["cart"]:
+        line = f"{item['name']} x {item['qty']} = ₪{item['price'] * item['qty']}"
+        c.drawRightString(width - 40, y, heb(line))
+        y -= 22
+
+    y -= 15
+    c.line(40, y, width - 40, y)
+    y -= 30
+
+    c.drawRightString(width - 40, y, heb(f"סהכ מוצרים: ₪{order['products_total']}"))
+    y -= 25
+    c.drawRightString(width - 40, y, heb(f"משלוח: ₪{order['delivery_price']}"))
+    y -= 25
+
+    c.setFillColor(colors.green)
+    c.setFont("DejaVu", 16)
+    c.drawRightString(width - 40, y, heb(f"סהכ לתשלום: ₪{order['final_total']}"))
+
+    y -= 50
+    c.setFillColor(colors.black)
+    c.setFont("DejaVu", 11)
+    c.drawRightString(width - 40, y, heb("תודה שקנית ב Vendora"))
 
     c.save()
-    return file_name
+    return filename
