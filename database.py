@@ -1,6 +1,6 @@
 import sqlite3
 
-DB_PATH = "vendora_shop.db"
+DB_PATH = "/data/vendora_shop.db"
 
 
 def get_connection():
@@ -26,7 +26,9 @@ def create_tables():
         )
     """)
 
-    existing_columns = [row[1] for row in cur.execute("PRAGMA table_info(products)").fetchall()]
+    existing_columns = [
+        row[1] for row in cur.execute("PRAGMA table_info(products)").fetchall()
+    ]
 
     columns_to_add = {
         "stock": "INTEGER DEFAULT 0",
@@ -51,8 +53,15 @@ def add_product(category, name, price, description="", max_qty=100, stock=0, sku
         (category, name, price, description, max_qty, stock, sku, image_file_id, active)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        category, name, float(price), description, int(max_qty),
-        int(stock), sku, image_file_id, int(active)
+        category,
+        name,
+        float(price),
+        description,
+        int(max_qty),
+        int(stock),
+        sku,
+        image_file_id,
+        int(active)
     ))
 
     conn.commit()
@@ -63,7 +72,6 @@ def get_active_products():
     conn = get_connection()
     cur = conn.cursor()
 
-    # חשוב: מציג גם מוצרים שאזלו מהמלאי, כל עוד הם פעילים
     cur.execute("""
         SELECT category, name, price, description, max_qty, stock, sku, image_file_id
         FROM products
