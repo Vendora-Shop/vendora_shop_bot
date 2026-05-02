@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 
 from config import ADMIN_ID
 from keyboards import admin_keyboard, main_keyboard
@@ -26,8 +26,6 @@ def is_admin(user_id):
 
 
 def product_names_keyboard():
-    from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-
     rows = get_all_products()
     keyboard = []
 
@@ -212,12 +210,21 @@ async def admin_flow(message: Message):
     if not is_admin(uid):
         return
 
+    txt = (message.text or "").strip()
+
+    # חשוב: לא לתפוס פקודות כמו /start
+    if txt.startswith("/"):
+        return
+
     state = admin_states.get(uid)
     if not state:
         return
 
-    txt = (message.text or "").strip()
     step = state.get("step")
+
+    # חשוב: אם האדמין רק נמצא בתפריט, לא לתפוס הודעות רגילות
+    if step == "admin":
+        return
 
     if step == "add_category":
         state["category"] = txt
