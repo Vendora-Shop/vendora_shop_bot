@@ -37,7 +37,6 @@ def create_invoice_pdf(order):
     row_dark = "#080808"
     border_dark = "#1F3315"
 
-    title_font = ImageFont.truetype(FONT_PATH, 46)
     label_font = ImageFont.truetype(FONT_PATH, 34)
     value_font = ImageFont.truetype(FONT_PATH, 34)
     address_font = ImageFont.truetype(FONT_PATH, 28)
@@ -47,10 +46,9 @@ def create_invoice_pdf(order):
     total_font = ImageFont.truetype(FONT_PATH, 62)
     note_font = ImageFont.truetype(FONT_PATH, 26)
 
-    # ===== HEADER =====
+    # HEADER
     draw.rectangle((0, 0, W, 260), fill="#000000")
 
-    # לוגו גדול בצד שמאל למעלה — רק לוגו אחד
     if os.path.exists(LOGO_PATH):
         logo = Image.open(LOGO_PATH).convert("RGB")
         logo.thumbnail((250, 250))
@@ -58,11 +56,11 @@ def create_invoice_pdf(order):
 
     draw.line((55, 265, W - 55, 265), fill=green, width=4)
 
-    # ===== ORDER TITLE =====
+    # TITLE
     y = 320
-    draw_rtl(draw, W - 70, y, "סיכום הזמנה", title_font, green)
+    draw_rtl(draw, W - 70, y, "סיכום הזמנה", section_font, green)
 
-    # ===== CUSTOMER DETAILS =====
+    # CUSTOMER DETAILS
     y = 385
     box_h = 315
     draw.rectangle((55, y, W - 55, y + box_h), fill=dark, outline=green, width=4)
@@ -85,26 +83,30 @@ def create_invoice_pdf(order):
     draw_rtl(draw, label_x, row_y, "כתובת:", label_font, green)
     draw_rtl(draw, value_x, row_y, order["address"], address_font, white)
 
-    # ===== PRODUCTS TITLE =====
+    # PRODUCTS TITLE
     y = 770
     draw_rtl(draw, W - 70, y, "פרטי מוצרים", section_font, green)
     y += 70
 
-    # ===== TABLE =====
+    # TABLE
     table_x1, table_x2 = 55, W - 55
-    product_x = W - 130
+    product_x = W - 145
     qty_x = 450
     price_x = 265
     total_x = 110
 
-    draw.rectangle((table_x1, y, table_x2, y + 76), fill=dark, outline=green, width=3)
+    header_h = 76
+    draw.rectangle((table_x1, y, table_x2, y + header_h), fill=dark, outline=green, width=3)
 
-    draw_rtl(draw, product_x, y + 50, "מוצר", table_font, green)
-    draw.text((qty_x, y + 46), rtl("כמות"), font=table_font, fill=green, anchor="mm")
-    draw.text((price_x, y + 46), rtl("מחיר"), font=table_font, fill=green, anchor="mm")
-    draw.text((total_x, y + 46), rtl("סה״כ"), font=table_font, fill=green, anchor="mm")
+    # כותרות במרכז התא, לא נוגעות בקווים
+    header_center_y = y + 37
 
-    y += 88
+    draw_rtl(draw, product_x, header_center_y + 10, "מוצר", table_font, green)
+    draw.text((qty_x, header_center_y + 6), rtl("כמות"), font=table_font, fill=green, anchor="mm")
+    draw.text((price_x, header_center_y + 6), rtl("מחיר"), font=table_font, fill=green, anchor="mm")
+    draw.text((total_x, header_center_y + 6), rtl("סה״כ"), font=table_font, fill=green, anchor="mm")
+
+    y += header_h + 12
 
     for item in order["cart"]:
         name = item["name"]
@@ -112,16 +114,19 @@ def create_invoice_pdf(order):
         price = float(item["price"])
         total = price * qty
 
-        draw.rectangle((table_x1, y, table_x2, y + 72), fill=row_dark, outline=border_dark, width=2)
+        row_h = 72
+        draw.rectangle((table_x1, y, table_x2, y + row_h), fill=row_dark, outline=border_dark, width=2)
 
-        draw_rtl(draw, product_x, y + 44, name, table_font, white)
-        draw.text((qty_x, y + 42), str(qty), font=table_font, fill=white, anchor="mm")
-        draw.text((price_x, y + 42), money_text(price), font=table_font, fill=white, anchor="mm")
-        draw.text((total_x, y + 42), money_text(total), font=table_font, fill=white, anchor="mm")
+        row_center_y = y + 36
 
-        y += 82
+        draw_rtl(draw, product_x, row_center_y + 10, name, table_font, white)
+        draw.text((qty_x, row_center_y + 6), str(qty), font=table_font, fill=white, anchor="mm")
+        draw.text((price_x, row_center_y + 6), money_text(price), font=table_font, fill=white, anchor="mm")
+        draw.text((total_x, row_center_y + 6), money_text(total), font=table_font, fill=white, anchor="mm")
 
-    # ===== SUMMARY =====
+        y += row_h + 10
+
+    # SUMMARY
     y += 30
     draw.line((55, y, W - 55, y), fill=green, width=4)
     y += 65
@@ -134,20 +139,24 @@ def create_invoice_pdf(order):
     draw_rtl(draw, W - 95, y, "דמי משלוח:", label_font, green)
     draw.text((365, y), money_text(order["delivery_price"]), font=value_font, fill=white, anchor="mm")
 
-    # ===== FINAL TOTAL =====
+    # FINAL TOTAL
     y += 95
-    draw.rectangle((55, y, W - 55, y + 135), fill="#071007", outline=green, width=6)
+    total_box_h = 135
+    draw.rectangle((55, y, W - 55, y + total_box_h), fill="#071007", outline=green, width=6)
 
-    draw_rtl(draw, W - 95, y + 82, "סה״כ לתשלום:", total_label_font, green)
-    draw.text((330, y + 78), money_text(order["final_total"]), font=total_font, fill=green, anchor="mm")
+    # מורם למעלה וממורכז בתוך הקופסה
+    total_text_y = y + 72
 
-    # ===== NOTES =====
+    draw_rtl(draw, W - 95, total_text_y, "סה״כ לתשלום:", total_label_font, green)
+    draw.text((330, total_text_y - 4), money_text(order["final_total"]), font=total_font, fill=green, anchor="mm")
+
+    # NOTES
     y += 185
     draw_rtl(draw, W - 95, y, "המסמך מהווה סיכום הזמנה בלבד.", note_font, gray)
     y += 36
     draw_rtl(draw, W - 95, y, "התשלום יתבצע לאחר אישור נציג.", note_font, gray)
 
-    # ===== FOOTER =====
+    # FOOTER
     draw.line((55, H - 150, W - 55, H - 150), fill="#222222", width=2)
     draw.text((70, H - 105), "Vendora Shop ©", font=note_font, fill=green)
     draw_rtl(draw, W - 95, H - 105, "תודה שקנית ב Vendora", note_font, white)
