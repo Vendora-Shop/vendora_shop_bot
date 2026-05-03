@@ -45,7 +45,7 @@ def create_invoice_pdf(order):
     value_font = ImageFont.truetype(FONT_PATH, 34)
     address_font = ImageFont.truetype(FONT_PATH, 28)
     section_font = ImageFont.truetype(FONT_PATH, 44)
-    table_font = ImageFont.truetype(FONT_PATH, 29)
+    table_font = ImageFont.truetype(FONT_PATH, 20)
     total_label_font = ImageFont.truetype(FONT_PATH, 46)
     total_font = ImageFont.truetype(FONT_PATH, 62)
     note_font = ImageFont.truetype(FONT_PATH, 26)
