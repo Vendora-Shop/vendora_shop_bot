@@ -41,13 +41,13 @@ def create_invoice_pdf(order):
     LINE_W = 1
     BOX_W = 2
 
-    label_font = ImageFont.truetype(FONT_PATH, 34)
-    value_font = ImageFont.truetype(FONT_PATH, 34)
-    address_font = ImageFont.truetype(FONT_PATH, 28)
-    section_font = ImageFont.truetype(FONT_PATH, 44)
-    table_font = ImageFont.truetype(FONT_PATH, 20)
-    total_label_font = ImageFont.truetype(FONT_PATH, 46)
-    total_font = ImageFont.truetype(FONT_PATH, 62)
+    label_font = ImageFont.truetype(FONT_PATH, 30)
+    value_font = ImageFont.truetype(FONT_PATH, 26)
+    address_font = ImageFont.truetype(FONT_PATH, 26)
+    section_font = ImageFont.truetype(FONT_PATH, 36)
+    table_font = ImageFont.truetype(FONT_PATH, 36)
+    total_label_font = ImageFont.truetype(FONT_PATH, 36)
+    total_font = ImageFont.truetype(FONT_PATH, 30)
     note_font = ImageFont.truetype(FONT_PATH, 26)
 
     # ==================================================
