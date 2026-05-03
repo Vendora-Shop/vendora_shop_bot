@@ -1,62 +1,60 @@
 import os
+from PIL import Image, ImageDraw, ImageFont
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.pdfbase import pdfmetrics
+from bidi.algorithm import get_display
 
 FONT_PATH = "fonts/DejaVuSans.ttf"
-pdfmetrics.registerFont(TTFont("Hebrew", FONT_PATH))
 
 
-def heb(text):
-    return text[::-1]
+def rtl(t):
+    return get_display(str(t))
 
 
 def create_invoice_pdf(order):
-    file_path = f"/tmp/{order['order_number']}.pdf"
+    img_path = f"/tmp/{order['order_number']}.png"
+    pdf_path = f"/tmp/{order['order_number']}.pdf"
 
-    c = canvas.Canvas(file_path, pagesize=A4)
-    width, height = A4
-    y = height - 50
+    img = Image.new("RGB", (1240, 1754), "white")
+    draw = ImageDraw.Draw(img)
 
-    c.setFont("Hebrew", 22)
-    c.drawRightString(550, y, heb("חשבונית Vendora Shop"))
-    y -= 45
+    title_font = ImageFont.truetype(FONT_PATH, 42)
+    font = ImageFont.truetype(FONT_PATH, 28)
 
-    c.setFont("Hebrew", 13)
+    y = 60
 
-    c.drawRightString(550, y, heb(f"מספר הזמנה: {order['order_number']}"))
-    y -= 28
-
-    c.drawRightString(550, y, heb(f"שם לקוח: {order['customer_name']}"))
-    y -= 28
-
-    c.drawRightString(550, y, heb(f"טלפון: {order['phone']}"))
-    y -= 28
-
-    c.drawRightString(550, y, heb(f"כתובת: {order['address']}"))
-    y -= 35
-
-    c.drawRightString(550, y, heb("מוצרים:"))
-    y -= 28
+    lines = [
+        "חשבונית Vendora Shop",
+        "",
+        f"מספר הזמנה: {order['order_number']}",
+        f"שם לקוח: {order['customer_name']}",
+        f"טלפון: {order['phone']}",
+        f"כתובת: {order['address']}",
+        "",
+        "מוצרים:"
+    ]
 
     for item in order["cart"]:
-        line = f"{item['name']} | {item['qty']} יח | ₪{item['price'] * item['qty']}"
-        c.drawRightString(550, y, heb(line))
-        y -= 24
+        lines.append(f"{item['name']} | כמות {item['qty']} | ₪{item['price'] * item['qty']}")
 
-    y -= 15
+    lines += [
+        "",
+        f"סהכ מוצרים: ₪{order['products_total']}",
+        f"משלוח: ₪{order['delivery_price']}",
+        f"סהכ לתשלום: ₪{order['final_total']}",
+        "",
+        "תודה שקנית אצל Vendora Shop"
+    ]
 
-    c.drawRightString(550, y, heb(f"סהכ מוצרים: ₪{order['products_total']}"))
-    y -= 25
+    for i, line in enumerate(lines):
+        f = title_font if i == 0 else font
+        draw.text((1150, y), rtl(line), font=f, fill="black", anchor="ra")
+        y += 55
 
-    c.drawRightString(550, y, heb(f"משלוח: ₪{order['delivery_price']}"))
-    y -= 25
+    img.save(img_path)
 
-    c.drawRightString(550, y, heb(f"סהכ לתשלום: ₪{order['final_total']}"))
-    y -= 45
-
-    c.drawRightString(550, y, heb("תודה שקנית אצל Vendora Shop"))
-
+    c = canvas.Canvas(pdf_path, pagesize=A4)
+    c.drawImage(img_path, 0, 0, width=A4[0], height=A4[1])
     c.save()
-    return file_path
+
+    return pdf_path
