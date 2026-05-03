@@ -37,30 +37,34 @@ def create_invoice_pdf(order):
     row_dark = "#080808"
     border_dark = "#1F3315"
 
-    title_font = ImageFont.truetype(FONT_PATH, 42)
+    title_font = ImageFont.truetype(FONT_PATH, 46)
     label_font = ImageFont.truetype(FONT_PATH, 34)
     value_font = ImageFont.truetype(FONT_PATH, 34)
-    small_value_font = ImageFont.truetype(FONT_PATH, 28)
+    address_font = ImageFont.truetype(FONT_PATH, 28)
     section_font = ImageFont.truetype(FONT_PATH, 44)
-    table_font = ImageFont.truetype(FONT_PATH, 30)
+    table_font = ImageFont.truetype(FONT_PATH, 29)
     total_label_font = ImageFont.truetype(FONT_PATH, 46)
     total_font = ImageFont.truetype(FONT_PATH, 62)
     note_font = ImageFont.truetype(FONT_PATH, 26)
 
     # ===== HEADER =====
-    draw.rectangle((0, 0, W, 250), fill="#000000")
+    draw.rectangle((0, 0, W, 260), fill="#000000")
 
+    # לוגו גדול בצד שמאל למעלה — רק לוגו אחד
     if os.path.exists(LOGO_PATH):
         logo = Image.open(LOGO_PATH).convert("RGB")
-        logo.thumbnail((230, 230))
-        img.paste(logo, (W - 285, 30))
+        logo.thumbnail((250, 250))
+        img.paste(logo, (70, 25))
 
-    draw_rtl(draw, 80, 95, "סיכום הזמנה", title_font, green, anchor="la")
     draw.line((55, 265, W - 55, 265), fill=green, width=4)
 
+    # ===== ORDER TITLE =====
+    y = 320
+    draw_rtl(draw, W - 70, y, "סיכום הזמנה", title_font, green)
+
     # ===== CUSTOMER DETAILS =====
-    y = 325
-    box_h = 330
+    y = 385
+    box_h = 315
     draw.rectangle((55, y, W - 55, y + box_h), fill=dark, outline=green, width=4)
 
     label_x = W - 95
@@ -79,31 +83,28 @@ def create_invoice_pdf(order):
         row_y += 68
 
     draw_rtl(draw, label_x, row_y, "כתובת:", label_font, green)
-    address = str(order["address"])
-
-    # כתובת בשורה קטנה יותר כדי שלא תצא מהמסגרת
-    draw_rtl(draw, value_x, row_y, address, small_value_font, white)
+    draw_rtl(draw, value_x, row_y, order["address"], address_font, white)
 
     # ===== PRODUCTS TITLE =====
-    y = 730
+    y = 770
     draw_rtl(draw, W - 70, y, "פרטי מוצרים", section_font, green)
     y += 70
 
     # ===== TABLE =====
     table_x1, table_x2 = 55, W - 55
-    product_x = W - 95
+    product_x = W - 130
     qty_x = 450
     price_x = 265
     total_x = 110
 
-    draw.rectangle((table_x1, y, table_x2, y + 70), fill=dark, outline=green, width=3)
+    draw.rectangle((table_x1, y, table_x2, y + 76), fill=dark, outline=green, width=3)
 
-    draw_rtl(draw, product_x, y + 43, "מוצר", table_font, green)
-    draw.text((qty_x, y + 40), rtl("כמות"), font=table_font, fill=green, anchor="mm")
-    draw.text((price_x, y + 40), rtl("מחיר"), font=table_font, fill=green, anchor="mm")
-    draw.text((total_x, y + 40), rtl("סה״כ"), font=table_font, fill=green, anchor="mm")
+    draw_rtl(draw, product_x, y + 50, "מוצר", table_font, green)
+    draw.text((qty_x, y + 46), rtl("כמות"), font=table_font, fill=green, anchor="mm")
+    draw.text((price_x, y + 46), rtl("מחיר"), font=table_font, fill=green, anchor="mm")
+    draw.text((total_x, y + 46), rtl("סה״כ"), font=table_font, fill=green, anchor="mm")
 
-    y += 82
+    y += 88
 
     for item in order["cart"]:
         name = item["name"]
@@ -113,10 +114,10 @@ def create_invoice_pdf(order):
 
         draw.rectangle((table_x1, y, table_x2, y + 72), fill=row_dark, outline=border_dark, width=2)
 
-        draw_rtl(draw, product_x, y + 43, name, table_font, white)
-        draw.text((qty_x, y + 40), str(qty), font=table_font, fill=white, anchor="mm")
-        draw.text((price_x, y + 40), money_text(price), font=table_font, fill=white, anchor="mm")
-        draw.text((total_x, y + 40), money_text(total), font=table_font, fill=white, anchor="mm")
+        draw_rtl(draw, product_x, y + 44, name, table_font, white)
+        draw.text((qty_x, y + 42), str(qty), font=table_font, fill=white, anchor="mm")
+        draw.text((price_x, y + 42), money_text(price), font=table_font, fill=white, anchor="mm")
+        draw.text((total_x, y + 42), money_text(total), font=table_font, fill=white, anchor="mm")
 
         y += 82
 
