@@ -1,60 +1,63 @@
-import os
-from PIL import Image, ImageDraw, ImageFont
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase import pdfmetrics
 from bidi.algorithm import get_display
+import arabic_reshaper
+import os
 
 FONT_PATH = "fonts/DejaVuSans.ttf"
 
-
-def rtl(t):
-    return get_display(str(t))
+pdfmetrics.registerFont(TTFont("Hebrew", FONT_PATH))
 
 
-def create_invoice_pdf(order):
-    img_path = f"/tmp/{order['order_number']}.png"
-    pdf_path = f"/tmp/{order['order_number']}.pdf"
+def rtl(text):
+    text = str(text)
+    reshaped = arabic_reshaper.reshape(text)
+    return get_display(reshaped)
 
-    img = Image.new("RGB", (1240, 1754), "white")
-    draw = ImageDraw.Draw(img)
 
-    title_font = ImageFont.truetype(FONT_PATH, 42)
-    font = ImageFont.truetype(FONT_PATH, 28)
+def draw_rtl(c, y, text, size=14):
+    c.setFont("Hebrew", size)
+    c.drawRightString(560, y, rtl(text))
 
-    y = 60
 
-    lines = [
-        "חשבונית Vendora Shop",
-        "",
-        f"מספר הזמנה: {order['order_number']}",
-        f"שם לקוח: {order['customer_name']}",
-        f"טלפון: {order['phone']}",
-        f"כתובת: {order['address']}",
-        "",
-        "מוצרים:"
-    ]
+def generate_pdf(order):
+    file_name = f"{order['order_id']}.pdf"
+    c = canvas.Canvas(file_name, pagesize=A4)
+    w, h = A4
 
-    for item in order["cart"]:
-        lines.append(f"{item['name']} | כמות {item['qty']} | ₪{item['price'] * item['qty']}")
+    y = h - 50
 
-    lines += [
-        "",
-        f"סהכ מוצרים: ₪{order['products_total']}",
-        f"משלוח: ₪{order['delivery_price']}",
-        f"סהכ לתשלום: ₪{order['final_total']}",
-        "",
-        "תודה שקנית אצל Vendora Shop"
-    ]
+    draw_rtl(c, y, "חשבונית Vendora Shop", 22)
+    y -= 50
 
-    for i, line in enumerate(lines):
-        f = title_font if i == 0 else font
-        draw.text((1150, y), rtl(line), font=f, fill="black", anchor="ra")
-        y += 55
+    draw_rtl(c, y, f"מספר הזמנה: {order['order_id']}")
+    y -= 30
+    draw_rtl(c, y, f"שם לקוח: {order['name']}")
+    y -= 30
+    draw_rtl(c, y, f"טלפון: {order['phone']}")
+    y -= 30
+    draw_rtl(c, y, f"כתובת: {order['address']}")
+    y -= 50
 
-    img.save(img_path)
+    draw_rtl(c, y, "מוצרים:")
+    y -= 30
 
-    c = canvas.Canvas(pdf_path, pagesize=A4)
-    c.drawImage(img_path, 0, 0, width=A4[0], height=A4[1])
+    for item in order["items"]:
+        line = f"{item['name']} | כמות {item['qty']} | ₪{int(item['price'])}"
+        draw_rtl(c, y, line)
+        y -= 25
+
+    y -= 20
+    draw_rtl(c, y, f"סהכ מוצרים: ₪{int(order['subtotal'])}")
+    y -= 30
+    draw_rtl(c, y, f"משלוח: ₪{int(order['delivery'])}")
+    y -= 30
+    draw_rtl(c, y, f"סהכ לתשלום: ₪{int(order['total'])}")
+    y -= 50
+
+    draw_rtl(c, y, "תודה שקנית אצל Vendora Shop")
+
     c.save()
-
-    return pdf_path
+    return file_name
