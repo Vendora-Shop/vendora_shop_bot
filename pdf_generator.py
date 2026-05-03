@@ -1,70 +1,78 @@
+from PIL import Image, ImageDraw, ImageFont
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.pdfbase import pdfmetrics
 from bidi.algorithm import get_display
-import arabic_reshaper
+import os
 
 FONT_PATH = "fonts/DejaVuSans.ttf"
 
-pdfmetrics.registerFont(TTFont("Hebrew", FONT_PATH))
-
 
 def rtl(text):
-    text = str(text)
-    reshaped = arabic_reshaper.reshape(text)
-    return get_display(reshaped)
+    return get_display(str(text), base_dir="R")
 
 
-def draw_rtl(c, y, text, size=14):
-    c.setFont("Hebrew", size)
-    c.drawRightString(560, y, rtl(text))
+def money(value):
+    value = float(value)
+    if value.is_integer():
+        return f"₪{int(value)}"
+    return f"₪{value:g}"
 
 
 def create_invoice_pdf(order):
-    file_name = f"{order['order_id']}.pdf"
+    img_path = f"/tmp/{order['order_number']}.png"
+    pdf_path = f"/tmp/{order['order_number']}.pdf"
 
-    c = canvas.Canvas(file_name, pagesize=A4)
-    w, h = A4
+    img = Image.new("RGB", (1240, 1754), "white")
+    draw = ImageDraw.Draw(img)
 
-    y = h - 50
+    title_font = ImageFont.truetype(FONT_PATH, 46)
+    font = ImageFont.truetype(FONT_PATH, 30)
+    small_font = ImageFont.truetype(FONT_PATH, 24)
 
-    draw_rtl(c, y, "חשבונית Vendora Shop", 22)
-    y -= 50
+    x = 1160
+    y = 70
 
-    draw_rtl(c, y, f"מספר הזמנה: {order['order_id']}")
-    y -= 30
+    draw.text((x, y), rtl("חשבונית Vendora Shop"), font=title_font, fill="black", anchor="ra")
+    y += 90
 
-    draw_rtl(c, y, f"שם לקוח: {order['name']}")
-    y -= 30
+    draw.text((x, y), rtl(f"מספר הזמנה: {order['order_number']}"), font=font, fill="black", anchor="ra")
+    y += 50
+    draw.text((x, y), rtl(f"שם לקוח: {order['customer_name']}"), font=font, fill="black", anchor="ra")
+    y += 50
+    draw.text((x, y), rtl(f"טלפון: {order['phone']}"), font=font, fill="black", anchor="ra")
+    y += 50
+    draw.text((x, y), rtl(f"כתובת: {order['address']}"), font=font, fill="black", anchor="ra")
+    y += 80
 
-    draw_rtl(c, y, f"טלפון: {order['phone']}")
-    y -= 30
+    draw.text((x, y), rtl("מוצרים:"), font=font, fill="black", anchor="ra")
+    y += 55
 
-    draw_rtl(c, y, f"כתובת: {order['address']}")
-    y -= 50
+    for item in order["cart"]:
+        name = item["name"]
+        qty = int(item["qty"])
+        price = float(item["price"])
+        total = price * qty
+        line = f"{name} | כמות: {qty} | סה״כ: {money(total)}"
+        draw.text((x, y), rtl(line), font=small_font, fill="black", anchor="ra")
+        y += 45
 
-    draw_rtl(c, y, "מוצרים:")
-    y -= 30
+    y += 40
+    draw.line((80, y, 1160, y), fill="black", width=2)
+    y += 60
 
-    for item in order["items"]:
-        line = f"{item['name']} | כמות {int(item['qty'])} | ₪{int(item['price'])}"
-        draw_rtl(c, y, line)
-        y -= 25
+    draw.text((x, y), rtl(f"סה״כ מוצרים: {money(order['products_total'])}"), font=font, fill="black", anchor="ra")
+    y += 50
+    draw.text((x, y), rtl(f"דמי משלוח: {money(order['delivery_price'])}"), font=font, fill="black", anchor="ra")
+    y += 50
+    draw.text((x, y), rtl(f"סה״כ לתשלום: {money(order['final_total'])}"), font=title_font, fill="black", anchor="ra")
+    y += 90
 
-    y -= 20
+    draw.text((x, y), rtl("תודה שקנית אצל Vendora Shop"), font=font, fill="black", anchor="ra")
 
-    draw_rtl(c, y, f"סהכ מוצרים: ₪{int(order['subtotal'])}")
-    y -= 30
+    img.save(img_path, "PNG")
 
-    draw_rtl(c, y, f"משלוח: ₪{int(order['delivery'])}")
-    y -= 30
-
-    draw_rtl(c, y, f"סהכ לתשלום: ₪{int(order['total'])}")
-    y -= 50
-
-    draw_rtl(c, y, "תודה שקנית אצל Vendora Shop")
-
+    c = canvas.Canvas(pdf_path, pagesize=A4)
+    c.drawImage(img_path, 0, 0, width=A4[0], height=A4[1])
     c.save()
 
-    return file_name
+    return pdf_path
