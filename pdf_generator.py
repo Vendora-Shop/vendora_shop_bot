@@ -39,7 +39,7 @@ def create_invoice_pdf(order):
 
     # קווים דקים יותר
     LINE_W = 1
-    BOX_W = 2
+    BOX_W = 1
 
     label_font = ImageFont.truetype(FONT_PATH, 28)
     value_font = ImageFont.truetype(FONT_PATH, 22)
