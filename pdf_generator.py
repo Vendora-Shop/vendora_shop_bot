@@ -78,7 +78,7 @@ def create_invoice_pdf(order):
         logo.thumbnail((380, 380))
         img.paste(logo, (55, 0))
 
-    draw.line((55, 265, W - 55, 265), fill=green, width=LINE_W)
+    draw.line((55, 265, W - 55, 300), fill=green, width=LINE_W)
 
     # =========================
     # TITLE - כחול
