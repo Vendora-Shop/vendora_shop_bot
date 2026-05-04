@@ -122,22 +122,21 @@ def has_digit(text):
 
 def cart_text(cart):
     if not cart:
-        return rtl(
-            "<b>🛒 הסל שלך</b>\n\n"
-            "הסל שלך ריק כרגע."
-        )
+        return rtl("<b>🛒 הסל שלך</b>\n\nהסל שלך ריק כרגע.")
 
     text = "<b>🛒 הסל שלך</b>\n\n"
 
     for item in cart:
         total = float(item["price"]) * int(item["qty"])
+
         text += (
             f"• <b>{h(item['name'])}</b>\n"
-            f"  כמות: <b>{int(item['qty'])}</b>\n"
-            f"  סה״כ: <b>{money(total)}</b>\n\n"
+            f"<b>כמות:</b> {int(item['qty'])}\n"
+            f"<b>סה״כ:</b> {money(total)}\n\n"
         )
 
-    text += f"<b>💰 סה״כ מוצרים: {money(cart_total(cart))}</b>"
+    text += f"<b>סה״כ מוצרים:</b> {money(cart_total(cart))}"
+
     return rtl(text)
 
 
@@ -169,12 +168,12 @@ def build_order_summary(data):
 
     text = (
         "<b>📦 סיכום הזמנה</b>\n\n"
-        f"<b>👤 שם לקוח:</b> {h(data['name'])}\n"
-        f"<b>📞 טלפון:</b> {h(data['phone'])}\n"
-        f"<b>📍 כתובת:</b> {h(address)}\n\n"
-        f"{cart_text(data['cart']).replace(RTL, '')}\n"
-        f"\n<b>🚚 דמי משלוח:</b> {money(delivery_price)}"
-        f"\n<b>💳 סה״כ לתשלום:</b> {money(final_total)}"
+         f"<b>👤 שם לקוח:</b> {h(data['name'])}\n"
+         f"<b>📞 טלפון:</b> {h(data['phone'])}\n"
+         f"<b>📍 כתובת:</b> {h(address)}\n\n"
+         f"{cart_text(data['cart']).replace(RTL, '')}\n"
+         f"<b>🚚 משלוח:</b> {money(delivery_price)}\n"
+         f"<b>סה״כ לתשלום:</b> {money(final_total)}"
         "\n\n<b>✅ אם הכול נכון לחץ על אשר הזמנה.</b>"
     )
 
