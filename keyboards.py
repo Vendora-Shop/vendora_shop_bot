@@ -5,7 +5,7 @@ def main_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🛒 חנות")],
-            [KeyboardButton(text="📞 שירות לקוחות")]
+            [KeyboardButton(text="👤 הפרטים שלי"), KeyboardButton(text="📞 שירות לקוחות")]
         ],
         resize_keyboard=True
     )
