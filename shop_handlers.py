@@ -2,6 +2,7 @@ from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, FSInputFile
 from html import escape
+from database import get_customer_profile, save_customer_profile
 
 from config import ADMIN_ID
 from keyboards import main_keyboard
