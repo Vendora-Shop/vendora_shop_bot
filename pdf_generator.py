@@ -71,7 +71,7 @@ def create_invoice_pdf(order):
     # =========================
     # HEADER
     # =========================
-    draw.rectangle((0, 0, W, 260), fill="#000000")
+   # draw.rectangle((0, 0, W, 260), fill="#000000")
 
     if os.path.exists(LOGO_PATH):
         logo = Image.open(LOGO_PATH).convert("RGB")
