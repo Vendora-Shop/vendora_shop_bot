@@ -128,17 +128,23 @@ def cart_text(cart):
     if not cart:
         return rtl("<b>🛒 הסל שלך</b>\n\nהסל שלך ריק כרגע.")
 
+    total = cart_total(cart)
+
     text = "<b>🛒 הסל שלך</b>\n\n"
 
     for item in cart:
-        total = float(item["price"]) * int(item["qty"])
         text += (
             f"• <b>{h(item['name'])}</b>\n"
-            f"{field('כמות', int(item['qty']))}\n"
-            f"{field('סה״כ', money(total))}\n\n"
+            f"{field('כמות', int(item['qty']))}\n\n"
         )
 
-    text += f"<b>סה״כ מוצרים:</b> {money(cart_total(cart))}"
+    text += "──────────────\n"
+
+    if len(cart) == 1:
+        text += f"<b>סה״כ:</b> {money(total)}"
+    else:
+        text += f"<b>סה״כ מוצרים:</b> {money(total)}"
+
     return rtl(text)
 
 
