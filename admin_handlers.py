@@ -1,6 +1,7 @@
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from html import escape
 
 from config import ADMIN_ID
 from keyboards import admin_keyboard, main_keyboard, order_status_keyboard
@@ -26,9 +27,11 @@ from database import (
 router = Router()
 admin_states = {}
 
+RTL = "\u200F"
+
 
 STATUS_TEXT = {
-    "new": "🆕 הזמנה חדשה",
+    "new": "🆕 חדשה",
     "approved": "✅ אושרה",
     "processing": "📦 בטיפול",
     "shipping": "🚚 יצאה למשלוח",
@@ -54,6 +57,25 @@ CLIENT_STATUS_MESSAGE = {
     "done": "✅ ההזמנה הושלמה. תודה שקנית ב־Vendora Shop!",
     "cancelled": "❌ ההזמנה בוטלה. לפרטים נוספים ניתן לפנות לשירות לקוחות.",
 }
+
+
+def h(text):
+    return escape(str(text))
+
+
+def rtl(text):
+    return RTL + str(text)
+
+
+def money(value):
+    value = float(value)
+    if value.is_integer():
+        return f"{int(value)}₪"
+    return f"{value:g}₪"
+
+
+def field(label, value):
+    return f"<b>{h(label)}:</b> {h(value)}"
 
 
 def is_admin(user_id):
@@ -96,23 +118,65 @@ def product_names_keyboard():
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
+def status_label(status):
+    return STATUS_TEXT.get(status, status)
+
+
 def format_order(order):
-    status = STATUS_TEXT.get(order["status"], order["status"])
+    text = (
+        f"<b>🧾 הזמנה {h(order['order_number'])}</b>\n\n"
+        f"{field('סטטוס', status_label(order['status']))}\n"
+        f"{field('תאריך', order['created_at'])}\n\n"
+        f"{field('שם לקוח', order['customer_name'])}\n"
+        f"{field('טלפון', order['phone'])}\n"
+        f"{field('כתובת', order['address'])}\n\n"
+        "<b>🛒 מוצרים</b>\n\n"
+    )
 
-    text = f"🧾 הזמנה {order['order_number']}\n"
-    text += f"סטטוס: {status}\n"
-    text += f"👤 לקוח: {order['customer_name']}\n"
-    text += f"📞 טלפון: {order['phone']}\n"
-    text += f"📍 כתובת: {order['address']}\n"
-    text += f"💰 סה״כ: ₪{float(order['final_total']):g}\n"
-    text += f"🕒 נוצרה: {order['created_at']}\n\n"
-    text += "🛒 מוצרים:\n"
+    total_units = 0
 
-    for item in order["cart"]:
-        total = float(item["price"]) * int(item["qty"])
-        text += f"• {item['name']} × {item['qty']} = ₪{total:g}\n"
+    for index, item in enumerate(order["cart"], start=1):
+        qty = int(item["qty"])
+        price = float(item["price"])
+        total = price * qty
+        total_units += qty
 
-    return text
+        text += (
+            f"<b>{index}. {h(item['name'])}</b>\n"
+            f"{field('כמות', qty)}\n"
+            f"{field('סה״כ מוצר', money(total))}\n\n"
+        )
+
+    text += (
+        f"{field('כמות מוצרים', total_units)}\n"
+        f"{field('סה״כ מוצרים', money(order['products_total']))}\n"
+        f"{field('משלוח', money(order['delivery_price']))}\n"
+        f"{field('סה״כ לתשלום', money(order['final_total']))}\n\n"
+        f"{field('Telegram ID', order['telegram_id'])}\n"
+        f"{field('Telegram', order['telegram_name'] or '-')}"
+    )
+
+    return rtl(text)
+
+
+def format_product_row(row):
+    product_id, category, name, price, description, max_qty, stock, sku, image_file_id, active = row
+
+    status = "פעיל ✅" if active else "כבוי ❌"
+    image = "יש תמונה 🖼️" if image_file_id else "ללא תמונה ⚠️"
+    stock_text = "אזל מהמלאי ❌" if int(stock) <= 0 else f"{stock}"
+
+    return (
+        f"<b>🛍️ {h(name)}</b>\n"
+        f"{field('סטטוס', status)}\n"
+        f"{field('קטגוריה', category)}\n"
+        f"{field('מחיר', money(price))}\n"
+        f"{field('מלאי', stock_text)}\n"
+        f"{field('מקסימום להזמנה', max_qty)}\n"
+        f"{field('מק״ט', sku or '-')}\n"
+        f"{field('תמונה', image)}\n"
+        f"{field('תיאור', description or '-')}"
+    )
 
 
 @router.message(Command("admin"))
@@ -121,7 +185,15 @@ async def admin_panel(message: Message):
         return
 
     admin_states[message.from_user.id] = {"step": "admin"}
-    await message.answer("🔐 פאנל ניהול Vendora", reply_markup=admin_keyboard())
+
+    await message.answer(
+        rtl(
+            "<b>🔐 פאנל ניהול Vendora</b>\n\n"
+            "בחר פעולה מהתפריט למטה."
+        ),
+        reply_markup=admin_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "⬅️ יציאה מניהול")
@@ -130,7 +202,12 @@ async def exit_admin(message: Message):
         return
 
     admin_states.pop(message.from_user.id, None)
-    await message.answer("יצאת מפאנל הניהול.", reply_markup=main_keyboard())
+
+    await message.answer(
+        rtl("<b>✅ יצאת מפאנל הניהול.</b>"),
+        reply_markup=main_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "⬅️ חזרה לניהול")
@@ -139,7 +216,12 @@ async def back_admin(message: Message):
         return
 
     admin_states[message.from_user.id] = {"step": "admin"}
-    await message.answer("חזרת לפאנל הניהול.", reply_markup=admin_keyboard())
+
+    await message.answer(
+        rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
+        reply_markup=admin_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "🧾 הזמנות אחרונות")
@@ -150,11 +232,16 @@ async def recent_orders(message: Message):
     orders = get_recent_orders(10)
 
     if not orders:
-        await message.answer("אין הזמנות במערכת.")
+        await message.answer(rtl("<b>🧾 הזמנות אחרונות</b>\n\nאין הזמנות במערכת."), parse_mode="HTML")
         return
 
+    await message.answer(
+        rtl(f"<b>🧾 הזמנות אחרונות</b>\n\nנמצאו {len(orders)} הזמנות אחרונות."),
+        parse_mode="HTML"
+    )
+
     for order in orders:
-        await message.answer(format_order(order))
+        await message.answer(format_order(order), parse_mode="HTML")
 
 
 @router.message(F.text == "🆕 הזמנות חדשות")
@@ -165,11 +252,16 @@ async def new_orders(message: Message):
     orders = get_orders_by_status("new", 20)
 
     if not orders:
-        await message.answer("אין הזמנות חדשות.")
+        await message.answer(rtl("<b>🆕 הזמנות חדשות</b>\n\nאין הזמנות חדשות כרגע."), parse_mode="HTML")
         return
 
+    await message.answer(
+        rtl(f"<b>🆕 הזמנות חדשות</b>\n\nנמצאו {len(orders)} הזמנות חדשות."),
+        parse_mode="HTML"
+    )
+
     for order in orders:
-        await message.answer(format_order(order))
+        await message.answer(format_order(order), parse_mode="HTML")
 
 
 @router.message(F.text == "🔎 חפש הזמנה")
@@ -178,7 +270,11 @@ async def search_order_start(message: Message):
         return
 
     admin_states[message.from_user.id] = {"step": "search_order"}
-    await message.answer("רשום מספר הזמנה. לדוגמה: V1001")
+
+    await message.answer(
+        rtl("<b>🔎 חיפוש הזמנה</b>\n\nרשום מספר הזמנה.\nלדוגמה: V1001"),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "📞 חפש לפי טלפון")
@@ -187,7 +283,11 @@ async def search_by_phone_start(message: Message):
         return
 
     admin_states[message.from_user.id] = {"step": "search_phone"}
-    await message.answer("רשום מספר טלפון לחיפוש.\nלדוגמה: 0547937503")
+
+    await message.answer(
+        rtl("<b>📞 חיפוש לפי טלפון</b>\n\nרשום מספר טלפון לחיפוש.\nלדוגמה: 0547937503"),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "📊 סטטיסטיקה יומית")
@@ -201,22 +301,22 @@ async def daily_statistics(message: Message):
     top_qty = stats["top_qty"]
 
     text = (
-        f"📊 סטטיסטיקה יומית\n"
-        f"📅 תאריך: {stats['date']}\n\n"
-        f"🧾 סה״כ הזמנות: {stats['total_orders']}\n"
-        f"💰 סה״כ מחזור: ₪{stats['total_money']:g}\n\n"
-        f"🆕 חדשות: {stats['new']}\n"
-        f"✅ אושרו: {stats['approved']}\n"
-        f"📦 בטיפול: {stats['processing']}\n"
-        f"🚚 במשלוח: {stats['shipping']}\n"
-        f"💰 שולמו: {stats['paid']}\n"
-        f"✅ הושלמו: {stats['done']}\n"
-        f"❌ בוטלו: {stats['cancelled']}\n\n"
-        f"🏆 מוצר מוביל: {top_product}\n"
-        f"🔢 כמות נמכרת: {top_qty}"
+        "<b>📊 סטטיסטיקה יומית</b>\n\n"
+        f"{field('תאריך', stats['date'])}\n\n"
+        f"{field('סה״כ הזמנות', stats['total_orders'])}\n"
+        f"{field('סה״כ מחזור', money(stats['total_money']))}\n\n"
+        f"{field('חדשות', stats['new'])}\n"
+        f"{field('אושרו', stats['approved'])}\n"
+        f"{field('בטיפול', stats['processing'])}\n"
+        f"{field('במשלוח', stats['shipping'])}\n"
+        f"{field('שולמו', stats['paid'])}\n"
+        f"{field('הושלמו', stats['done'])}\n"
+        f"{field('בוטלו', stats['cancelled'])}\n\n"
+        f"{field('מוצר מוביל', top_product)}\n"
+        f"{field('כמות נמכרת', top_qty)}"
     )
 
-    await message.answer(text)
+    await message.answer(rtl(text), parse_mode="HTML")
 
 
 @router.message(F.text == "🔄 עדכן סטטוס הזמנה")
@@ -225,7 +325,11 @@ async def update_order_start(message: Message):
         return
 
     admin_states[message.from_user.id] = {"step": "status_order_number"}
-    await message.answer("רשום מספר הזמנה לעדכון סטטוס. לדוגמה: V1001")
+
+    await message.answer(
+        rtl("<b>🔄 עדכון סטטוס הזמנה</b>\n\nרשום מספר הזמנה לעדכון.\nלדוגמה: V1001"),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "📦 רשימת מוצרים")
@@ -236,31 +340,16 @@ async def products_list(message: Message):
     rows = get_all_products()
 
     if not rows:
-        await message.answer("אין מוצרים במערכת.")
+        await message.answer(rtl("<b>📦 רשימת מוצרים</b>\n\nאין מוצרים במערכת."), parse_mode="HTML")
         return
 
-    text = "📦 רשימת מוצרים:\n\n"
+    await message.answer(
+        rtl(f"<b>📦 רשימת מוצרים</b>\n\nנמצאו {len(rows)} מוצרים."),
+        parse_mode="HTML"
+    )
 
     for row in rows:
-        product_id, category, name, price, description, max_qty, stock, sku, image_file_id, active = row
-
-        status = "✅ פעיל" if active else "❌ כבוי"
-        image = "🖼️ יש תמונה" if image_file_id else "⚠️ ללא תמונה"
-        stock_text = "❌ אזל מהמלאי" if int(stock) <= 0 else f"📦 מלאי: {stock}"
-
-        text += (
-            f"━━━━━━━━━━━━\n"
-            f"🛍️ {name}\n"
-            f"{status} | {image}\n"
-            f"קטגוריה: {category}\n"
-            f"מק״ט: {sku or '-'}\n"
-            f"💰 מחיר: ₪{float(price):g}\n"
-            f"{stock_text}\n"
-            f"🔢 מקסימום להזמנה: {max_qty}\n"
-            f"📝 תיאור: {description or '-'}\n\n"
-        )
-
-    await message.answer(text)
+        await message.answer(rtl(format_product_row(row)), parse_mode="HTML")
 
 
 @router.message(F.text == "➕ הוסף מוצר")
@@ -269,7 +358,11 @@ async def add_product_start(message: Message):
         return
 
     admin_states[message.from_user.id] = {"step": "add_category"}
-    await message.answer("רשום קטגוריה למוצר.\nלדוגמה: תיק משלוחים")
+
+    await message.answer(
+        rtl("<b>➕ הוספת מוצר</b>\n\nרשום קטגוריה למוצר.\nלדוגמה: תיק משלוחים"),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "✏️ שנה מחיר")
@@ -278,7 +371,12 @@ async def price_start(message: Message):
         return
 
     admin_states[message.from_user.id] = {"step": "price_name"}
-    await message.answer("בחר מוצר לשינוי מחיר:", reply_markup=product_names_keyboard())
+
+    await message.answer(
+        rtl("<b>✏️ שינוי מחיר</b>\n\nבחר מוצר לשינוי מחיר:"),
+        reply_markup=product_names_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "📝 שנה תיאור")
@@ -287,7 +385,12 @@ async def description_start(message: Message):
         return
 
     admin_states[message.from_user.id] = {"step": "description_name"}
-    await message.answer("בחר מוצר לשינוי תיאור:", reply_markup=product_names_keyboard())
+
+    await message.answer(
+        rtl("<b>📝 שינוי תיאור</b>\n\nבחר מוצר לשינוי תיאור:"),
+        reply_markup=product_names_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "📊 עדכן מלאי")
@@ -296,7 +399,12 @@ async def stock_start(message: Message):
         return
 
     admin_states[message.from_user.id] = {"step": "stock_name"}
-    await message.answer("בחר מוצר לעדכון מלאי:", reply_markup=product_names_keyboard())
+
+    await message.answer(
+        rtl("<b>📊 עדכון מלאי</b>\n\nבחר מוצר לעדכון מלאי:"),
+        reply_markup=product_names_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "➕ הוסף למלאי")
@@ -305,7 +413,12 @@ async def add_stock_start(message: Message):
         return
 
     admin_states[message.from_user.id] = {"step": "add_stock_name"}
-    await message.answer("בחר מוצר להוספת מלאי:", reply_markup=product_names_keyboard())
+
+    await message.answer(
+        rtl("<b>➕ הוספה למלאי</b>\n\nבחר מוצר להוספת מלאי:"),
+        reply_markup=product_names_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "🖼️ עדכן תמונה")
@@ -314,7 +427,12 @@ async def image_start(message: Message):
         return
 
     admin_states[message.from_user.id] = {"step": "image_name"}
-    await message.answer("בחר מוצר לעדכון תמונה:", reply_markup=product_names_keyboard())
+
+    await message.answer(
+        rtl("<b>🖼️ עדכון תמונה</b>\n\nבחר מוצר לעדכון תמונה:"),
+        reply_markup=product_names_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "🔴 כבה מוצר")
@@ -323,7 +441,12 @@ async def off_start(message: Message):
         return
 
     admin_states[message.from_user.id] = {"step": "off_name"}
-    await message.answer("בחר מוצר לכיבוי:", reply_markup=product_names_keyboard())
+
+    await message.answer(
+        rtl("<b>🔴 כיבוי מוצר</b>\n\nבחר מוצר לכיבוי:"),
+        reply_markup=product_names_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "🟢 הפעל מוצר")
@@ -332,7 +455,12 @@ async def on_start(message: Message):
         return
 
     admin_states[message.from_user.id] = {"step": "on_name"}
-    await message.answer("בחר מוצר להפעלה:", reply_markup=product_names_keyboard())
+
+    await message.answer(
+        rtl("<b>🟢 הפעלת מוצר</b>\n\nבחר מוצר להפעלה:"),
+        reply_markup=product_names_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "🗑️ מחק מוצר")
@@ -341,7 +469,12 @@ async def delete_start(message: Message):
         return
 
     admin_states[message.from_user.id] = {"step": "delete_name"}
-    await message.answer("בחר מוצר למחיקה:", reply_markup=product_names_keyboard())
+
+    await message.answer(
+        rtl("<b>🗑️ מחיקת מוצר</b>\n\nבחר מוצר למחיקה:"),
+        reply_markup=product_names_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.photo)
@@ -362,10 +495,12 @@ async def handle_photo(message: Message):
     ok = set_product_image(product_name, file_id)
     admin_states[uid] = {"step": "admin"}
 
-    await message.answer(
-        f"✅ התמונה עודכנה למוצר:\n{product_name}" if ok else "המוצר לא נמצא.",
-        reply_markup=admin_keyboard()
-    )
+    if ok:
+        text = f"<b>✅ התמונה עודכנה בהצלחה</b>\n\n{field('מוצר', product_name)}"
+    else:
+        text = "<b>⚠️ המוצר לא נמצא.</b>"
+
+    await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
 
 
 @router.message(is_admin_active_step)
@@ -381,10 +516,14 @@ async def admin_flow(message: Message):
         admin_states[uid] = {"step": "admin"}
 
         if not order:
-            await message.answer("ההזמנה לא נמצאה.", reply_markup=admin_keyboard())
+            await message.answer(
+                rtl("<b>⚠️ ההזמנה לא נמצאה.</b>"),
+                reply_markup=admin_keyboard(),
+                parse_mode="HTML"
+            )
             return
 
-        await message.answer(format_order(order), reply_markup=admin_keyboard())
+        await message.answer(format_order(order), reply_markup=admin_keyboard(), parse_mode="HTML")
         return
 
     if step == "search_phone":
@@ -393,13 +532,21 @@ async def admin_flow(message: Message):
         admin_states[uid] = {"step": "admin"}
 
         if not orders:
-            await message.answer("לא נמצאו הזמנות למספר הזה.", reply_markup=admin_keyboard())
+            await message.answer(
+                rtl("<b>⚠️ לא נמצאו הזמנות למספר הזה.</b>"),
+                reply_markup=admin_keyboard(),
+                parse_mode="HTML"
+            )
             return
 
-        await message.answer(f"נמצאו {len(orders)} הזמנות למספר {txt}:", reply_markup=admin_keyboard())
+        await message.answer(
+            rtl(f"<b>📞 תוצאות חיפוש</b>\n\nנמצאו {len(orders)} הזמנות למספר {h(txt)}."),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
 
         for order in orders:
-            await message.answer(format_order(order))
+            await message.answer(format_order(order), parse_mode="HTML")
 
         return
 
@@ -407,21 +554,31 @@ async def admin_flow(message: Message):
         order = get_order_by_number(txt)
 
         if not order:
-            await message.answer("ההזמנה לא נמצאה. רשום מספר הזמנה תקין.")
+            await message.answer(rtl("<b>⚠️ ההזמנה לא נמצאה.</b>\nרשום מספר הזמנה תקין."), parse_mode="HTML")
             return
 
         state["order_number"] = txt
         state["step"] = "status_value"
 
         await message.answer(
-            f"נבחרה הזמנה {txt}\nבחר סטטוס חדש:",
-            reply_markup=order_status_keyboard()
+            rtl(
+                f"<b>🔄 עדכון סטטוס</b>\n\n"
+                f"{field('הזמנה', txt)}\n"
+                f"{field('סטטוס נוכחי', status_label(order['status']))}\n\n"
+                "בחר סטטוס חדש:"
+            ),
+            reply_markup=order_status_keyboard(),
+            parse_mode="HTML"
         )
         return
 
     if step == "status_value":
         if txt not in STATUS_BY_BUTTON:
-            await message.answer("בחר סטטוס מתוך הכפתורים.")
+            await message.answer(
+                rtl("<b>⚠️ בחר סטטוס מתוך הכפתורים בלבד.</b>"),
+                reply_markup=order_status_keyboard(),
+                parse_mode="HTML"
+            )
             return
 
         order_number = state["order_number"]
@@ -433,7 +590,11 @@ async def admin_flow(message: Message):
         admin_states[uid] = {"step": "admin"}
 
         if not ok or not order:
-            await message.answer("לא הצלחתי לעדכן את ההזמנה.", reply_markup=admin_keyboard())
+            await message.answer(
+                rtl("<b>⚠️ לא הצלחתי לעדכן את ההזמנה.</b>"),
+                reply_markup=admin_keyboard(),
+                parse_mode="HTML"
+            )
             return
 
         client_msg = CLIENT_STATUS_MESSAGE.get(new_status, "סטטוס ההזמנה שלך עודכן.")
@@ -441,28 +602,41 @@ async def admin_flow(message: Message):
         try:
             await message.bot.send_message(
                 order["telegram_id"],
-                f"{client_msg}\n\n🧾 מספר הזמנה: {order_number}"
+                rtl(f"{client_msg}\n\n{field('מספר הזמנה', order_number)}"),
+                parse_mode="HTML"
             )
         except Exception:
             pass
 
         await message.answer(
-            f"✅ סטטוס ההזמנה עודכן:\n"
-            f"{order_number} → {STATUS_TEXT.get(new_status, new_status)}",
-            reply_markup=admin_keyboard()
+            rtl(
+                "<b>✅ סטטוס ההזמנה עודכן</b>\n\n"
+                f"{field('מספר הזמנה', order_number)}\n"
+                f"{field('סטטוס חדש', status_label(new_status))}"
+            ),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
         )
         return
 
     if step == "add_category":
+        if len(txt) < 2:
+            await message.answer(rtl("<b>⚠️ נא לרשום קטגוריה תקינה.</b>"), parse_mode="HTML")
+            return
+
         state["category"] = txt
         state["step"] = "add_name"
-        await message.answer("רשום שם מוצר.")
+        await message.answer(rtl("<b>➕ הוספת מוצר</b>\n\nרשום שם מוצר."), parse_mode="HTML")
         return
 
     if step == "add_name":
+        if len(txt) < 2:
+            await message.answer(rtl("<b>⚠️ נא לרשום שם מוצר תקין.</b>"), parse_mode="HTML")
+            return
+
         state["name"] = txt
         state["step"] = "add_price"
-        await message.answer("רשום מחיר בשקלים. לדוגמה: 548")
+        await message.answer(rtl("<b>💰 מחיר מוצר</b>\n\nרשום מחיר בשקלים.\nלדוגמה: 548"), parse_mode="HTML")
         return
 
     if step == "add_price":
@@ -471,38 +645,38 @@ async def admin_flow(message: Message):
             if price <= 0:
                 raise ValueError
         except Exception:
-            await message.answer("נא לרשום מחיר תקין במספרים בלבד.")
+            await message.answer(rtl("<b>⚠️ נא לרשום מחיר תקין במספרים בלבד.</b>"), parse_mode="HTML")
             return
 
         state["price"] = price
         state["step"] = "add_description"
-        await message.answer("רשום תיאור קצר למוצר.")
+        await message.answer(rtl("<b>📝 תיאור מוצר</b>\n\nרשום תיאור קצר למוצר."), parse_mode="HTML")
         return
 
     if step == "add_description":
         state["description"] = txt
         state["step"] = "add_max_qty"
-        await message.answer("רשום כמות מקסימלית להזמנה אחת. לדוגמה: 10")
+        await message.answer(rtl("<b>🔢 כמות מקסימלית</b>\n\nרשום כמות מקסימלית להזמנה אחת.\nלדוגמה: 10"), parse_mode="HTML")
         return
 
     if step == "add_max_qty":
         if not txt.isdigit() or int(txt) <= 0:
-            await message.answer("נא לרשום מספר תקין.")
+            await message.answer(rtl("<b>⚠️ נא לרשום מספר תקין.</b>"), parse_mode="HTML")
             return
 
         state["max_qty"] = int(txt)
         state["step"] = "add_stock"
-        await message.answer("רשום מלאי נוכחי. לדוגמה: 37")
+        await message.answer(rtl("<b>📦 מלאי נוכחי</b>\n\nרשום מלאי נוכחי.\nלדוגמה: 37"), parse_mode="HTML")
         return
 
     if step == "add_stock":
         if not txt.isdigit() or int(txt) < 0:
-            await message.answer("נא לרשום מלאי תקין במספרים בלבד.")
+            await message.answer(rtl("<b>⚠️ נא לרשום מלאי תקין במספרים בלבד.</b>"), parse_mode="HTML")
             return
 
         state["stock"] = int(txt)
         state["step"] = "add_sku"
-        await message.answer("רשום מק״ט / קוד מוצר. אם אין, רשום 0")
+        await message.answer(rtl("<b>🏷️ מק״ט</b>\n\nרשום מק״ט / קוד מוצר.\nאם אין, רשום 0"), parse_mode="HTML")
         return
 
     if step == "add_sku":
@@ -522,27 +696,36 @@ async def admin_flow(message: Message):
 
         admin_states[uid] = {"step": "admin"}
 
-        await message.answer(
-            f"✅ המוצר נוסף בהצלחה:\n\n"
-            f"קטגוריה: {state['category']}\n"
-            f"מוצר: {state['name']}\n"
-            f"מחיר: ₪{float(state['price']):g}\n"
-            f"מלאי: {state['stock']}\n"
-            f"מקסימום להזמנה: {state['max_qty']}\n\n"
-            f"כדי להוסיף תמונה לחץ: 🖼️ עדכן תמונה",
-            reply_markup=admin_keyboard()
+        text = (
+            "<b>✅ המוצר נוסף בהצלחה</b>\n\n"
+            f"{field('קטגוריה', state['category'])}\n"
+            f"{field('מוצר', state['name'])}\n"
+            f"{field('מחיר', money(state['price']))}\n"
+            f"{field('מלאי', state['stock'])}\n"
+            f"{field('מקסימום להזמנה', state['max_qty'])}\n\n"
+            "כדי להוסיף תמונה לחץ על: 🖼️ עדכן תמונה"
         )
+
+        await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
         return
 
     if step == "price_name":
         product = get_product_by_name(txt)
         if not product:
-            await message.answer("המוצר לא נמצא. בחר מוצר מהרשימה.", reply_markup=product_names_keyboard())
+            await message.answer(
+                rtl("<b>⚠️ המוצר לא נמצא.</b>\nבחר מוצר מהרשימה."),
+                reply_markup=product_names_keyboard(),
+                parse_mode="HTML"
+            )
             return
 
         state["product_name"] = txt
         state["step"] = "price_value"
-        await message.answer(f"מחיר נוכחי: ₪{float(product['price']):g}\nרשום מחיר חדש.")
+
+        await message.answer(
+            rtl(f"<b>✏️ שינוי מחיר</b>\n\n{field('מחיר נוכחי', money(product['price']))}\nרשום מחיר חדש."),
+            parse_mode="HTML"
+        )
         return
 
     if step == "price_value":
@@ -551,126 +734,140 @@ async def admin_flow(message: Message):
             if price <= 0:
                 raise ValueError
         except Exception:
-            await message.answer("נא לרשום מחיר תקין.")
+            await message.answer(rtl("<b>⚠️ נא לרשום מחיר תקין.</b>"), parse_mode="HTML")
             return
 
         ok = set_product_price(state["product_name"], price)
         admin_states[uid] = {"step": "admin"}
 
-        await message.answer(
-            f"✅ המחיר עודכן ל־₪{price:g}" if ok else "המוצר לא נמצא.",
-            reply_markup=admin_keyboard()
-        )
+        text = f"<b>✅ המחיר עודכן</b>\n\n{field('מחיר חדש', money(price))}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
+        await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
         return
 
     if step == "description_name":
         product = get_product_by_name(txt)
         if not product:
-            await message.answer("המוצר לא נמצא. בחר מוצר מהרשימה.", reply_markup=product_names_keyboard())
+            await message.answer(
+                rtl("<b>⚠️ המוצר לא נמצא.</b>\nבחר מוצר מהרשימה."),
+                reply_markup=product_names_keyboard(),
+                parse_mode="HTML"
+            )
             return
 
         state["product_name"] = txt
         state["step"] = "description_text"
-        await message.answer("רשום תיאור חדש למוצר.")
+        await message.answer(rtl("<b>📝 שינוי תיאור</b>\n\nרשום תיאור חדש למוצר."), parse_mode="HTML")
         return
 
     if step == "description_text":
         ok = set_product_description(state["product_name"], txt)
         admin_states[uid] = {"step": "admin"}
 
-        await message.answer(
-            "✅ התיאור עודכן." if ok else "המוצר לא נמצא.",
-            reply_markup=admin_keyboard()
-        )
+        text = "<b>✅ התיאור עודכן.</b>" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
+        await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
         return
 
     if step == "stock_name":
         product = get_product_by_name(txt)
         if not product:
-            await message.answer("המוצר לא נמצא. בחר מוצר מהרשימה.", reply_markup=product_names_keyboard())
+            await message.answer(
+                rtl("<b>⚠️ המוצר לא נמצא.</b>\nבחר מוצר מהרשימה."),
+                reply_markup=product_names_keyboard(),
+                parse_mode="HTML"
+            )
             return
 
         state["product_name"] = txt
         state["step"] = "stock_value"
-        await message.answer(f"מלאי נוכחי: {product['stock']}\nרשום מלאי חדש.")
+
+        await message.answer(
+            rtl(f"<b>📊 עדכון מלאי</b>\n\n{field('מלאי נוכחי', product['stock'])}\nרשום מלאי חדש."),
+            parse_mode="HTML"
+        )
         return
 
     if step == "stock_value":
         if not txt.isdigit() or int(txt) < 0:
-            await message.answer("נא לרשום מלאי תקין.")
+            await message.answer(rtl("<b>⚠️ נא לרשום מלאי תקין.</b>"), parse_mode="HTML")
             return
 
         ok = set_product_stock(state["product_name"], int(txt))
         admin_states[uid] = {"step": "admin"}
 
-        await message.answer(
-            "✅ המלאי עודכן." if ok else "המוצר לא נמצא.",
-            reply_markup=admin_keyboard()
-        )
+        text = f"<b>✅ המלאי עודכן</b>\n\n{field('מלאי חדש', txt)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
+        await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
         return
 
     if step == "add_stock_name":
         product = get_product_by_name(txt)
         if not product:
-            await message.answer("המוצר לא נמצא. בחר מוצר מהרשימה.", reply_markup=product_names_keyboard())
+            await message.answer(
+                rtl("<b>⚠️ המוצר לא נמצא.</b>\nבחר מוצר מהרשימה."),
+                reply_markup=product_names_keyboard(),
+                parse_mode="HTML"
+            )
             return
 
         state["product_name"] = txt
         state["step"] = "add_stock_value"
-        await message.answer(f"מלאי נוכחי: {product['stock']}\nכמה יחידות להוסיף למלאי?")
+
+        await message.answer(
+            rtl(f"<b>➕ הוספה למלאי</b>\n\n{field('מלאי נוכחי', product['stock'])}\nכמה יחידות להוסיף?"),
+            parse_mode="HTML"
+        )
         return
 
     if step == "add_stock_value":
         if not txt.isdigit() or int(txt) <= 0:
-            await message.answer("נא לרשום מספר חיובי.")
+            await message.answer(rtl("<b>⚠️ נא לרשום מספר חיובי.</b>"), parse_mode="HTML")
             return
 
         ok = add_stock(state["product_name"], int(txt))
         admin_states[uid] = {"step": "admin"}
 
-        await message.answer(
-            f"✅ נוספו {txt} יחידות למלאי." if ok else "המוצר לא נמצא.",
-            reply_markup=admin_keyboard()
-        )
+        text = f"<b>✅ המלאי עודכן</b>\n\n{field('נוספו יחידות', txt)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
+        await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
         return
 
     if step == "image_name":
         product = get_product_by_name(txt)
         if not product:
-            await message.answer("המוצר לא נמצא. בחר מוצר מהרשימה.", reply_markup=product_names_keyboard())
+            await message.answer(
+                rtl("<b>⚠️ המוצר לא נמצא.</b>\nבחר מוצר מהרשימה."),
+                reply_markup=product_names_keyboard(),
+                parse_mode="HTML"
+            )
             return
 
         state["product_name"] = txt
         state["step"] = "image_photo"
-        await message.answer(f"נבחר מוצר: {txt}\nעכשיו שלח תמונה של המוצר.")
+
+        await message.answer(
+            rtl(f"<b>🖼️ עדכון תמונה</b>\n\n{field('מוצר', txt)}\nעכשיו שלח תמונה של המוצר."),
+            parse_mode="HTML"
+        )
         return
 
     if step == "off_name":
         ok = set_product_active(txt, 0)
         admin_states[uid] = {"step": "admin"}
 
-        await message.answer(
-            "✅ המוצר כובה." if ok else "המוצר לא נמצא.",
-            reply_markup=admin_keyboard()
-        )
+        text = f"<b>🔴 המוצר כובה</b>\n\n{field('מוצר', txt)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
+        await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
         return
 
     if step == "on_name":
         ok = set_product_active(txt, 1)
         admin_states[uid] = {"step": "admin"}
 
-        await message.answer(
-            "✅ המוצר הופעל." if ok else "המוצר לא נמצא.",
-            reply_markup=admin_keyboard()
-        )
+        text = f"<b>🟢 המוצר הופעל</b>\n\n{field('מוצר', txt)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
+        await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
         return
 
     if step == "delete_name":
         ok = delete_product(txt)
         admin_states[uid] = {"step": "admin"}
 
-        await message.answer(
-            "🗑️ המוצר נמחק." if ok else "המוצר לא נמצא.",
-            reply_markup=admin_keyboard()
-        )
+        text = f"<b>🗑️ המוצר נמחק</b>\n\n{field('מוצר', txt)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
+        await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
         return
