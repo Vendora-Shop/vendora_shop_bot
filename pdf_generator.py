@@ -71,7 +71,7 @@ def create_invoice_pdf(order):
     # =========================
     # HEADER
     # =========================
-    
+    draw.line((55, 300, W - 55, 300), fill=green, width=LINE_W)
 
     if os.path.exists(LOGO_PATH):
         logo = Image.open(LOGO_PATH).convert("RGB")
@@ -188,7 +188,7 @@ def create_invoice_pdf(order):
     # SUMMARY
     # =========================
     y += 25
-    draw.line((55, y, W - 55, y), fill=green, width=LINE_W)
+    #draw.line((55, y, W - 55, y), fill=green, width=LINE_W)
     y += 50
 
     # אדום
