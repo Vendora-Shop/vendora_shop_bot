@@ -76,7 +76,7 @@ def create_invoice_pdf(order):
     if os.path.exists(LOGO_PATH):
         logo = Image.open(LOGO_PATH).convert("RGB")
         logo.thumbnail((380, 380))
-        img.paste(logo, (55, 5))
+        img.paste(logo, (55, -10))
 
     draw.line((55, 265, W - 55, 265), fill=green, width=LINE_W)
 
