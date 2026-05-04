@@ -124,26 +124,47 @@ def has_digit(text):
     return any(ch.isdigit() for ch in text)
 
 
-def cart_text(cart):
-    if not cart:
-        return rtl("<b>🛒 הסל שלך</b>\n\nהסל שלך ריק כרגע.")
-
-    total = cart_total(cart)
-
-    text = "<b>🛒 הסל שלך</b>\n\n"
+def grouped_cart(cart):
+    grouped = {}
 
     for item in cart:
+        name = item["name"]
+        if name not in grouped:
+            grouped[name] = {
+                "name": item["name"],
+                "price": float(item["price"]),
+                "qty": 0
+            }
+
+        grouped[name]["qty"] += int(item["qty"])
+
+    return list(grouped.values())
+
+
+def cart_text(cart, title="🛒 הסל שלך"):
+    if not cart:
+        return rtl(f"<b>{title}</b>\n\nהסל שלך ריק כרגע.")
+
+    items = grouped_cart(cart)
+
+    total_units = sum(int(item["qty"]) for item in items)
+    total_price = sum(float(item["price"]) * int(item["qty"]) for item in items)
+
+    text = f"<b>{title}</b>\n\n"
+
+    for index, item in enumerate(items, start=1):
+        item_total = float(item["price"]) * int(item["qty"])
+
         text += (
-            f"• <b>{h(item['name'])}</b>\n"
-            f"{field('כמות', int(item['qty']))}\n\n"
+            f"<b>{index}. {h(item['name'])}</b>\n"
+            f"<b>כמות:</b> {int(item['qty'])}\n"
+            f"<b>סה״כ מוצר:</b> {money(item_total)}\n\n"
         )
 
-    text += "──────────────\n"
-
-    if len(cart) == 1:
-        text += f"<b>סה״כ:</b> {money(total)}"
-    else:
-        text += f"<b>סה״כ מוצרים:</b> {money(total)}"
+    text += (
+        f"<b>📦 כמות מוצרים בסל:</b> {total_units}\n"
+        f"<b>💰 סה״כ לפני משלוח:</b> {money(total_price)}"
+    )
 
     return rtl(text)
 
@@ -265,7 +286,11 @@ async def add_more(message: Message):
 async def show_cart(message: Message):
     uid = message.from_user.id
     data = users.setdefault(uid, {"cart": [], "step": None})
-    await message.answer(cart_text(data["cart"]), reply_markup=cart_keyboard(), parse_mode="HTML")
+    await message.answer(
+        cart_text(data["cart"]),
+        reply_markup=cart_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "🧹 רוקן סל")
@@ -474,7 +499,10 @@ async def handle_shop(message: Message):
 
         stock = int(product.get("stock", 0))
         if stock <= 0:
-            await message.answer(rtl("<b>❌ המוצר אזל מהמלאי כרגע.</b>"), parse_mode="HTML")
+            await message.answer(
+                rtl("<b>❌ המוצר אזל מהמלאי כרגע.</b>"),
+                parse_mode="HTML"
+            )
             data["step"] = None
             return
 
@@ -506,7 +534,10 @@ async def handle_shop(message: Message):
 
     if data.get("step") == "support":
         if len(txt) < 2:
-            await message.answer(rtl("<b>⚠️ נא לרשום הודעה לנציג.</b>"), parse_mode="HTML")
+            await message.answer(
+                rtl("<b>⚠️ נא לרשום הודעה לנציג.</b>"),
+                parse_mode="HTML"
+            )
             return
 
         await message.bot.send_message(
@@ -530,7 +561,10 @@ async def handle_shop(message: Message):
 
     if data.get("step") == "qty":
         if not txt.isdigit():
-            await message.answer(rtl("<b>⚠️ נא לרשום כמות במספרים בלבד.</b>"), parse_mode="HTML")
+            await message.answer(
+                rtl("<b>⚠️ נא לרשום כמות במספרים בלבד.</b>"),
+                parse_mode="HTML"
+            )
             return
 
         qty = int(txt)
@@ -547,7 +581,10 @@ async def handle_shop(message: Message):
         fresh_product = get_product_by_name(product["name"])
         if not fresh_product or int(fresh_product.get("active", 0)) != 1:
             data["step"] = None
-            await message.answer(rtl("<b>❌ המוצר לא זמין כרגע.</b>"), parse_mode="HTML")
+            await message.answer(
+                rtl("<b>❌ המוצר לא זמין כרגע.</b>"),
+                parse_mode="HTML"
+            )
             return
 
         max_qty = int(fresh_product.get("max_qty", 100))
@@ -556,15 +593,24 @@ async def handle_shop(message: Message):
         available_left = stock - already_in_cart
 
         if qty <= 0:
-            await message.answer(rtl("<b>⚠️ הכמות חייבת להיות גדולה מ־0.</b>"), parse_mode="HTML")
+            await message.answer(
+                rtl("<b>⚠️ הכמות חייבת להיות גדולה מ־0.</b>"),
+                parse_mode="HTML"
+            )
             return
 
         if qty > max_qty:
-            await message.answer(rtl(f"<b>⚠️ ניתן להזמין עד {max_qty} יחידות מהמוצר הזה.</b>"), parse_mode="HTML")
+            await message.answer(
+                rtl(f"<b>⚠️ ניתן להזמין עד {max_qty} יחידות מהמוצר הזה.</b>"),
+                parse_mode="HTML"
+            )
             return
 
         if qty > available_left:
-            await message.answer(rtl(f"<b>⚠️ כרגע ניתן להוסיף עוד {available_left} יחידות בלבד.</b>"), parse_mode="HTML")
+            await message.answer(
+                rtl(f"<b>⚠️ כרגע ניתן להוסיף עוד {available_left} יחידות בלבד.</b>"),
+                parse_mode="HTML"
+            )
             return
 
         data["cart"].append({
@@ -577,10 +623,7 @@ async def handle_shop(message: Message):
         data.pop("selected_product", None)
 
         await message.answer(
-            rtl(
-                "<b>✅ נוסף לסל</b>\n\n"
-                f"{cart_text(data['cart']).replace(RTL, '')}"
-            ),
+            cart_text(data["cart"], title="✅ נוסף לסל"),
             reply_markup=cart_keyboard(),
             parse_mode="HTML"
         )
@@ -588,7 +631,10 @@ async def handle_shop(message: Message):
 
     if data.get("step") == "name":
         if len(txt) < 2:
-            await message.answer(rtl("<b>⚠️ נא לרשום שם מלא תקין.</b>"), parse_mode="HTML")
+            await message.answer(
+                rtl("<b>⚠️ נא לרשום שם מלא תקין.</b>"),
+                parse_mode="HTML"
+            )
             return
 
         data["name"] = txt
@@ -619,17 +665,26 @@ async def handle_shop(message: Message):
 
     if data.get("step") == "city":
         if len(txt) < 2 or has_digit(txt):
-            await message.answer(rtl("<b>⚠️ נא לרשום שם יישוב תקין.</b>"), parse_mode="HTML")
+            await message.answer(
+                rtl("<b>⚠️ נא לרשום שם יישוב תקין.</b>"),
+                parse_mode="HTML"
+            )
             return
 
         delivery_price, base_city, status = get_delivery_price(txt)
 
         if status == "city_not_found":
-            await message.answer(rtl("<b>⚠️ היישוב לא נמצא במאגר.</b>\nנא לרשום יישוב תקין."), parse_mode="HTML")
+            await message.answer(
+                rtl("<b>⚠️ היישוב לא נמצא במאגר.</b>\nנא לרשום יישוב תקין."),
+                parse_mode="HTML"
+            )
             return
 
         if status == "no_delivery_price":
-            await message.answer(rtl("<b>⚠️ אין מחיר משלוח אוטומטי לאזור הזה.</b>\nפנה לשירות לקוחות."), parse_mode="HTML")
+            await message.answer(
+                rtl("<b>⚠️ אין מחיר משלוח אוטומטי לאזור הזה.</b>\nפנה לשירות לקוחות."),
+                parse_mode="HTML"
+            )
             return
 
         data["city"] = txt
@@ -649,7 +704,10 @@ async def handle_shop(message: Message):
 
     if data.get("step") == "street":
         if len(txt) < 5 or not has_digit(txt):
-            await message.answer(rtl("<b>⚠️ נא לרשום רחוב + מספר בית.</b>"), parse_mode="HTML")
+            await message.answer(
+                rtl("<b>⚠️ נא לרשום רחוב + מספר בית.</b>"),
+                parse_mode="HTML"
+            )
             return
 
         data["street"] = txt
@@ -662,7 +720,10 @@ async def handle_shop(message: Message):
 
     if data.get("step") == "floor":
         if not txt.lstrip("-").isdigit():
-            await message.answer(rtl("<b>⚠️ נא לרשום קומה במספרים בלבד.</b>"), parse_mode="HTML")
+            await message.answer(
+                rtl("<b>⚠️ נא לרשום קומה במספרים בלבד.</b>"),
+                parse_mode="HTML"
+            )
             return
 
         data["floor"] = txt
@@ -675,11 +736,18 @@ async def handle_shop(message: Message):
 
     if data.get("step") == "apartment":
         if not txt.isdigit():
-            await message.answer(rtl("<b>⚠️ נא לרשום מספר דירה במספרים בלבד.</b>"), parse_mode="HTML")
+            await message.answer(
+                rtl("<b>⚠️ נא לרשום מספר דירה במספרים בלבד.</b>"),
+                parse_mode="HTML"
+            )
             return
 
         data["apartment"] = txt
         data["step"] = "confirm"
 
-        await message.answer(build_order_summary(data), reply_markup=confirm_keyboard(), parse_mode="HTML")
+        await message.answer(
+            build_order_summary(data),
+            reply_markup=confirm_keyboard(),
+            parse_mode="HTML"
+        )
         return
