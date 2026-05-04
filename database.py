@@ -830,7 +830,7 @@ def save_customer_profile(
             street, floor, apartment, last_order_number, 1,
             float(order_total), now, now
         ))
-
+#ergregreg
     conn.commit()
     conn.close()
     return True
