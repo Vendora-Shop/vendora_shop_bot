@@ -3,7 +3,6 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, FSInputFile
 from html import escape
 
-
 from config import ADMIN_ID
 from keyboards import main_keyboard
 from database import (
@@ -11,7 +10,9 @@ from database import (
     get_product_by_name,
     reduce_stock,
     create_order,
-    get_order_by_number
+    get_order_by_number,
+    get_customer_profile,
+    save_customer_profile,
 )
 from delivery import get_delivery_price
 from pdf_generator import create_invoice_pdf
@@ -82,6 +83,17 @@ def confirm_keyboard():
         keyboard=[
             [KeyboardButton(text="✅ אשר הזמנה")],
             [KeyboardButton(text="✏️ שנה פרטים")],
+            [KeyboardButton(text="❌ בטל הזמנה")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def use_saved_details_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✅ השתמש בפרטים השמורים")],
+            [KeyboardButton(text="✏️ הזן פרטים חדשים")],
             [KeyboardButton(text="❌ בטל הזמנה")]
         ],
         resize_keyboard=True
@@ -170,6 +182,21 @@ def cart_text(cart, title="🛒 הסל שלך"):
     return rtl(text)
 
 
+def saved_profile_text(profile):
+    address = f"{profile['city']}, {profile['street']}, קומה {profile['floor']}, דירה {profile['apartment']}"
+
+    text = (
+        "<b>👤 הפרטים השמורים שלך</b>\n\n"
+        f"{field('שם', profile['customer_name'])}\n"
+        f"{field('טלפון', profile['phone'])}\n"
+        f"{field('כתובת', address)}\n\n"
+        f"{field('הזמנות קודמות', profile['total_orders'])}\n"
+        f"{field('סה״כ קניות', money(profile['total_spent']))}"
+    )
+
+    return rtl(text)
+
+
 async def send_product_card(message: Message, product):
     stock = int(product.get("stock", 0))
 
@@ -214,6 +241,24 @@ def build_order_summary(data):
     return rtl(text)
 
 
+def fill_saved_profile_into_data(data, profile):
+    data["name"] = profile["customer_name"]
+    data["phone"] = profile["phone"]
+    data["city"] = profile["city"]
+    data["street"] = profile["street"]
+    data["floor"] = profile["floor"]
+    data["apartment"] = profile["apartment"]
+
+    delivery_price, base_city, status = get_delivery_price(profile["city"])
+
+    if status == "city_not_found" or status == "no_delivery_price":
+        return False
+
+    data["delivery_price"] = float(delivery_price)
+    data["base_city"] = base_city
+    return True
+
+
 @router.message(CommandStart())
 async def start(message: Message):
     users.pop(message.from_user.id, None)
@@ -226,6 +271,26 @@ async def start(message: Message):
         reply_markup=main_keyboard(),
         parse_mode="HTML"
     )
+
+
+@router.message(F.text == "👤 הפרטים שלי")
+async def my_details(message: Message):
+    uid = message.from_user.id
+    profile = get_customer_profile(uid)
+
+    if not profile:
+        await message.answer(
+            rtl(
+                "<b>👤 הפרטים שלי</b>\n\n"
+                "אין פרטים שמורים עדיין.\n"
+                "אחרי ההזמנה הראשונה, הבוט ישמור את הפרטים שלך להזמנות הבאות."
+            ),
+            reply_markup=main_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    await message.answer(saved_profile_text(profile), reply_markup=main_keyboard(), parse_mode="HTML")
 
 
 @router.message(F.text == "🛒 חנות")
@@ -347,6 +412,19 @@ async def checkout(message: Message):
         )
         return
 
+    profile = get_customer_profile(uid)
+
+    if profile and profile.get("customer_name") and profile.get("phone") and profile.get("city"):
+        data["saved_profile"] = profile
+        data["step"] = "saved_profile_choice"
+
+        await message.answer(
+            saved_profile_text(profile),
+            reply_markup=use_saved_details_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
     data["step"] = "name"
     await message.answer(
         rtl("<b>📝 פרטי הזמנה</b>\n\nרשום את השם המלא שלך:"),
@@ -410,6 +488,19 @@ async def confirm_order(message: Message):
         base_city=data["base_city"]
     )
 
+    save_customer_profile(
+        telegram_id=uid,
+        telegram_name=message.from_user.full_name,
+        customer_name=data["name"],
+        phone=data["phone"],
+        city=data["city"],
+        street=data["street"],
+        floor=data["floor"],
+        apartment=data["apartment"],
+        last_order_number=order_number,
+        order_total=final_total
+    )
+
     address = f"{data['city']}, {data['street']}, קומה {data['floor']}, דירה {data['apartment']}"
 
     admin_order = rtl(
@@ -450,6 +541,7 @@ async def confirm_order(message: Message):
         rtl(
             "<b>✅ ההזמנה התקבלה!</b>\n\n"
             f"{field('מספר הזמנה', order_number)}\n\n"
+            "הפרטים שלך נשמרו להזמנות הבאות.\n"
             "נציג יחזור אליך לאישור סופי ותשלום.\n"
             f"{field('סה״כ כולל משלוח', money(final_total))}"
         ),
@@ -531,6 +623,54 @@ async def handle_shop(message: Message):
         return
 
     if not data:
+        return
+
+    if data.get("step") == "saved_profile_choice":
+        if txt == "✅ השתמש בפרטים השמורים":
+            profile = data.get("saved_profile") or get_customer_profile(uid)
+
+            if not profile:
+                data["step"] = "name"
+                await message.answer(
+                    rtl("<b>⚠️ לא נמצאו פרטים שמורים.</b>\n\nרשום את השם המלא שלך:"),
+                    parse_mode="HTML"
+                )
+                return
+
+            ok = fill_saved_profile_into_data(data, profile)
+
+            if not ok:
+                data["step"] = "city"
+                await message.answer(
+                    rtl(
+                        "<b>⚠️ לא הצלחנו לחשב משלוח לפי הכתובת השמורה.</b>\n\n"
+                        "רשום יישוב למשלוח מחדש."
+                    ),
+                    parse_mode="HTML"
+                )
+                return
+
+            data["step"] = "confirm"
+            await message.answer(
+                build_order_summary(data),
+                reply_markup=confirm_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        if txt == "✏️ הזן פרטים חדשים":
+            data["step"] = "name"
+            await message.answer(
+                rtl("<b>📝 פרטי הזמנה חדשים</b>\n\nרשום את השם המלא שלך:"),
+                parse_mode="HTML"
+            )
+            return
+
+        await message.answer(
+            rtl("<b>⚠️ בחר פעולה מהכפתורים.</b>"),
+            reply_markup=use_saved_details_keyboard(),
+            parse_mode="HTML"
+        )
         return
 
     if data.get("step") == "support":
