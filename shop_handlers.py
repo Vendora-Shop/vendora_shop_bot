@@ -573,8 +573,6 @@ async def handle_shop(message: Message):
         await message.answer(
             rtl(
                 "<b>✅ נוסף לסל</b>\n\n"
-                f"<b>{h(fresh_product['name'])}</b>\n"
-                f"{field('כמות', qty)}\n\n"
                 f"{cart_text(data['cart']).replace(RTL, '')}"
             ),
             reply_markup=cart_keyboard(),
