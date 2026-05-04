@@ -214,7 +214,7 @@ def create_invoice_pdf(order):
     # ==================================================
     # FOOTER
     # ==================================================
-    draw.line((55, H - 150, W - 55, H - 150), fill="#222222", width=1)
+    draw.line((55, H - 150, W - 55, H - 150), fill="#222222", width=LINE_W)
 
     draw.text((70, H - 105), "Vendora Shop ©",
               font=note_font, fill=green)
