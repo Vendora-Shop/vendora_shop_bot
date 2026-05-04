@@ -40,8 +40,8 @@ def create_invoice_pdf(order):
     row_dark = "#080808"
     border_dark = "#1F3315"
 
-    # 👇 צבע נפרד רק לסכום הסופי
-    total_color = "#FFFFFF"  # תחליף למה שבא לך
+    # צבע נפרד רק לסכום הסופי
+    total_color = "#FFFFFF"
 
     # =========================
     # LINE CONTROLS
@@ -50,31 +50,45 @@ def create_invoice_pdf(order):
     BOX_W = 1
 
     # =========================
-    # FONTS
+    # FONT SIZE CONTROLS
     # =========================
+
+    # כחול — כותרות: סיכום הזמנה / פרטי מוצרים
     blue_title_font = ImageFont.truetype(FONT_PATH, 30)
+
+    # אדום — שמות שדות + כותרות טבלה + סה״כ מוצרים / דמי משלוח
     red_label_font = ImageFont.truetype(FONT_PATH, 26)
+
+    # לבן — כל הערכים: מספר הזמנה, שם, טלפון, כתובת, מוצר, כמות, מחיר
     white_value_font = ImageFont.truetype(FONT_PATH, 22)
+
+    # כתום — הטקסט: סה״כ לתשלום:
     orange_total_label_font = ImageFont.truetype(FONT_PATH, 34)
+
+    # אפור — גודל הסכום הסופי בלבד
     gray_total_number_font = ImageFont.truetype(FONT_PATH, 30)
+
+    # הערות ותחתית
     note_font = ImageFont.truetype(FONT_PATH, 24)
 
     # =========================
-    # HEADER (ללא קווים!)
+    # HEADER
     # =========================
+    # אין קו מתחת ללוגו
+
     if os.path.exists(LOGO_PATH):
         logo = Image.open(LOGO_PATH).convert("RGB")
         logo.thumbnail((380, 380))
         img.paste(logo, (55, 0))
 
     # =========================
-    # TITLE
+    # TITLE - כחול
     # =========================
     y = 320
     draw_rtl(draw, W - 70, y, "סיכום הזמנה", blue_title_font, green)
 
     # =========================
-    # CUSTOMER DETAILS
+    # CUSTOMER DETAILS BOX
     # =========================
     y = 380
     box_h = 300
@@ -106,14 +120,14 @@ def create_invoice_pdf(order):
     draw_rtl(draw, value_x, row_y, order["address"], white_value_font, white)
 
     # =========================
-    # PRODUCTS TITLE
+    # PRODUCTS TITLE - כחול
     # =========================
     y = 720
     draw_rtl(draw, W - 70, y, "פרטי מוצרים", blue_title_font, green)
     y += 60
 
     # =========================
-    # TABLE
+    # PRODUCTS TABLE
     # =========================
     table_x1, table_x2 = 55, W - 55
 
@@ -168,6 +182,8 @@ def create_invoice_pdf(order):
     # SUMMARY
     # =========================
     y += 25
+
+    # אין קו ירוק כאן
     y += 50
 
     draw_rtl(draw, W - 95, y, "סה״כ מוצרים:", red_label_font, green)
@@ -201,7 +217,6 @@ def create_invoice_pdf(order):
         anchor="mm"
     )
 
-    # 👇 כאן הצבע הנפרד עובד
     draw.text(
         (330, final_y),
         money_text(order["final_total"]),
