@@ -530,3 +530,307 @@ def get_today_statistics():
         "top_product": top_product,
         "top_qty": top_qty
     }
+# להוסיף בסוף database.py
+# וגם בתוך create_tables() להוסיף קריאה ל-create_customers_table()
+
+from datetime import datetime
+
+
+def create_customers_table():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS customers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id INTEGER NOT NULL UNIQUE,
+            telegram_name TEXT DEFAULT '',
+            customer_name TEXT DEFAULT '',
+            phone TEXT DEFAULT '',
+            city TEXT DEFAULT '',
+            street TEXT DEFAULT '',
+            floor TEXT DEFAULT '',
+            apartment TEXT DEFAULT '',
+            last_order_number TEXT DEFAULT '',
+            total_orders INTEGER DEFAULT 0,
+            total_spent REAL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def customer_row_to_dict(row):
+    if not row:
+        return None
+
+    (
+        customer_id,
+        telegram_id,
+        telegram_name,
+        customer_name,
+        phone,
+        city,
+        street,
+        floor,
+        apartment,
+        last_order_number,
+        total_orders,
+        total_spent,
+        created_at,
+        updated_at
+    ) = row
+
+    return {
+        "id": customer_id,
+        "telegram_id": telegram_id,
+        "telegram_name": telegram_name,
+        "customer_name": customer_name,
+        "phone": phone,
+        "city": city,
+        "street": street,
+        "floor": floor,
+        "apartment": apartment,
+        "last_order_number": last_order_number,
+        "total_orders": total_orders,
+        "total_spent": total_spent,
+        "created_at": created_at,
+        "updated_at": updated_at
+    }
+
+
+def get_customer_profile(telegram_id):
+    create_customers_table()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, telegram_id, telegram_name, customer_name, phone, city,
+               street, floor, apartment, last_order_number, total_orders,
+               total_spent, created_at, updated_at
+        FROM customers
+        WHERE telegram_id = ?
+    """, (int(telegram_id),))
+    row = cur.fetchone()
+    conn.close()
+    return customer_row_to_dict(row)
+
+
+def save_customer_profile(
+    telegram_id,
+    telegram_name,
+    customer_name,
+    phone,
+    city,
+    street,
+    floor,
+    apartment,
+    last_order_number="",
+    order_total=0
+):
+    create_customers_table()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT id FROM customers WHERE telegram_id = ?", (int(telegram_id),))
+    existing = cur.fetchone()
+
+    if existing:
+        cur.execute("""
+            UPDATE customers
+            SET telegram_name = ?,
+                customer_name = ?,
+                phone = ?,
+                city = ?,
+                street = ?,
+                floor = ?,
+                apartment = ?,
+                last_order_number = ?,
+                total_orders = total_orders + 1,
+                total_spent = total_spent + ?,
+                updated_at = ?
+            WHERE telegram_id = ?
+        """, (
+            telegram_name,
+            customer_name,
+            phone,
+            city,
+            street,
+            floor,
+            apartment,
+            last_order_number,
+            float(order_total),
+            now,
+            int(telegram_id)
+        ))
+    else:
+        cur.execute("""
+            INSERT INTO customers (
+                telegram_id, telegram_name, customer_name, phone, city,
+                street, floor, apartment, last_order_number, total_orders,
+                total_spent, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            int(telegram_id), telegram_name, customer_name, phone, city,
+            street, floor, apartment, last_order_number, 1,
+            float(order_total), now, now
+        ))
+
+    conn.commit()
+    conn.close()
+    return True
+# להוסיף בסוף database.py
+# וגם בתוך create_tables() להוסיף קריאה ל-create_customers_table()
+
+from datetime import datetime
+
+
+def create_customers_table():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS customers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id INTEGER NOT NULL UNIQUE,
+            telegram_name TEXT DEFAULT '',
+            customer_name TEXT DEFAULT '',
+            phone TEXT DEFAULT '',
+            city TEXT DEFAULT '',
+            street TEXT DEFAULT '',
+            floor TEXT DEFAULT '',
+            apartment TEXT DEFAULT '',
+            last_order_number TEXT DEFAULT '',
+            total_orders INTEGER DEFAULT 0,
+            total_spent REAL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def customer_row_to_dict(row):
+    if not row:
+        return None
+
+    (
+        customer_id,
+        telegram_id,
+        telegram_name,
+        customer_name,
+        phone,
+        city,
+        street,
+        floor,
+        apartment,
+        last_order_number,
+        total_orders,
+        total_spent,
+        created_at,
+        updated_at
+    ) = row
+
+    return {
+        "id": customer_id,
+        "telegram_id": telegram_id,
+        "telegram_name": telegram_name,
+        "customer_name": customer_name,
+        "phone": phone,
+        "city": city,
+        "street": street,
+        "floor": floor,
+        "apartment": apartment,
+        "last_order_number": last_order_number,
+        "total_orders": total_orders,
+        "total_spent": total_spent,
+        "created_at": created_at,
+        "updated_at": updated_at
+    }
+
+
+def get_customer_profile(telegram_id):
+    create_customers_table()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, telegram_id, telegram_name, customer_name, phone, city,
+               street, floor, apartment, last_order_number, total_orders,
+               total_spent, created_at, updated_at
+        FROM customers
+        WHERE telegram_id = ?
+    """, (int(telegram_id),))
+    row = cur.fetchone()
+    conn.close()
+    return customer_row_to_dict(row)
+
+
+def save_customer_profile(
+    telegram_id,
+    telegram_name,
+    customer_name,
+    phone,
+    city,
+    street,
+    floor,
+    apartment,
+    last_order_number="",
+    order_total=0
+):
+    create_customers_table()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT id FROM customers WHERE telegram_id = ?", (int(telegram_id),))
+    existing = cur.fetchone()
+
+    if existing:
+        cur.execute("""
+            UPDATE customers
+            SET telegram_name = ?,
+                customer_name = ?,
+                phone = ?,
+                city = ?,
+                street = ?,
+                floor = ?,
+                apartment = ?,
+                last_order_number = ?,
+                total_orders = total_orders + 1,
+                total_spent = total_spent + ?,
+                updated_at = ?
+            WHERE telegram_id = ?
+        """, (
+            telegram_name,
+            customer_name,
+            phone,
+            city,
+            street,
+            floor,
+            apartment,
+            last_order_number,
+            float(order_total),
+            now,
+            int(telegram_id)
+        ))
+    else:
+        cur.execute("""
+            INSERT INTO customers (
+                telegram_id, telegram_name, customer_name, phone, city,
+                street, floor, apartment, last_order_number, total_orders,
+                total_spent, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            int(telegram_id), telegram_name, customer_name, phone, city,
+            street, floor, apartment, last_order_number, 1,
+            float(order_total), now, now
+        ))
+
+    conn.commit()
+    conn.close()
+    return True
