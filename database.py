@@ -484,72 +484,6 @@ def get_orders_by_phone(phone, limit=20):
     return [order_row_to_dict(row) for row in rows]
 
 
-def get_today_statistics():
-    today = datetime.now().strftime("%Y-%m-%d")
-
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT COUNT(*), COALESCE(SUM(final_total), 0)
-        FROM orders
-        WHERE created_at LIKE ?
-    """, (f"{today}%",))
-    total_orders, total_money = cur.fetchone()
-
-    cur.execute("""
-        SELECT status, COUNT(*)
-        FROM orders
-        WHERE created_at LIKE ?
-        GROUP BY status
-    """, (f"{today}%",))
-    statuses = dict(cur.fetchall())
-
-    cur.execute("""
-        SELECT cart_json
-        FROM orders
-        WHERE created_at LIKE ?
-    """, (f"{today}%",))
-    carts = cur.fetchall()
-
-    conn.close()
-
-    product_sales = {}
-
-    for row in carts:
-        try:
-            cart = json.loads(row[0])
-        except Exception:
-            cart = []
-
-        for item in cart:
-            name = item.get("name", "לא ידוע")
-            qty = int(item.get("qty", 0))
-            product_sales[name] = product_sales.get(name, 0) + qty
-
-    top_product = None
-    top_qty = 0
-
-    for name, qty in product_sales.items():
-        if qty > top_qty:
-            top_product = name
-            top_qty = qty
-
-    return {
-        "date": today,
-        "total_orders": int(total_orders or 0),
-        "total_money": float(total_money or 0),
-        "new": int(statuses.get("new", 0)),
-        "approved": int(statuses.get("approved", 0)),
-        "processing": int(statuses.get("processing", 0)),
-        "shipping": int(statuses.get("shipping", 0)),
-        "paid": int(statuses.get("paid", 0)),
-        "done": int(statuses.get("done", 0)),
-        "cancelled": int(statuses.get("cancelled", 0)),
-        "top_product": top_product,
-        "top_qty": top_qty
-    }
-
 
 def customer_row_to_dict(row):
     if not row:
@@ -675,10 +609,7 @@ def save_customer_profile(
     return True
 
 
-def get_dashboard_statistics():
-    today = datetime.now().strftime("%Y-%m-%d")
-    month = datetime.now().strftime("%Y-%m")
-
+def _period_statistics(prefix):
     conn = get_connection()
     cur = conn.cursor()
 
@@ -686,28 +617,21 @@ def get_dashboard_statistics():
         SELECT COUNT(*), COALESCE(SUM(final_total), 0)
         FROM orders
         WHERE created_at LIKE ?
-    """, (f"{today}%",))
-    today_orders, today_money = cur.fetchone()
-
-    cur.execute("""
-        SELECT COUNT(*), COALESCE(SUM(final_total), 0)
-        FROM orders
-        WHERE created_at LIKE ?
-    """, (f"{month}%",))
-    month_orders, month_money = cur.fetchone()
+    """, (f"{prefix}%",))
+    total_orders, total_money = cur.fetchone()
 
     cur.execute("""
         SELECT COUNT(DISTINCT telegram_id)
         FROM orders
         WHERE created_at LIKE ?
-    """, (f"{month}%",))
-    new_customers = cur.fetchone()[0]
+    """, (f"{prefix}%",))
+    customers = cur.fetchone()[0]
 
     cur.execute("""
         SELECT cart_json
         FROM orders
         WHERE created_at LIKE ?
-    """, (f"{month}%",))
+    """, (f"{prefix}%",))
     carts = cur.fetchall()
 
     conn.close()
@@ -734,15 +658,52 @@ def get_dashboard_statistics():
             top_product = name
             top_qty = qty
 
+    total_orders = int(total_orders or 0)
+    total_money = float(total_money or 0)
+    avg_order = total_money / total_orders if total_orders > 0 else 0
+
     return {
-        "today_money": float(today_money or 0),
-        "month_money": float(month_money or 0),
-        "today_orders": int(today_orders or 0),
-        "month_orders": int(month_orders or 0),
-        "new_customers": int(new_customers or 0),
+        "money": total_money,
+        "orders": total_orders,
+        "customers": int(customers or 0),
+        "avg_order": float(avg_order or 0),
         "top_product": top_product,
         "top_qty": int(top_qty or 0),
     }
+
+
+def get_dashboard_statistics():
+    today = datetime.now().strftime("%Y-%m-%d")
+    month = datetime.now().strftime("%Y-%m")
+    year = datetime.now().strftime("%Y")
+
+    today_stats = _period_statistics(today)
+    month_stats = _period_statistics(month)
+    year_stats = _period_statistics(year)
+
+    return {
+        "today_money": today_stats["money"],
+        "today_orders": today_stats["orders"],
+        "today_customers": today_stats["customers"],
+        "today_avg_order": today_stats["avg_order"],
+        "today_top_product": today_stats["top_product"],
+        "today_top_qty": today_stats["top_qty"],
+
+        "month_money": month_stats["money"],
+        "month_orders": month_stats["orders"],
+        "month_customers": month_stats["customers"],
+        "month_avg_order": month_stats["avg_order"],
+        "month_top_product": month_stats["top_product"],
+        "month_top_qty": month_stats["top_qty"],
+
+        "year_money": year_stats["money"],
+        "year_orders": year_stats["orders"],
+        "year_customers": year_stats["customers"],
+        "year_avg_order": year_stats["avg_order"],
+        "year_top_product": year_stats["top_product"],
+        "year_top_qty": year_stats["top_qty"],
+    }
+
 
 def get_statistics_by_date(date_text):
     """
