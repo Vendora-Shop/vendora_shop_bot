@@ -291,12 +291,18 @@ def pickup_navigation_keyboard():
 
 
 def pickup_text():
+    navigation_line = ""
+
+    if PICKUP_NAVIGATION_URL:
+        navigation_line = f'\n📍 <a href="{h(PICKUP_NAVIGATION_URL)}">פתח ניווט עם Waze</a>'
+
     return (
         "<b>🛍️ איסוף עצמי מהחנות</b>\n\n"
         f"{field('נקודת איסוף', PICKUP_POINT_NAME)}\n"
         f"{field('כתובת', PICKUP_POINT_ADDRESS)}\n"
         f"{field('שעות איסוף', PICKUP_HOURS)}\n"
         f"{field('זמן הכנה משוער', PICKUP_PREP_TIME)}"
+        f"{navigation_line}"
     )
 
 
@@ -305,20 +311,10 @@ def order_summary_keyboard(data):
 
 
 async def send_pickup_navigation_if_needed(message, data):
-    if not is_pickup_order(data):
-        return
+    # הניווט מוצג בתוך סיכום ההזמנה עצמו,
+    # לכן לא שולחים הודעה נפרדת כדי לא לבלבל את הלקוח.
+    return
 
-    nav_keyboard = pickup_navigation_keyboard()
-
-    if not nav_keyboard:
-        return
-
-    await message.answer(
-        rtl("📍 ניווט לנקודת האיסוף:"),
-        reply_markup=nav_keyboard,
-        parse_mode="HTML",
-        disable_web_page_preview=True
-    )
 
 
 
@@ -382,7 +378,8 @@ async def start(message: Message):
             "בחר פעולה מהתפריט למטה."
         ),
         reply_markup=main_keyboard(),
-        parse_mode="HTML"
+        parse_mode="HTML",
+        disable_web_page_preview=True
     )
 
 
