@@ -2,6 +2,7 @@ import os
 import json
 import sqlite3
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 DB_DIR = "/data"
 LOCAL_DB = "vendora_shop.db"
@@ -21,6 +22,32 @@ print(f"Using database: {DB_PATH}")
 
 def get_connection():
     return sqlite3.connect(DB_PATH)
+
+
+
+
+def israel_now():
+    """
+    מחזיר תאריך ושעה לפי שעון ישראל.
+    חשוב במיוחד ב־Railway/שרתים שעובדים לפי UTC.
+    """
+    return datetime.now(ZoneInfo("Asia/Jerusalem"))
+
+
+def israel_now_str():
+    return israel_now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def israel_today_str():
+    return israel_now().strftime("%Y-%m-%d")
+
+
+def israel_month_str():
+    return israel_now().strftime("%Y-%m")
+
+
+def israel_year_str():
+    return israel_now().strftime("%Y")
 
 
 def create_tables():
@@ -286,7 +313,7 @@ def create_order(
     conn = get_connection()
     cur = conn.cursor()
 
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = israel_now_str()
     address = f"{city}, {street}, קומה {floor}, דירה {apartment}"
     cart_json = json.dumps(cart, ensure_ascii=False)
 
@@ -449,7 +476,7 @@ def get_orders_by_status(status, limit=20):
 def update_order_status(order_number, status):
     conn = get_connection()
     cur = conn.cursor()
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = israel_now_str()
 
     cur.execute("""
         UPDATE orders
@@ -554,7 +581,7 @@ def save_customer_profile(
     order_total=0
 ):
     create_tables()
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = israel_now_str()
 
     conn = get_connection()
     cur = conn.cursor()
@@ -673,9 +700,9 @@ def _period_statistics(prefix):
 
 
 def get_dashboard_statistics():
-    today = datetime.now().strftime("%Y-%m-%d")
-    month = datetime.now().strftime("%Y-%m")
-    year = datetime.now().strftime("%Y")
+    today = israel_today_str()
+    month = israel_month_str()
+    year = israel_year_str()
 
     today_stats = _period_statistics(today)
     month_stats = _period_statistics(month)
