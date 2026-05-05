@@ -254,6 +254,105 @@ ORDER_ACTION_BY_BUTTON = {
 }
 
 
+
+
+# ================== ORDER STATUS LOGIC ==================
+# לוגיקה עסקית:
+# אי אפשר לבצע אותה פעולה פעמיים.
+# אי אפשר להחזיר הזמנה אחורה בסטטוס.
+# הזמנה שהושלמה או בוטלה היא סטטוס סופי ונעולה לשינויים רגילים.
+# ביטול אפשרי כל עוד ההזמנה לא הושלמה ולא בוטלה.
+
+FINAL_ORDER_STATUSES = {"done", "cancelled"}
+
+STATUS_FLOW_LEVEL = {
+    "new": 1,
+    "approved": 2,
+    "processing": 3,
+    "shipping": 4,
+    "paid": 5,
+    "done": 6,
+    "cancelled": 99,
+}
+
+
+def validate_status_change(current_status, new_status):
+    if current_status == new_status:
+        return False, (
+            "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
+            "ההזמנה כבר נמצאת בסטטוס שבחרת.\n"
+            "אין צורך לבצע את אותה פעולה פעם נוספת."
+        )
+
+    if current_status in FINAL_ORDER_STATUSES:
+        return False, (
+            "<b>🔒 לא ניתן לשנות סטטוס</b>\n\n"
+            "ההזמנה נמצאת בסטטוס סופי ולכן נעולה לשינויים רגילים.\n"
+            "אם צריך לבצע תיקון חריג — יש לפתוח אותה מחדש בצורה ייעודית."
+        )
+
+    if new_status == "cancelled":
+        return True, ""
+
+    current_level = STATUS_FLOW_LEVEL.get(current_status, 0)
+    new_level = STATUS_FLOW_LEVEL.get(new_status, 0)
+
+    if new_level < current_level:
+        return False, (
+            "<b>⚠️ פעולה לא תקינה</b>\n\n"
+            "לא ניתן להחזיר הזמנה לשלב קודם בתהליך.\n"
+            "בחר סטטוס מתקדם יותר או השאר את ההזמנה במצב הנוכחי."
+        )
+
+    if current_status == "new" and new_status not in {"approved", "cancelled"}:
+        return False, (
+            "<b>⚠️ סדר פעולה לא תקין</b>\n\n"
+            "הזמנה חדשה חייבת לעבור קודם אישור.\n"
+            "בחר: ✅ אשר הזמנה או ❌ בטל הזמנה."
+        )
+
+    if current_status == "approved" and new_status not in {"processing", "cancelled"}:
+        return False, (
+            "<b>⚠️ סדר פעולה לא תקין</b>\n\n"
+            "אחרי אישור הזמנה, השלב הבא הוא העברה לטיפול.\n"
+            "בחר: 📦 העבר לטיפול או ❌ בטל הזמנה."
+        )
+
+    if current_status == "processing" and new_status not in {"shipping", "cancelled"}:
+        return False, (
+            "<b>⚠️ סדר פעולה לא תקין</b>\n\n"
+            "הזמנה שבטיפול יכולה לעבור לשלב משלוח או להתבטל.\n"
+            "בחר: 🚚 סמן כיצא למשלוח או ❌ בטל הזמנה."
+        )
+
+    if current_status == "shipping" and new_status not in {"paid", "cancelled"}:
+        return False, (
+            "<b>⚠️ סדר פעולה לא תקין</b>\n\n"
+            "אחרי שההזמנה יצאה למשלוח, השלב הבא הוא סימון כתשלום התקבל.\n"
+            "בחר: 💰 סמן כשולם או ❌ בטל הזמנה."
+        )
+
+    if current_status == "paid" and new_status not in {"done"}:
+        return False, (
+            "<b>⚠️ סדר פעולה לא תקין</b>\n\n"
+            "לאחר שההזמנה שולמה, ניתן לסמן אותה כהושלמה בלבד."
+        )
+
+    return True, ""
+
+
+async def send_status_blocked_message(message, order_number, current_status, reason_text, reply_markup):
+    await message.answer(
+        rtl(
+            f"{reason_text}\n\n"
+            f"{field('מספר הזמנה', order_number)}\n"
+            f"{field('סטטוס נוכחי', status_label(current_status))}"
+        ),
+        reply_markup=reply_markup,
+        parse_mode="HTML"
+    )
+
+
 def extract_order_number_from_button(text):
     text = str(text or "").strip()
 
@@ -921,16 +1020,15 @@ async def admin_flow(message: Message):
 
         current_status = order_before.get("status")
 
-        if current_status == new_status:
-            await message.answer(
-                rtl(
-                    "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
-                    f"{field('מספר הזמנה', order_number)}\n"
-                    f"{field('סטטוס נוכחי', status_label(current_status))}\n\n"
-                    "אין צורך לבצע את אותה פעולה פעם נוספת."
-                ),
-                reply_markup=order_action_keyboard(),
-                parse_mode="HTML"
+        is_valid, reason_text = validate_status_change(current_status, new_status)
+
+        if not is_valid:
+            await send_status_blocked_message(
+                message,
+                order_number,
+                current_status,
+                reason_text,
+                order_action_keyboard()
             )
             return
 
@@ -1060,16 +1158,15 @@ async def admin_flow(message: Message):
 
         current_status = order_before.get("status")
 
-        if current_status == new_status:
-            await message.answer(
-                rtl(
-                    "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
-                    f"{field('מספר הזמנה', order_number)}\n"
-                    f"{field('סטטוס נוכחי', status_label(current_status))}\n\n"
-                    "אין צורך לבצע את אותה פעולה פעם נוספת."
-                ),
-                reply_markup=order_status_keyboard(),
-                parse_mode="HTML"
+        is_valid, reason_text = validate_status_change(current_status, new_status)
+
+        if not is_valid:
+            await send_status_blocked_message(
+                message,
+                order_number,
+                current_status,
+                reason_text,
+                order_status_keyboard()
             )
             return
 
