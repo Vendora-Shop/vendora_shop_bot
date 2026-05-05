@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from aiogram.filters import CommandStart
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, FSInputFile
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from html import escape
 
 from config import ADMIN_ID
@@ -40,6 +40,19 @@ def money(value):
 
 def field(label, value):
     return f"<b>{h(label)}:</b> {h(value)}"
+
+
+
+
+def admin_new_order_keyboard(order_number):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ אשר הזמנה", callback_data=f"order_action:approve:{order_number}"),
+                InlineKeyboardButton(text="❌ בטל", callback_data=f"order_action:cancel:{order_number}")
+            ]
+        ]
+    )
 
 
 def categories_keyboard():
@@ -533,7 +546,12 @@ async def confirm_order(message: Message):
         f"<b>סטטוס:</b> 🆕 הזמנה חדשה"
     )
 
-    await message.bot.send_message(ADMIN_ID, admin_order, parse_mode="HTML")
+    await message.bot.send_message(
+        ADMIN_ID,
+        admin_order,
+        reply_markup=admin_new_order_keyboard(order_number),
+        parse_mode="HTML"
+    )
 
     saved_order = get_order_by_number(order_number)
     if saved_order:
