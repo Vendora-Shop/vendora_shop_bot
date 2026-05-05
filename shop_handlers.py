@@ -21,6 +21,14 @@ router = Router()
 users = {}
 
 RTL = "\u200F"
+
+# ================== PICKUP SETTINGS ==================
+# כאן מגדירים את נקודת האיסוף העצמי.
+# אם בעתיד תרצה לשנות כתובת איסוף — משנים רק כאן.
+PICKUP_POINT_NAME = "נקודת איסוף Vendora"
+PICKUP_POINT_ADDRESS = "אשדוד - כתובת תעודכן במערכת"
+PICKUP_CITY = "איסוף עצמי"
+PICKUP_BASE_CITY = "איסוף עצמי"
 #קעקרערעק
 
 def h(text):
@@ -107,6 +115,18 @@ def use_saved_details_keyboard():
         keyboard=[
             [KeyboardButton(text="✅ השתמש בפרטים השמורים")],
             [KeyboardButton(text="✏️ הזן פרטים חדשים")],
+            [KeyboardButton(text="❌ בטל הזמנה")]
+        ],
+        resize_keyboard=True
+    )
+
+
+
+def fulfillment_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🚚 משלוח עד הבית")],
+            [KeyboardButton(text="🏬 איסוף עצמי")],
             [KeyboardButton(text="❌ בטל הזמנה")]
         ],
         resize_keyboard=True
@@ -234,25 +254,60 @@ async def send_product_card(message: Message, product):
         await message.answer(caption, parse_mode="HTML")
 
 
+
+def set_pickup_details(data):
+    data["fulfillment_type"] = "pickup"
+    data["city"] = PICKUP_CITY
+    data["street"] = PICKUP_POINT_ADDRESS
+    data["floor"] = "0"
+    data["apartment"] = "0"
+    data["delivery_price"] = 0
+    data["base_city"] = PICKUP_BASE_CITY
+    data["delivery_pending"] = False
+
+
+def is_pickup_order(data):
+    return data.get("fulfillment_type") == "pickup"
+
+
+def pickup_text():
+    return (
+        f"{field('שיטת קבלה', 'איסוף עצמי')}\n"
+        f"{field('נקודת איסוף', PICKUP_POINT_NAME)}\n"
+        f"{field('כתובת איסוף', PICKUP_POINT_ADDRESS)}"
+    )
+
+
 def build_order_summary(data):
     products_total = cart_total(data["cart"])
     delivery_price = float(data["delivery_price"])
     final_total = products_total + delivery_price
-    address = f"{data['city']}, {data['street']}, קומה {data['floor']}, דירה {data['apartment']}"
+
+    if is_pickup_order(data):
+        delivery_block = (
+            f"{pickup_text()}\n\n"
+            f"{field('דמי משלוח', money(0))}\n"
+            f"{field('סה״כ לתשלום', money(products_total))}"
+        )
+    else:
+        address = f"{data['city']}, {data['street']}, קומה {data['floor']}, דירה {data['apartment']}"
+        delivery_block = (
+            f"{field('כתובת משלוח', address)}\n"
+            f"{field('אזור משלוח', data['base_city'])}\n\n"
+            f"{field('דמי משלוח', money(delivery_price))}\n"
+            f"{field('סה״כ לתשלום', money(final_total))}"
+        )
 
     text = (
         "<b>📦 סיכום הזמנה</b>\n\n"
         f"{field('שם לקוח', data['name'])}\n"
-        f"{field('טלפון', data['phone'])}\n"
-        f"{field('כתובת', address)}\n\n"
+        f"{field('טלפון', data['phone'])}\n\n"
         f"{cart_text(data['cart']).replace(RTL, '')}\n\n"
-        f"{field('דמי משלוח', money(delivery_price))}\n"
-        f"{field('סה״כ לתשלום', money(final_total))}\n\n"
+        f"{delivery_block}\n\n"
         "<b>✅ אם הכול נכון לחץ על אשר הזמנה.</b>"
     )
 
     return rtl(text)
-
 
 def fill_saved_profile_into_data(data, profile):
     data["name"] = profile["customer_name"]
@@ -425,25 +480,17 @@ async def checkout(message: Message):
         )
         return
 
-    profile = get_customer_profile(uid)
+    data["step"] = "fulfillment_choice"
+    data["saved_profile"] = get_customer_profile(uid)
 
-    if profile and profile.get("customer_name") and profile.get("phone") and profile.get("city"):
-        data["saved_profile"] = profile
-        data["step"] = "saved_profile_choice"
-
-        await message.answer(
-            saved_profile_text(profile),
-            reply_markup=use_saved_details_keyboard(),
-            parse_mode="HTML"
-        )
-        return
-
-    data["step"] = "name"
     await message.answer(
-        rtl("<b>📝 פרטי הזמנה</b>\n\nרשום את השם המלא שלך:"),
+        rtl(
+            "<b>📦 איך תרצה לקבל את ההזמנה?</b>\n\n"
+            "בחר אחת מהאפשרויות:"
+        ),
+        reply_markup=fulfillment_keyboard(),
         parse_mode="HTML"
     )
-
 
 @router.message(F.text == "✅ אשר הזמנה")
 async def confirm_order(message: Message):
@@ -470,7 +517,7 @@ async def confirm_order(message: Message):
         )
         return
 
-    required = ["name", "phone", "city", "street", "floor", "apartment", "delivery_price", "base_city"]
+    required = ["name", "phone", "city", "street", "floor", "apartment", "delivery_price", "base_city", "fulfillment_type"]
     if any(key not in data for key in required):
         data["step"] = "name"
         await message.answer(
@@ -516,31 +563,55 @@ async def confirm_order(message: Message):
         base_city=data["base_city"]
     )
 
+    profile_for_save = get_customer_profile(uid)
+
+    if is_pickup_order(data) and profile_for_save:
+        save_city = profile_for_save.get("city") or data["city"]
+        save_street = profile_for_save.get("street") or data["street"]
+        save_floor = profile_for_save.get("floor") or data["floor"]
+        save_apartment = profile_for_save.get("apartment") or data["apartment"]
+    else:
+        save_city = data["city"]
+        save_street = data["street"]
+        save_floor = data["floor"]
+        save_apartment = data["apartment"]
+
     save_customer_profile(
         telegram_id=uid,
         telegram_name=message.from_user.full_name,
         customer_name=data["name"],
         phone=data["phone"],
-        city=data["city"],
-        street=data["street"],
-        floor=data["floor"],
-        apartment=data["apartment"],
+        city=save_city,
+        street=save_street,
+        floor=save_floor,
+        apartment=save_apartment,
         last_order_number=order_number,
         order_total=final_total
     )
 
-    address = f"{data['city']}, {data['street']}, קומה {data['floor']}, דירה {data['apartment']}"
+    if is_pickup_order(data):
+        fulfillment_admin_text = (
+            f"{field('שיטת קבלה', 'איסוף עצמי')}\n"
+            f"{field('נקודת איסוף', PICKUP_POINT_NAME)}\n"
+            f"{field('כתובת איסוף', PICKUP_POINT_ADDRESS)}"
+        )
+    else:
+        address = f"{data['city']}, {data['street']}, קומה {data['floor']}, דירה {data['apartment']}"
+        fulfillment_admin_text = (
+            f"{field('שיטת קבלה', 'משלוח עד הבית')}\n"
+            f"{field('כתובת משלוח', address)}\n"
+            f"{field('אזור משלוח', data['base_city'])}"
+        )
 
     admin_order = rtl(
         f"<b>📦 הזמנה חדשה מ־Vendora Shop</b>\n\n"
         f"{field('מספר הזמנה', order_number)}\n\n"
         f"{field('שם לקוח', data['name'])}\n"
         f"{field('טלפון', data['phone'])}\n"
-        f"{field('כתובת', address)}\n\n"
+        f"{fulfillment_admin_text}\n\n"
         f"{cart_text(data['cart']).replace(RTL, '')}\n\n"
         f"{field('משלוח', money(delivery_price))}\n"
         f"{field('סה״כ לתשלום', money(final_total))}\n\n"
-        f"{field('אזור/עיר בסיס', data['base_city'])}\n"
         f"{field('Telegram ID', uid)}\n"
         f"{field('Telegram', message.from_user.full_name)}\n\n"
         f"<b>סטטוס:</b> 🆕 הזמנה חדשה"
@@ -574,9 +645,10 @@ async def confirm_order(message: Message):
         rtl(
             "<b>✅ ההזמנה התקבלה!</b>\n\n"
             f"{field('מספר הזמנה', order_number)}\n\n"
+            f"{field('שיטת קבלה', 'איסוף עצמי' if is_pickup_order(data) else 'משלוח עד הבית')}\n"
             "הפרטים שלך נשמרו להזמנות הבאות.\n"
             "נציג יחזור אליך לאישור סופי ותשלום.\n"
-            f"{field('סה״כ כולל משלוח', money(final_total))}"
+            f"{field('סה״כ לתשלום', money(final_total))}"
         ),
         reply_markup=main_keyboard(),
         parse_mode="HTML"
@@ -656,6 +728,66 @@ async def handle_shop(message: Message):
         return
 
     if not data:
+        return
+
+    if data.get("step") == "fulfillment_choice":
+        if txt == "🚚 משלוח עד הבית":
+            data["fulfillment_type"] = "delivery"
+            profile = data.get("saved_profile") or get_customer_profile(uid)
+
+            if profile and profile.get("customer_name") and profile.get("phone") and profile.get("city"):
+                data["saved_profile"] = profile
+                data["step"] = "saved_profile_choice"
+
+                await message.answer(
+                    saved_profile_text(profile),
+                    reply_markup=use_saved_details_keyboard(),
+                    parse_mode="HTML"
+                )
+                return
+
+            data["step"] = "name"
+            await message.answer(
+                rtl("<b>📝 פרטי הזמנה</b>\n\nרשום את השם המלא שלך:"),
+                parse_mode="HTML"
+            )
+            return
+
+        if txt == "🏬 איסוף עצמי":
+            data["fulfillment_type"] = "pickup"
+            set_pickup_details(data)
+
+            profile = data.get("saved_profile") or get_customer_profile(uid)
+
+            if profile and profile.get("customer_name") and profile.get("phone"):
+                data["name"] = profile["customer_name"]
+                data["phone"] = profile["phone"]
+                data["step"] = "confirm"
+
+                await message.answer(
+                    build_order_summary(data),
+                    reply_markup=confirm_keyboard(),
+                    parse_mode="HTML"
+                )
+                return
+
+            data["step"] = "name"
+            await message.answer(
+                rtl(
+                    "<b>🏬 איסוף עצמי</b>\n\n"
+                    f"{pickup_text()}\n\n"
+                    "<b>📝 פרטי לקוח</b>\n"
+                    "רשום את השם המלא שלך:"
+                ),
+                parse_mode="HTML"
+            )
+            return
+
+        await message.answer(
+            rtl("<b>⚠️ בחר אפשרות מתוך הכפתורים בלבד.</b>"),
+            reply_markup=fulfillment_keyboard(),
+            parse_mode="HTML"
+        )
         return
 
     if data.get("step") == "saved_profile_choice":
@@ -830,9 +962,25 @@ async def handle_shop(message: Message):
             return
 
         data["phone"] = phone
+
+        if is_pickup_order(data):
+            set_pickup_details(data)
+            data["step"] = "confirm"
+
+            await message.answer(
+                build_order_summary(data),
+                reply_markup=confirm_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
         data["step"] = "city"
         await message.answer(
-            rtl("<b>📍 יישוב למשלוח</b>\n\nבאיזה יישוב המשלוח?\nלדוגמה: אשדוד"),
+            rtl(
+                "<b>📍 עיר / יישוב למשלוח</b>\n\n"
+                "רשום את שם העיר, המושב או הקיבוץ למשלוח.\n"
+                "לדוגמה: אשדוד"
+            ),
             parse_mode="HTML"
         )
         return
@@ -854,22 +1002,29 @@ async def handle_shop(message: Message):
             )
             return
 
-        if status == "no_delivery_price":
-            await message.answer(
-                rtl("<b>⚠️ אין מחיר משלוח אוטומטי לאזור הזה.</b>\nפנה לשירות לקוחות."),
-                parse_mode="HTML"
-            )
-            return
-
         data["city"] = txt
-        data["delivery_price"] = float(delivery_price)
-        data["base_city"] = base_city
+
+        if status == "no_delivery_price" or delivery_price is None:
+            data["delivery_price"] = 0
+            data["base_city"] = base_city or "לתיאום מול נציג"
+            data["delivery_pending"] = True
+            delivery_message = (
+                "<b>ℹ️ מחיר משלוח לתיאום</b>\n\n"
+                "לא נמצא מחיר משלוח אוטומטי לאזור הזה.\n"
+                "אפשר להמשיך בהזמנה, ונציג יעדכן אותך במחיר המשלוח לפני סגירה סופית.\n\n"
+            )
+        else:
+            data["delivery_price"] = float(delivery_price)
+            data["base_city"] = base_city
+            data["delivery_pending"] = False
+            delivery_message = f"<b>דמי משלוח ל{h(txt)}:</b> {money(delivery_price)}\n\n"
+
         data["step"] = "street"
 
         await message.answer(
             rtl(
-                f"<b>דמי משלוח ל{h(txt)}:</b> {money(delivery_price)}\n\n"
-                "<b>📍 כתובת למשלוח</b>\n"
+                delivery_message
+                + "<b>📍 כתובת למשלוח</b>\n"
                 "רשום רחוב ומספר בית."
             ),
             parse_mode="HTML"
