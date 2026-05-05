@@ -41,6 +41,15 @@ admin_states = {}
 
 RTL = "\u200F"
 
+# ================== PICKUP DISPLAY SETTINGS ==================
+# תצוגת איסוף עצמי בפאנל אדמין.
+# אם שינית את הכתובת ב־shop_handlers.py, עדכן גם כאן כדי שהתצוגה באדמין תהיה זהה.
+ADMIN_PICKUP_POINT_NAME = "Vendora"
+ADMIN_PICKUP_POINT_ADDRESS = "אשדוד - הבנאים 2"
+ADMIN_PICKUP_PREP_TIME = "כ־30 דקות"
+ADMIN_PICKUP_HOURS = "א׳-ה׳ 10:00-19:00, ו׳ 09:00-13:00"
+ADMIN_PICKUP_NAVIGATION_URL = "https://www.google.com/maps/search/?api=1&query=אשדוד%20הבנאים%202"
+
 
 STATUS_TEXT = {
     "new": "🆕 חדשה",
@@ -473,13 +482,17 @@ def is_order_pickup(order):
 
 def order_fulfillment_text(order):
     if is_order_pickup(order):
-        pickup_address = order.get("street") or "כתובת איסוף לא הוגדרה"
+        navigation = ""
+        if ADMIN_PICKUP_NAVIGATION_URL:
+            navigation = f'\n📍 <a href="{h(ADMIN_PICKUP_NAVIGATION_URL)}">פתח ניווט לנקודת האיסוף</a>'
 
         return (
             "<b>🛍️ איסוף עצמי מהחנות</b>\n"
-            f"{field('נקודת איסוף', 'Vendora')}\n"
-            f"{field('כתובת', pickup_address)}\n"
-            f"{field('זמן הכנה משוער', 'כ־30 דקות')}"
+            f"{field('נקודת איסוף', ADMIN_PICKUP_POINT_NAME)}\n"
+            f"{field('כתובת', ADMIN_PICKUP_POINT_ADDRESS)}\n"
+            f"{field('שעות איסוף', ADMIN_PICKUP_HOURS)}\n"
+            f"{field('זמן הכנה משוער', ADMIN_PICKUP_PREP_TIME)}"
+            f"{navigation}"
         )
 
     return (
