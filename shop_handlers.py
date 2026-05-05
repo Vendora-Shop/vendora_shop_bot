@@ -25,10 +25,10 @@ RTL = "\u200F"
 # ================== PICKUP SETTINGS ==================
 # כאן מגדירים את כל פרטי האיסוף העצמי.
 # אם בעתיד תרצה לשנות כתובת / שעות / ניווט — משנים רק כאן.
-PICKUP_POINT_NAME = "Vendora PickUp"
+PICKUP_POINT_NAME = "Vendora"
 PICKUP_POINT_ADDRESS = "אשדוד - הבנאים 2"
 PICKUP_PREP_TIME = "כ־30 דקות"
-PICKUP_HOURS = "א׳-ה׳ 10:00-18:00, ו׳ 09:00-13:00"
+PICKUP_HOURS = "א׳-ה׳ 10:00-19:00, ו׳ 09:00-13:00"
 PICKUP_NAVIGATION_URL = "https://waze.com/ul/hsv8su3vur"
 
 PICKUP_CITY = "איסוף עצמי"
@@ -274,11 +274,20 @@ def is_pickup_order(data):
     return data.get("fulfillment_type") == "pickup"
 
 
-def pickup_navigation_text():
-    if PICKUP_NAVIGATION_URL:
-        return f'<a href="{h(PICKUP_NAVIGATION_URL)}">פתח ניווט לנקודת האיסוף</a>'
+def pickup_navigation_keyboard():
+    if not PICKUP_NAVIGATION_URL:
+        return None
 
-    return "קישור ניווט יוגדר בהמשך"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📍 נווט עם Waze",
+                    url=PICKUP_NAVIGATION_URL
+                )
+            ]
+        ]
+    )
 
 
 def pickup_text():
@@ -287,9 +296,15 @@ def pickup_text():
         f"{field('נקודת איסוף', PICKUP_POINT_NAME)}\n"
         f"{field('כתובת', PICKUP_POINT_ADDRESS)}\n"
         f"{field('שעות איסוף', PICKUP_HOURS)}\n"
-        f"{field('זמן הכנה משוער', PICKUP_PREP_TIME)}\n"
-        f"📍 {pickup_navigation_text()}"
+        f"{field('זמן הכנה משוער', PICKUP_PREP_TIME)}"
     )
+
+
+def order_summary_keyboard(data):
+    if is_pickup_order(data):
+        return pickup_navigation_keyboard()
+
+    return confirm_keyboard()
 
 
 def build_order_summary(data):
@@ -319,7 +334,7 @@ def build_order_summary(data):
         f"{field('טלפון', data['phone'])}\n\n"
         f"{cart_text(data['cart']).replace(RTL, '')}\n\n"
         f"{delivery_block}\n\n"
-        "<b>✅ אם הכל נכון לחץ על אשר הזמנה.</b>"
+        "<b>✅ אם הכול נכון לחץ על אשר הזמנה.</b>"
     )
 
     return rtl(text)
@@ -611,7 +626,7 @@ async def confirm_order(message: Message):
             f"{field('כתובת', PICKUP_POINT_ADDRESS)}\n"
             f"{field('שעות איסוף', PICKUP_HOURS)}\n"
             f"{field('זמן הכנה משוער', PICKUP_PREP_TIME)}\n"
-            f"📍 {pickup_navigation_text()}"
+            ""
         )
     else:
         address = f"{data['city']}, {data['street']}, קומה {data['floor']}, דירה {data['apartment']}"
@@ -639,7 +654,8 @@ async def confirm_order(message: Message):
         ADMIN_ID,
         admin_order,
         reply_markup=admin_new_order_keyboard(order_number),
-        parse_mode="HTML"
+        parse_mode="HTML",
+        disable_web_page_preview=True
     )
 
     saved_order = get_order_by_number(order_number)
@@ -784,8 +800,9 @@ async def handle_shop(message: Message):
 
                 await message.answer(
                     build_order_summary(data),
-                    reply_markup=confirm_keyboard(),
-                    parse_mode="HTML"
+                    reply_markup=order_summary_keyboard(data),
+                    parse_mode="HTML",
+                    disable_web_page_preview=True
                 )
                 return
 
@@ -835,8 +852,9 @@ async def handle_shop(message: Message):
             data["step"] = "confirm"
             await message.answer(
                 build_order_summary(data),
-                reply_markup=confirm_keyboard(),
-                parse_mode="HTML"
+                reply_markup=order_summary_keyboard(data),
+                parse_mode="HTML",
+                disable_web_page_preview=True
             )
             return
 
@@ -986,8 +1004,9 @@ async def handle_shop(message: Message):
 
             await message.answer(
                 build_order_summary(data),
-                reply_markup=confirm_keyboard(),
-                parse_mode="HTML"
+                reply_markup=order_summary_keyboard(data),
+                parse_mode="HTML",
+                disable_web_page_preview=True
             )
             return
 
@@ -1093,7 +1112,8 @@ async def handle_shop(message: Message):
 
         await message.answer(
             build_order_summary(data),
-            reply_markup=confirm_keyboard(),
-            parse_mode="HTML"
+            reply_markup=order_summary_keyboard(data),
+            parse_mode="HTML",
+            disable_web_page_preview=True
         )
         return
