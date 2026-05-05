@@ -463,295 +463,68 @@ def status_label(status):
     return STATUS_TEXT.get(status, status)
 
 
+
+def is_order_pickup(order):
+    return (
+        str(order.get("base_city", "")).strip() == "איסוף עצמי"
+        or str(order.get("city", "")).strip() == "איסוף עצמי"
+    )
+
+
+def order_fulfillment_text(order):
+    if is_order_pickup(order):
+        pickup_address = order.get("street") or "כתובת איסוף לא הוגדרה"
+
+        return (
+            "<b>🛍️ איסוף עצמי מהחנות</b>\n"
+            f"{field('נקודת איסוף', 'Vendora')}\n"
+            f"{field('כתובת', pickup_address)}\n"
+            f"{field('זמן הכנה משוער', 'כ־30 דקות')}"
+        )
+
+    return (
+        "<b>🚚 משלוח עד הבית</b>\n"
+        f"{field('כתובת', order.get('address', '-'))}\n"
+        f"{field('אזור משלוח', order.get('base_city') or '-')}"
+    )
+
+
 def format_order(order):
     text = (
         f"<b>🧾 הזמנה {h(order['order_number'])}</b>\n\n"
-        f"{field('סטטוס', status_label(order['status']))}\n"
-        f"{field('תאריך', order['created_at'])}\n\n"
-        f"{field('שם לקוח', order['customer_name'])}\n"
-        f"{field('טלפון', order['phone'])}\n"
-        f"{field('כתובת', order['address'])}\n\n"
-        "<b>🛒 מוצרים</b>\n\n"
+        f"{field('סטטוס', status_label(order.get('status')))}\n"
+        f"{field('תאריך', order.get('created_at'))}\n\n"
+        f"{field('שם לקוח', order.get('customer_name'))}\n"
+        f"{field('טלפון', order.get('phone'))}\n\n"
+        f"{order_fulfillment_text(order)}\n\n"
+        "<b>🛒 מוצרים</b>\n"
     )
 
     total_units = 0
 
-    for index, item in enumerate(order["cart"], start=1):
-        qty = int(item["qty"])
-        price = float(item["price"])
-        total = price * qty
+    for index, item in enumerate(order.get("cart", []), start=1):
+        qty = int(item.get("qty", 0))
+        price = float(item.get("price", 0))
+        item_total = qty * price
         total_units += qty
 
         text += (
-            f"<b>{index}. {h(item['name'])}</b>\n"
+            f"\n<b>{index}. {h(item.get('name'))}</b>\n"
             f"{field('כמות', qty)}\n"
-            f"{field('סה״כ מוצר', money(total))}\n\n"
+            f"{field('סה״כ מוצר', money(item_total))}\n"
         )
 
     text += (
+        "\n"
         f"{field('כמות מוצרים', total_units)}\n"
-        f"{field('סה״כ מוצרים', money(order['products_total']))}\n"
-        f"{field('משלוח', money(order['delivery_price']))}\n"
-        f"{field('סה״כ לתשלום', money(order['final_total']))}\n\n"
-        f"{field('Telegram ID', order['telegram_id'])}\n"
-        f"{field('Telegram', order['telegram_name'] or '-')}"
+        f"{field('סה״כ מוצרים', money(order.get('products_total') or 0))}\n"
+        f"{field('משלוח', money(order.get('delivery_price') or 0))}\n"
+        f"{field('סה״כ לתשלום', money(order.get('final_total') or 0))}\n\n"
+        f"{field('Telegram ID', order.get('telegram_id'))}\n"
+        f"{field('Telegram', order.get('telegram_name') or '-')}"
     )
 
     return rtl(text)
-
-
-def format_product_row(row):
-    product_id, category, name, price, description, max_qty, stock, sku, image_file_id, active = row
-
-    status = "פעיל ✅" if active else "כבוי ❌"
-    image = "יש תמונה 🖼️" if image_file_id else "ללא תמונה ⚠️"
-    stock_text = "אזל מהמלאי ❌" if int(stock) <= 0 else f"{stock}"
-
-    return (
-        f"<b>🛍️ {h(name)}</b>\n"
-        f"{field('סטטוס', status)}\n"
-        f"{field('קטגוריה', category)}\n"
-        f"{field('מחיר', money(price))}\n"
-        f"{field('מלאי', stock_text)}\n"
-        f"{field('מקסימום להזמנה', max_qty)}\n"
-        f"{field('מק״ט', sku or '-')}\n"
-        f"{field('תמונה', image)}\n"
-        f"{field('תיאור', description or '-')}"
-    )
-
-
-
-
-
-
-# ================== CUSTOMERS MANAGEMENT LOGIC ==================
-def customer_select_keyboard(customers, back_text="⬅️ חזרה ללקוחות"):
-    keyboard = []
-
-    for customer in customers:
-        customer_id = customer.get("id")
-        name = customer.get("customer_name") or customer.get("telegram_name") or "לקוח ללא שם"
-        phone = customer.get("phone") or "-"
-        total_orders = customer.get("total_orders") or 0
-        total_spent = money(customer.get("total_spent") or 0)
-
-        keyboard.append([
-            KeyboardButton(
-                text=f"👤 {customer_id} | {name} | {phone} | {total_orders} הזמנות | {total_spent}"
-            )
-        ])
-
-    keyboard.append([KeyboardButton(text=back_text)])
-    keyboard.append([KeyboardButton(text="⬅️ חזרה לניהול")])
-
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
-
-
-def extract_customer_id_from_button(text):
-    text = str(text or "").strip()
-
-    if text.startswith("👤 "):
-        text = text.replace("👤 ", "", 1)
-
-    if "|" in text:
-        value = text.split("|", 1)[0].strip()
-    else:
-        value = text.strip()
-
-    if not value.isdigit():
-        return None
-
-    return int(value)
-
-
-def format_customer_profile(customer):
-    address = (
-        f"{customer.get('city') or '-'}, "
-        f"{customer.get('street') or '-'}, "
-        f"קומה {customer.get('floor') or '-'}, "
-        f"דירה {customer.get('apartment') or '-'}"
-    )
-
-    return rtl(
-        "<b>👤 כרטיס לקוח</b>\n\n"
-        f"{field('שם', customer.get('customer_name') or '-')}\n"
-        f"{field('טלפון', customer.get('phone') or '-')}\n"
-        f"{field('כתובת אחרונה', address)}\n\n"
-        f"{field('סה״כ הזמנות', customer.get('total_orders') or 0)}\n"
-        f"{field('סה״כ קניות', money(customer.get('total_spent') or 0))}\n"
-        f"{field('הזמנה אחרונה', customer.get('last_order_number') or '-')}\n\n"
-        f"{field('Telegram ID', customer.get('telegram_id') or '-')}\n"
-        f"{field('Telegram', customer.get('telegram_name') or '-')}\n\n"
-        f"{field('נוצר בתאריך', customer.get('created_at') or '-')}\n"
-        f"{field('עודכן לאחרונה', customer.get('updated_at') or '-')}"
-    )
-
-
-def format_customer_orders_summary(customer, orders):
-    if not orders:
-        return rtl(
-            "<b>📦 היסטוריית הזמנות לקוח</b>\n\n"
-            "לא נמצאו הזמנות ללקוח הזה."
-        )
-
-    text = (
-        "<b>📦 היסטוריית הזמנות לקוח</b>\n\n"
-        f"{field('לקוח', customer.get('customer_name') or '-')}\n"
-        f"{field('טלפון', customer.get('phone') or '-')}\n"
-        f"{field('נמצאו הזמנות', len(orders))}\n\n"
-    )
-
-    for order in orders[:10]:
-        text += (
-            f"<b>🧾 {h(order.get('order_number'))}</b>\n"
-            f"{field('סטטוס', status_label(order.get('status')))}\n"
-            f"{field('תאריך', order.get('created_at'))}\n"
-            f"{field('סה״כ', money(order.get('final_total') or 0))}\n\n"
-        )
-
-    if len(orders) > 10:
-        text += "מוצגות 10 ההזמנות האחרונות בלבד."
-
-    return rtl(text)
-
-
-
-# ================== BROADCAST / MARKETING LOGIC ==================
-BROADCAST_MIN_LENGTH = 5
-BROADCAST_MAX_LENGTH = 1200
-
-
-def clean_broadcast_text(text):
-    return str(text or "").strip()
-
-
-def validate_broadcast_text(text):
-    text = clean_broadcast_text(text)
-
-    if len(text) < BROADCAST_MIN_LENGTH:
-        return False, "ההודעה קצרה מדי. רשום הודעה ברורה באורך של לפחות 5 תווים."
-
-    if len(text) > BROADCAST_MAX_LENGTH:
-        return False, "ההודעה ארוכה מדי. ניתן לשלוח עד 1,200 תווים."
-
-    return True, ""
-
-
-def format_broadcast_preview(text, customers_count):
-    return rtl(
-        "<b>📢 תצוגה מקדימה לשליחה</b>\n\n"
-        f"{field('כמות לקוחות לשליחה', customers_count)}\n\n"
-        "<b>תוכן ההודעה:</b>\n"
-        "━━━━━━━━━━━━━━\n"
-        f"{h(text)}\n"
-        "━━━━━━━━━━━━━━\n\n"
-        "אם הכול תקין לחץ על:\n"
-        "<b>✅ אשר ושלח ללקוחות</b>"
-    )
-
-
-async def send_broadcast_to_customers(bot, text, customer_ids):
-    sent = 0
-    failed = 0
-
-    final_text = rtl(
-        "<b>📢 הודעה מ־Vendora</b>\n\n"
-        f"{h(text)}"
-    )
-
-    for telegram_id in customer_ids:
-        try:
-            await bot.send_message(
-                telegram_id,
-                final_text,
-                parse_mode="HTML"
-            )
-            sent += 1
-        except Exception:
-            failed += 1
-
-    return sent, failed
-
-
-
-
-@router.callback_query(F.data.startswith("order_action:"))
-async def order_notification_action(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("אין לך הרשאה לבצע פעולה זו.", show_alert=True)
-        return
-
-    parts = (callback.data or "").split(":")
-
-    if len(parts) != 3:
-        await callback.answer("פעולה לא תקינה.", show_alert=True)
-        return
-
-    _, action, order_number = parts
-
-    order_before = get_order_by_number(order_number)
-
-    if not order_before:
-        await callback.answer("ההזמנה לא נמצאה במערכת.", show_alert=True)
-        return
-
-    current_status = order_before.get("status")
-
-    if action == "view":
-        await callback.answer("הזמנה זו לצפייה בלבד.", show_alert=True)
-        return
-
-    if action not in NOTIFICATION_ACTION_BY_BUTTON:
-        await callback.answer("פעולה לא תקינה.", show_alert=True)
-        return
-
-    new_status = NOTIFICATION_ACTION_BY_BUTTON[action]
-
-    is_valid, reason_text = validate_status_change(current_status, new_status)
-
-    if not is_valid:
-        clean_reason = (
-            reason_text
-            .replace("<b>", "")
-            .replace("</b>", "")
-            .replace("\\n", "\n")
-        )
-        await callback.answer(clean_reason, show_alert=True)
-        return
-
-    ok = update_order_status(order_number, new_status)
-    order = get_order_by_number(order_number)
-
-    if not ok or not order:
-        await callback.answer("לא הצלחתי לעדכן את ההזמנה.", show_alert=True)
-        return
-
-    client_msg = CLIENT_STATUS_MESSAGE.get(new_status, "סטטוס ההזמנה שלך עודכן.")
-
-    try:
-        await callback.bot.send_message(
-            order["telegram_id"],
-            rtl(f"{client_msg}\n\n{field('מספר הזמנה', order_number)}"),
-            parse_mode="HTML"
-        )
-    except Exception:
-        pass
-
-    await callback.answer("סטטוס ההזמנה עודכן בהצלחה.", show_alert=False)
-
-    try:
-        await callback.message.edit_text(
-            format_order(order),
-            reply_markup=order_notification_keyboard(order_number, order.get("status")),
-            parse_mode="HTML"
-        )
-    except Exception:
-        await callback.message.answer(
-            format_order(order),
-            reply_markup=order_notification_keyboard(order_number, order.get("status")),
-            parse_mode="HTML"
-        )
-
 
 
 @router.message(Command("admin"))
