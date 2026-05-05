@@ -19,6 +19,7 @@ def admin_keyboard():
             [KeyboardButton(text="🔎 חפש הזמנה"), KeyboardButton(text="📞 חפש לפי טלפון")],
             [KeyboardButton(text="📊 מצב העסק"), KeyboardButton(text="📅 סטטיסטיקה לפי תאריך")],
             [KeyboardButton(text="📢 שלח הודעה ללקוחות")],
+            [KeyboardButton(text="👥 לקוחות")],
             [KeyboardButton(text="🔄 עדכן סטטוס הזמנה")],
             [KeyboardButton(text="➕ הוסף מוצר"), KeyboardButton(text="📦 רשימת מוצרים")],
             [KeyboardButton(text="✏️ שנה מחיר"), KeyboardButton(text="📝 שנה תיאור")],
@@ -49,6 +50,27 @@ def broadcast_confirm_keyboard():
             [KeyboardButton(text="✅ אשר ושלח ללקוחות")],
             [KeyboardButton(text="✏️ ערוך הודעה")],
             [KeyboardButton(text="❌ בטל שליחה")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+def customers_menu_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📋 רשימת לקוחות")],
+            [KeyboardButton(text="🔎 חפש לקוח")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def customer_actions_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📦 היסטוריית הזמנות לקוח")],
+            [KeyboardButton(text="⬅️ חזרה לרשימת לקוחות")],
             [KeyboardButton(text="⬅️ חזרה לניהול")]
         ],
         resize_keyboard=True
