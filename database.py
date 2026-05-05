@@ -834,3 +834,74 @@ def save_customer_profile(
     conn.commit()
     conn.close()
     return True
+
+
+def get_dashboard_statistics():
+    today = datetime.now().strftime("%Y-%m-%d")
+    month = datetime.now().strftime("%Y-%m")
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT COUNT(*), COALESCE(SUM(final_total), 0)
+        FROM orders
+        WHERE created_at LIKE ?
+    """, (f"{today}%",))
+    today_orders, today_money = cur.fetchone()
+
+    cur.execute("""
+        SELECT COUNT(*), COALESCE(SUM(final_total), 0)
+        FROM orders
+        WHERE created_at LIKE ?
+    """, (f"{month}%",))
+    month_orders, month_money = cur.fetchone()
+
+    cur.execute("""
+        SELECT COUNT(DISTINCT telegram_id)
+        FROM orders
+        WHERE created_at LIKE ?
+    """, (f"{month}%",))
+    new_customers = cur.fetchone()[0]
+
+    cur.execute("""
+        SELECT cart_json
+        FROM orders
+        WHERE created_at LIKE ?
+    """, (f"{month}%",))
+    carts = cur.fetchall()
+
+    conn.close()
+
+    product_sales = {}
+
+    for row in carts:
+        try:
+            cart = json.loads(row[0])
+        except Exception:
+            cart = []
+
+        for item in cart:
+            name = item.get("name", "לא ידוע")
+            qty = int(item.get("qty", 0))
+            if name:
+                product_sales[name] = product_sales.get(name, 0) + qty
+
+    top_product = "-"
+    top_qty = 0
+
+    for name, qty in product_sales.items():
+        if qty > top_qty:
+            top_product = name
+            top_qty = qty
+
+    return {
+        "today_money": float(today_money or 0),
+        "month_money": float(month_money or 0),
+        "today_orders": int(today_orders or 0),
+        "month_orders": int(month_orders or 0),
+        "new_customers": int(new_customers or 0),
+        "top_product": top_product,
+        "top_qty": int(top_qty or 0),
+    }
+
