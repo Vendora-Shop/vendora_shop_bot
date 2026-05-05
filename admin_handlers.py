@@ -6,7 +6,7 @@ from datetime import datetime
 import calendar
 
 from config import ADMIN_ID
-from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard
+from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard, customers_menu_keyboard, customer_actions_keyboard
 from database import (
     add_product,
     get_all_products,
@@ -30,6 +30,10 @@ from database import (
     get_cancelled_orders,
     get_orders_status_summary,
     get_all_customer_telegram_ids,
+    get_customers_list,
+    search_customers,
+    get_customer_by_id,
+    get_orders_by_customer_telegram_id,
 )
 
 router = Router()
@@ -474,6 +478,100 @@ def format_product_row(row):
 
 
 
+
+
+# ================== CUSTOMERS MANAGEMENT LOGIC ==================
+def customer_select_keyboard(customers, back_text="⬅️ חזרה ללקוחות"):
+    keyboard = []
+
+    for customer in customers:
+        customer_id = customer.get("id")
+        name = customer.get("customer_name") or customer.get("telegram_name") or "לקוח ללא שם"
+        phone = customer.get("phone") or "-"
+        total_orders = customer.get("total_orders") or 0
+        total_spent = money(customer.get("total_spent") or 0)
+
+        keyboard.append([
+            KeyboardButton(
+                text=f"👤 {customer_id} | {name} | {phone} | {total_orders} הזמנות | {total_spent}"
+            )
+        ])
+
+    keyboard.append([KeyboardButton(text=back_text)])
+    keyboard.append([KeyboardButton(text="⬅️ חזרה לניהול")])
+
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+
+def extract_customer_id_from_button(text):
+    text = str(text or "").strip()
+
+    if text.startswith("👤 "):
+        text = text.replace("👤 ", "", 1)
+
+    if "|" in text:
+        value = text.split("|", 1)[0].strip()
+    else:
+        value = text.strip()
+
+    if not value.isdigit():
+        return None
+
+    return int(value)
+
+
+def format_customer_profile(customer):
+    address = (
+        f"{customer.get('city') or '-'}, "
+        f"{customer.get('street') or '-'}, "
+        f"קומה {customer.get('floor') or '-'}, "
+        f"דירה {customer.get('apartment') or '-'}"
+    )
+
+    return rtl(
+        "<b>👤 כרטיס לקוח</b>\n\n"
+        f"{field('שם', customer.get('customer_name') or '-')}\n"
+        f"{field('טלפון', customer.get('phone') or '-')}\n"
+        f"{field('כתובת אחרונה', address)}\n\n"
+        f"{field('סה״כ הזמנות', customer.get('total_orders') or 0)}\n"
+        f"{field('סה״כ קניות', money(customer.get('total_spent') or 0))}\n"
+        f"{field('הזמנה אחרונה', customer.get('last_order_number') or '-')}\n\n"
+        f"{field('Telegram ID', customer.get('telegram_id') or '-')}\n"
+        f"{field('Telegram', customer.get('telegram_name') or '-')}\n\n"
+        f"{field('נוצר בתאריך', customer.get('created_at') or '-')}\n"
+        f"{field('עודכן לאחרונה', customer.get('updated_at') or '-')}"
+    )
+
+
+def format_customer_orders_summary(customer, orders):
+    if not orders:
+        return rtl(
+            "<b>📦 היסטוריית הזמנות לקוח</b>\n\n"
+            "לא נמצאו הזמנות ללקוח הזה."
+        )
+
+    text = (
+        "<b>📦 היסטוריית הזמנות לקוח</b>\n\n"
+        f"{field('לקוח', customer.get('customer_name') or '-')}\n"
+        f"{field('טלפון', customer.get('phone') or '-')}\n"
+        f"{field('נמצאו הזמנות', len(orders))}\n\n"
+    )
+
+    for order in orders[:10]:
+        text += (
+            f"<b>🧾 {h(order.get('order_number'))}</b>\n"
+            f"{field('סטטוס', status_label(order.get('status')))}\n"
+            f"{field('תאריך', order.get('created_at'))}\n"
+            f"{field('סה״כ', money(order.get('final_total') or 0))}\n\n"
+        )
+
+    if len(orders) > 10:
+        text += "מוצגות 10 ההזמנות האחרונות בלבד."
+
+    return rtl(text)
+
+
+
 # ================== BROADCAST / MARKETING LOGIC ==================
 BROADCAST_MIN_LENGTH = 5
 BROADCAST_MAX_LENGTH = 1200
@@ -548,6 +646,24 @@ async def admin_panel(message: Message):
         parse_mode="HTML"
     )
 
+
+
+
+@router.message(F.text == "👥 לקוחות")
+async def customers_panel_start(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "customers_menu"}
+
+    await message.answer(
+        rtl(
+            "<b>👥 ניהול לקוחות</b>\n\n"
+            "בחר פעולה מהתפריט."
+        ),
+        reply_markup=customers_menu_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "📢 שלח הודעה ללקוחות")
@@ -1038,6 +1154,179 @@ async def admin_flow(message: Message):
         return
 
 
+
+
+    if step == "customers_menu":
+        if txt == "📋 רשימת לקוחות":
+            customers = get_customers_list(30)
+
+            if not customers:
+                await message.answer(
+                    rtl(
+                        "<b>👥 רשימת לקוחות</b>\n\n"
+                        "אין עדיין לקוחות שמורים במערכת."
+                    ),
+                    reply_markup=customers_menu_keyboard(),
+                    parse_mode="HTML"
+                )
+                return
+
+            state["step"] = "customers_select"
+            state["customers_last_mode"] = "list"
+
+            await message.answer(
+                rtl(
+                    "<b>👥 רשימת לקוחות</b>\n\n"
+                    f"נמצאו {len(customers)} לקוחות.\n"
+                    "בחר לקוח מהרשימה כדי לפתוח כרטיס."
+                ),
+                reply_markup=customer_select_keyboard(customers),
+                parse_mode="HTML"
+            )
+            return
+
+        if txt == "🔎 חפש לקוח":
+            state["step"] = "customers_search"
+
+            await message.answer(
+                rtl(
+                    "<b>🔎 חיפוש לקוח</b>\n\n"
+                    "רשום שם, טלפון או שם Telegram לחיפוש."
+                ),
+                parse_mode="HTML"
+            )
+            return
+
+        await message.answer(
+            rtl("<b>⚠️ בחר פעולה מתוך הכפתורים בלבד.</b>"),
+            reply_markup=customers_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if step == "customers_search":
+        query = txt.strip()
+
+        if len(query) < 2:
+            await message.answer(
+                rtl(
+                    "<b>⚠️ חיפוש קצר מדי</b>\n\n"
+                    "רשום לפחות 2 תווים לחיפוש."
+                ),
+                parse_mode="HTML"
+            )
+            return
+
+        customers = search_customers(query, 30)
+
+        if not customers:
+            state["step"] = "customers_menu"
+            await message.answer(
+                rtl(
+                    "<b>🔎 תוצאות חיפוש</b>\n\n"
+                    "לא נמצאו לקוחות לפי החיפוש הזה."
+                ),
+                reply_markup=customers_menu_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        state["step"] = "customers_select"
+        state["customers_last_mode"] = "search"
+        state["customers_last_query"] = query
+
+        await message.answer(
+            rtl(
+                "<b>🔎 תוצאות חיפוש</b>\n\n"
+                f"נמצאו {len(customers)} לקוחות.\n"
+                "בחר לקוח מהרשימה כדי לפתוח כרטיס."
+            ),
+            reply_markup=customer_select_keyboard(customers),
+            parse_mode="HTML"
+        )
+        return
+
+    if step == "customers_select":
+        if txt == "⬅️ חזרה ללקוחות":
+            state["step"] = "customers_menu"
+            await message.answer(
+                rtl("<b>👥 ניהול לקוחות</b>\n\nבחר פעולה מהתפריט."),
+                reply_markup=customers_menu_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        customer_id = extract_customer_id_from_button(txt)
+
+        if not customer_id:
+            await message.answer(
+                rtl("<b>⚠️ בחר לקוח מתוך הרשימה בלבד.</b>"),
+                parse_mode="HTML"
+            )
+            return
+
+        customer = get_customer_by_id(customer_id)
+
+        if not customer:
+            await message.answer(
+                rtl("<b>⚠️ הלקוח לא נמצא במערכת.</b>"),
+                reply_markup=customers_menu_keyboard(),
+                parse_mode="HTML"
+            )
+            state["step"] = "customers_menu"
+            return
+
+        state["step"] = "customer_profile"
+        state["customer_id"] = customer_id
+
+        await message.answer(
+            format_customer_profile(customer),
+            reply_markup=customer_actions_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if step == "customer_profile":
+        customer_id = state.get("customer_id")
+        customer = get_customer_by_id(customer_id) if customer_id else None
+
+        if not customer:
+            state["step"] = "customers_menu"
+            await message.answer(
+                rtl("<b>⚠️ הלקוח לא נמצא במערכת.</b>"),
+                reply_markup=customers_menu_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        if txt == "📦 היסטוריית הזמנות לקוח":
+            orders = get_orders_by_customer_telegram_id(customer["telegram_id"], 30)
+
+            await message.answer(
+                format_customer_orders_summary(customer, orders),
+                reply_markup=customer_actions_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        if txt == "⬅️ חזרה לרשימת לקוחות":
+            customers = get_customers_list(30)
+
+            state["step"] = "customers_select"
+
+            await message.answer(
+                rtl("<b>👥 רשימת לקוחות</b>\n\nבחר לקוח מהרשימה."),
+                reply_markup=customer_select_keyboard(customers),
+                parse_mode="HTML"
+            )
+            return
+
+        await message.answer(
+            rtl("<b>⚠️ בחר פעולה מתוך הכפתורים בלבד.</b>"),
+            reply_markup=customer_actions_keyboard(),
+            parse_mode="HTML"
+        )
+        return
 
     if step == "broadcast_text":
         broadcast_text = clean_broadcast_text(txt)
