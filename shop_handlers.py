@@ -21,7 +21,7 @@ router = Router()
 users = {}
 
 RTL = "\u200F"
-
+#קעקרערעק
 
 def h(text):
     return escape(str(text))
