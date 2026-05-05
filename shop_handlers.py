@@ -319,7 +319,7 @@ def build_order_summary(data):
         f"{field('טלפון', data['phone'])}\n\n"
         f"{cart_text(data['cart']).replace(RTL, '')}\n\n"
         f"{delivery_block}\n\n"
-        "<b>✅ אם הכול נכון לחץ על אשר הזמנה.</b>"
+        "<b>✅ אם הכל נכון לחץ על אשר הזמנה.</b>"
     )
 
     return rtl(text)
