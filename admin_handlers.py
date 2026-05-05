@@ -908,6 +908,32 @@ async def admin_flow(message: Message):
         order_number = state.get("order_number")
         new_status = ORDER_ACTION_BY_BUTTON[txt]
 
+        order_before = get_order_by_number(order_number)
+
+        if not order_before:
+            await message.answer(
+                rtl("<b>⚠️ ההזמנה לא נמצאה במערכת.</b>"),
+                reply_markup=admin_keyboard(),
+                parse_mode="HTML"
+            )
+            admin_states[uid] = {"step": "admin"}
+            return
+
+        current_status = order_before.get("status")
+
+        if current_status == new_status:
+            await message.answer(
+                rtl(
+                    "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
+                    f"{field('מספר הזמנה', order_number)}\n"
+                    f"{field('סטטוס נוכחי', status_label(current_status))}\n\n"
+                    "אין צורך לבצע את אותה פעולה פעם נוספת."
+                ),
+                reply_markup=order_action_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
         ok = update_order_status(order_number, new_status)
         order = get_order_by_number(order_number)
 
@@ -1020,6 +1046,32 @@ async def admin_flow(message: Message):
 
         order_number = state["order_number"]
         new_status = STATUS_BY_BUTTON[txt]
+
+        order_before = get_order_by_number(order_number)
+
+        if not order_before:
+            admin_states[uid] = {"step": "admin"}
+            await message.answer(
+                rtl("<b>⚠️ ההזמנה לא נמצאה במערכת.</b>"),
+                reply_markup=admin_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        current_status = order_before.get("status")
+
+        if current_status == new_status:
+            await message.answer(
+                rtl(
+                    "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
+                    f"{field('מספר הזמנה', order_number)}\n"
+                    f"{field('סטטוס נוכחי', status_label(current_status))}\n\n"
+                    "אין צורך לבצע את אותה פעולה פעם נוספת."
+                ),
+                reply_markup=order_status_keyboard(),
+                parse_mode="HTML"
+            )
+            return
 
         ok = update_order_status(order_number, new_status)
         order = get_order_by_number(order_number)
