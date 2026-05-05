@@ -3,17 +3,14 @@ from config import ADMIN_ID
 
 
 def main_keyboard(user_id=None):
-    keyboard = [
-        [KeyboardButton(text="🛍️ מוצרים")],
-        [KeyboardButton(text="🛒 סל הקניות")],
-        [KeyboardButton(text="📞 שירות לקוחות")]
-    ]
-
     if user_id == ADMIN_ID:
         keyboard.append([KeyboardButton(text="🔐 פאנל ניהול")])
 
     return ReplyKeyboardMarkup(
-        keyboard=keyboard,
+        keyboard=[
+            [KeyboardButton(text="🛒 חנות")],
+            [KeyboardButton(text="👤 הפרטים שלי"), KeyboardButton(text="📞 שירות לקוחות")]
+        ],
         resize_keyboard=True
     )
 
