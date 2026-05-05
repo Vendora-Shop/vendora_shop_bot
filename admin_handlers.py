@@ -225,8 +225,9 @@ async def back_admin(message: Message):
     )
 
 
+
 @router.message(F.text == "📊 מצב העסק")
-async def dashboard(message: Message):
+async def business_dashboard(message: Message):
     if not is_admin(message.from_user.id):
         return
 
@@ -234,16 +235,23 @@ async def dashboard(message: Message):
 
     text = (
         "<b>📊 מצב העסק</b>\n\n"
-        f"{field('💰 הכנסות היום', money(stats['today_money']))}\n"
-        f"{field('💰 הכנסות החודש', money(stats['month_money']))}\n\n"
-        f"{field('📦 הזמנות היום', stats['today_orders'])}\n"
-        f"{field('📦 הזמנות החודש', stats['month_orders'])}\n\n"
+        "💰 <b>הכנסות</b>\n"
+        f"{field('היום', money(stats['today_money']))}\n"
+        f"{field('החודש', money(stats['month_money']))}\n\n"
+        "📦 <b>הזמנות</b>\n"
+        f"{field('היום', stats['today_orders'])}\n"
+        f"{field('החודש', stats['month_orders'])}\n\n"
         f"{field('🧍 לקוחות חדשים החודש', stats['new_customers'])}\n\n"
-        f"{field('🔥 מוצר הכי נמכר החודש', stats['top_product'])}\n"
-        f"{field('📊 כמות שנמכרה', stats['top_qty'])}"
+        "🔥 <b>מוצר מוביל החודש</b>\n"
+        f"{field('שם מוצר', stats['top_product'])}\n"
+        f"{field('כמות נמכרה', stats['top_qty'])}"
     )
 
-    await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
+    await message.answer(
+        rtl(text),
+        reply_markup=admin_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "🧾 הזמנות אחרונות")
