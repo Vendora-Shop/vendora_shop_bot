@@ -25,8 +25,8 @@ RTL = "\u200F"
 # ================== PICKUP SETTINGS ==================
 # כאן מגדירים את נקודת האיסוף העצמי.
 # אם בעתיד תרצה לשנות כתובת איסוף — משנים רק כאן.
-PICKUP_POINT_NAME = "נקודת איסוף Vendora"
-PICKUP_POINT_ADDRESS = "אשדוד - כתובת תעודכן במערכת"
+PICKUP_POINT_NAME = "Vendora - מחסן"
+PICKUP_POINT_ADDRESS = "אשדוד - הנביאים 2"
 PICKUP_CITY = "איסוף עצמי"
 PICKUP_BASE_CITY = "איסוף עצמי"
 #קעקרערעק
