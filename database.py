@@ -774,3 +774,86 @@ def get_statistics_by_date(date_text):
         "top_qty": int(top_qty or 0),
     }
 
+def get_open_orders(limit=30):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, order_number, telegram_id, telegram_name, customer_name, phone,
+               city, street, floor, apartment, address, cart_json,
+               products_total, delivery_price, final_total, base_city,
+               status, created_at, updated_at
+        FROM orders
+        WHERE status NOT IN ('done', 'cancelled')
+        ORDER BY id DESC
+        LIMIT ?
+    """, (int(limit),))
+    rows = cur.fetchall()
+    conn.close()
+    return [order_row_to_dict(row) for row in rows]
+
+
+def get_done_orders(limit=30):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, order_number, telegram_id, telegram_name, customer_name, phone,
+               city, street, floor, apartment, address, cart_json,
+               products_total, delivery_price, final_total, base_city,
+               status, created_at, updated_at
+        FROM orders
+        WHERE status = 'done'
+        ORDER BY id DESC
+        LIMIT ?
+    """, (int(limit),))
+    rows = cur.fetchall()
+    conn.close()
+    return [order_row_to_dict(row) for row in rows]
+
+
+def get_cancelled_orders(limit=30):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, order_number, telegram_id, telegram_name, customer_name, phone,
+               city, street, floor, apartment, address, cart_json,
+               products_total, delivery_price, final_total, base_city,
+               status, created_at, updated_at
+        FROM orders
+        WHERE status = 'cancelled'
+        ORDER BY id DESC
+        LIMIT ?
+    """, (int(limit),))
+    rows = cur.fetchall()
+    conn.close()
+    return [order_row_to_dict(row) for row in rows]
+
+
+def get_orders_status_summary():
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT status, COUNT(*)
+        FROM orders
+        GROUP BY status
+    """)
+    rows = cur.fetchall()
+    conn.close()
+
+    counts = {
+        "new": 0,
+        "approved": 0,
+        "processing": 0,
+        "shipping": 0,
+        "done": 0,
+        "cancelled": 0,
+    }
+
+    for status, count in rows:
+        if status in counts:
+            counts[status] = int(count or 0)
+
+    counts["open"] = counts["new"] + counts["approved"] + counts["processing"] + counts["shipping"]
+
+    return counts
+
