@@ -23,7 +23,6 @@ from database import (
     get_order_by_number,
     update_order_status,
     get_orders_by_phone,
-    get_today_statistics,
     get_dashboard_statistics,
     get_statistics_by_date,
 )
@@ -371,17 +370,30 @@ async def business_dashboard(message: Message):
     stats = get_dashboard_statistics()
 
     text = (
-        "<b>📊 מצב העסק</b>\n\n"
-        "💰 <b>הכנסות</b>\n"
-        f"{field('היום', money(stats['today_money']))}\n"
-        f"{field('החודש', money(stats['month_money']))}\n\n"
-        "📦 <b>הזמנות</b>\n"
-        f"{field('היום', stats['today_orders'])}\n"
-        f"{field('החודש', stats['month_orders'])}\n\n"
-        f"{field('🧍 לקוחות חדשים החודש', stats['new_customers'])}\n\n"
-        "🔥 <b>מוצר מוביל החודש</b>\n"
-        f"{field('שם מוצר', stats['top_product'])}\n"
-        f"{field('כמות נמכרה', stats['top_qty'])}"
+        "<b>📊 מצב העסק — Vendora</b>\n\n"
+
+        "🟢 <b>היום</b>\n"
+        f"{field('הכנסות', money(stats['today_money']))}\n"
+        f"{field('הזמנות', stats['today_orders'])}\n"
+        f"{field('לקוחות חדשים', stats['today_customers'])}\n"
+        f"{field('ממוצע להזמנה', money(stats['today_avg_order']))}\n\n"
+
+        "🔵 <b>החודש</b>\n"
+        f"{field('הכנסות', money(stats['month_money']))}\n"
+        f"{field('הזמנות', stats['month_orders'])}\n"
+        f"{field('לקוחות חדשים', stats['month_customers'])}\n"
+        f"{field('ממוצע להזמנה', money(stats['month_avg_order']))}\n\n"
+
+        "🟣 <b>השנה</b>\n"
+        f"{field('הכנסות', money(stats['year_money']))}\n"
+        f"{field('הזמנות', stats['year_orders'])}\n"
+        f"{field('לקוחות חדשים', stats['year_customers'])}\n"
+        f"{field('ממוצע להזמנה', money(stats['year_avg_order']))}\n\n"
+
+        "🔥 <b>מוצרים מובילים</b>\n"
+        f"{field('היום', stats['today_top_product'])} ({stats['today_top_qty']})\n"
+        f"{field('החודש', stats['month_top_product'])} ({stats['month_top_qty']})\n"
+        f"{field('השנה', stats['year_top_product'])} ({stats['year_top_qty']})"
     )
 
     await message.answer(
@@ -413,34 +425,6 @@ async def statistics_by_date_start(message: Message):
         reply_markup=statistics_calendar_keyboard(today.year, today.month),
         parse_mode="HTML"
     )
-
-@router.message(F.text == "📊 סטטיסטיקה יומית")
-async def daily_statistics(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-
-    stats = get_today_statistics()
-
-    top_product = stats["top_product"] or "אין עדיין"
-    top_qty = stats["top_qty"]
-
-    text = (
-        "<b>📊 סטטיסטיקה יומית</b>\n\n"
-        f"{field('תאריך', stats['date'])}\n\n"
-        f"{field('סה״כ הזמנות', stats['total_orders'])}\n"
-        f"{field('סה״כ מחזור', money(stats['total_money']))}\n\n"
-        f"{field('חדשות', stats['new'])}\n"
-        f"{field('אושרו', stats['approved'])}\n"
-        f"{field('בטיפול', stats['processing'])}\n"
-        f"{field('במשלוח', stats['shipping'])}\n"
-        f"{field('שולמו', stats['paid'])}\n"
-        f"{field('הושלמו', stats['done'])}\n"
-        f"{field('בוטלו', stats['cancelled'])}\n\n"
-        f"{field('מוצר מוביל', top_product)}\n"
-        f"{field('כמות נמכרת', top_qty)}"
-    )
-
-    await message.answer(rtl(text), parse_mode="HTML")
 
 
 @router.message(F.text == "🔄 עדכן סטטוס הזמנה")
