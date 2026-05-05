@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from html import escape
 from datetime import datetime
 import calendar
@@ -66,6 +66,50 @@ CLIENT_STATUS_MESSAGE = {
     "done": "✅ ההזמנה הושלמה. תודה שקנית ב־Vendora Shop!",
     "cancelled": "❌ ההזמנה בוטלה. לפרטים נוספים ניתן לפנות לשירות לקוחות.",
 }
+
+
+
+
+# ================== REAL TIME ORDER NOTIFICATIONS ==================
+NOTIFICATION_ACTION_BY_BUTTON = {
+    "approve": "approved",
+    "processing": "processing",
+    "shipping": "shipping",
+    "done": "done",
+    "cancel": "cancelled",
+}
+
+
+def order_notification_keyboard(order_number, status):
+    buttons = []
+
+    if status == "new":
+        buttons.append([
+            InlineKeyboardButton(text="✅ אשר הזמנה", callback_data=f"order_action:approve:{order_number}"),
+            InlineKeyboardButton(text="❌ בטל", callback_data=f"order_action:cancel:{order_number}")
+        ])
+    elif status == "approved":
+        buttons.append([
+            InlineKeyboardButton(text="📦 העבר לטיפול", callback_data=f"order_action:processing:{order_number}"),
+            InlineKeyboardButton(text="❌ בטל", callback_data=f"order_action:cancel:{order_number}")
+        ])
+    elif status == "processing":
+        buttons.append([
+            InlineKeyboardButton(text="🚚 יצא למשלוח", callback_data=f"order_action:shipping:{order_number}"),
+            InlineKeyboardButton(text="❌ בטל", callback_data=f"order_action:cancel:{order_number}")
+        ])
+    elif status == "shipping":
+        buttons.append([
+            InlineKeyboardButton(text="✅ הושלמה", callback_data=f"order_action:done:{order_number}"),
+            InlineKeyboardButton(text="❌ בטל", callback_data=f"order_action:cancel:{order_number}")
+        ])
+    else:
+        buttons.append([
+            InlineKeyboardButton(text="👁️ צפייה בלבד", callback_data=f"order_action:view:{order_number}")
+        ])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 
 
 def h(text):
@@ -627,6 +671,86 @@ async def send_broadcast_to_customers(bot, text, customer_ids):
             failed += 1
 
     return sent, failed
+
+
+
+
+@router.callback_query(F.data.startswith("order_action:"))
+async def order_notification_action(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("אין לך הרשאה לבצע פעולה זו.", show_alert=True)
+        return
+
+    parts = (callback.data or "").split(":")
+
+    if len(parts) != 3:
+        await callback.answer("פעולה לא תקינה.", show_alert=True)
+        return
+
+    _, action, order_number = parts
+
+    order_before = get_order_by_number(order_number)
+
+    if not order_before:
+        await callback.answer("ההזמנה לא נמצאה במערכת.", show_alert=True)
+        return
+
+    current_status = order_before.get("status")
+
+    if action == "view":
+        await callback.answer("הזמנה זו לצפייה בלבד.", show_alert=True)
+        return
+
+    if action not in NOTIFICATION_ACTION_BY_BUTTON:
+        await callback.answer("פעולה לא תקינה.", show_alert=True)
+        return
+
+    new_status = NOTIFICATION_ACTION_BY_BUTTON[action]
+
+    is_valid, reason_text = validate_status_change(current_status, new_status)
+
+    if not is_valid:
+        clean_reason = (
+            reason_text
+            .replace("<b>", "")
+            .replace("</b>", "")
+            .replace("\\n", "\n")
+        )
+        await callback.answer(clean_reason, show_alert=True)
+        return
+
+    ok = update_order_status(order_number, new_status)
+    order = get_order_by_number(order_number)
+
+    if not ok or not order:
+        await callback.answer("לא הצלחתי לעדכן את ההזמנה.", show_alert=True)
+        return
+
+    client_msg = CLIENT_STATUS_MESSAGE.get(new_status, "סטטוס ההזמנה שלך עודכן.")
+
+    try:
+        await callback.bot.send_message(
+            order["telegram_id"],
+            rtl(f"{client_msg}\n\n{field('מספר הזמנה', order_number)}"),
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+    await callback.answer("סטטוס ההזמנה עודכן בהצלחה.", show_alert=False)
+
+    try:
+        await callback.message.edit_text(
+            format_order(order),
+            reply_markup=order_notification_keyboard(order_number, order.get("status")),
+            parse_mode="HTML"
+        )
+    except Exception:
+        await callback.message.answer(
+            format_order(order),
+            reply_markup=order_notification_keyboard(order_number, order.get("status")),
+            parse_mode="HTML"
+        )
 
 
 
