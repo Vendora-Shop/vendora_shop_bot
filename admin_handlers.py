@@ -25,6 +25,10 @@ from database import (
     get_orders_by_phone,
     get_dashboard_statistics,
     get_statistics_by_date,
+    get_open_orders,
+    get_done_orders,
+    get_cancelled_orders,
+    get_orders_status_summary,
 )
 
 router = Router()
@@ -187,55 +191,73 @@ def format_date_he(date_text):
         return date_text
 
 
-def orders_filter_keyboard():
+
+def orders_main_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="📋 כל ההזמנות")],
+            [KeyboardButton(text="📋 הזמנות פתוחות")],
             [KeyboardButton(text="🆕 חדשות"), KeyboardButton(text="✅ אושרו")],
             [KeyboardButton(text="📦 בטיפול"), KeyboardButton(text="🚚 במשלוח")],
-            [KeyboardButton(text="✅ הושלמו")],
-            [KeyboardButton(text="❌ בוטלו")],
+            [KeyboardButton(text="🧾 הושלמו"), KeyboardButton(text="❌ בוטלו")],
             [KeyboardButton(text="⬅️ חזרה לניהול")]
         ],
         resize_keyboard=True
     )
 
 
-def order_select_keyboard(orders):
+def order_select_keyboard(orders, back_text="⬅️ חזרה לניהול הזמנות"):
     keyboard = []
 
     for order in orders:
         order_number = order.get("order_number", "")
         customer_name = order.get("customer_name", "")
         final_total = money(order.get("final_total", 0))
-        keyboard.append([KeyboardButton(text=f"🧾 {order_number} | {customer_name} | {final_total}")])
+        status = status_label(order.get("status", ""))
+        keyboard.append([KeyboardButton(text=f"🧾 {order_number} | {final_total} | {customer_name} | {status}")])
 
-    keyboard.append([KeyboardButton(text="⬅️ סינון הזמנות")])
+    keyboard.append([KeyboardButton(text=back_text)])
     keyboard.append([KeyboardButton(text="⬅️ חזרה לניהול")])
 
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
-def order_action_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="✅ אשר הזמנה"), KeyboardButton(text="📦 העבר לטיפול")],
-            [KeyboardButton(text="🚚 סמן כיצא למשלוח"), KeyboardButton(text="✅ סמן כהושלם")],
-            [KeyboardButton(text="❌ בטל הזמנה")],
-            [KeyboardButton(text="⬅️ חזרה לרשימת הזמנות")],
-            [KeyboardButton(text="⬅️ חזרה לניהול")]
-        ],
-        resize_keyboard=True
-    )
+def order_action_keyboard(order_status):
+    if order_status in {"done", "cancelled"}:
+        return ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="👁️ צפייה בלבד")],
+                [KeyboardButton(text="⬅️ חזרה לרשימת הזמנות")],
+                [KeyboardButton(text="⬅️ חזרה לניהול")]
+            ],
+            resize_keyboard=True
+        )
+
+    keyboard = []
+
+    if order_status == "new":
+        keyboard.append([KeyboardButton(text="✅ אשר הזמנה"), KeyboardButton(text="❌ בטל הזמנה")])
+    elif order_status == "approved":
+        keyboard.append([KeyboardButton(text="📦 העבר לטיפול"), KeyboardButton(text="❌ בטל הזמנה")])
+    elif order_status == "processing":
+        keyboard.append([KeyboardButton(text="🚚 סמן כיצא למשלוח"), KeyboardButton(text="❌ בטל הזמנה")])
+    elif order_status == "shipping":
+        keyboard.append([KeyboardButton(text="✅ סמן כהושלם"), KeyboardButton(text="❌ בטל הזמנה")])
+    else:
+        keyboard.append([KeyboardButton(text="❌ בטל הזמנה")])
+
+    keyboard.append([KeyboardButton(text="⬅️ חזרה לרשימת הזמנות")])
+    keyboard.append([KeyboardButton(text="⬅️ חזרה לניהול")])
+
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
-ORDER_FILTER_BY_BUTTON = {
-    "📋 כל ההזמנות": "all",
+ORDER_SECTION_BY_BUTTON = {
+    "📋 הזמנות פתוחות": "open",
     "🆕 חדשות": "new",
     "✅ אושרו": "approved",
     "📦 בטיפול": "processing",
     "🚚 במשלוח": "shipping",
-    "✅ הושלמו": "done",
+    "🧾 הושלמו": "done",
     "❌ בוטלו": "cancelled",
 }
 
@@ -249,15 +271,63 @@ ORDER_ACTION_BY_BUTTON = {
 }
 
 
+def extract_order_number_from_button(text):
+    text = str(text or "").strip()
+
+    if text.startswith("🧾 "):
+        text = text.replace("🧾 ", "", 1)
+
+    if "|" in text:
+        return text.split("|", 1)[0].strip()
+
+    return text.strip()
+
+
+def get_orders_for_section(section, limit=30):
+    if section == "open":
+        return get_open_orders(limit)
+
+    if section == "done":
+        return get_done_orders(limit)
+
+    if section == "cancelled":
+        return get_cancelled_orders(limit)
+
+    return get_orders_by_status(section, limit)
+
+
+def section_title(section):
+    titles = {
+        "open": "📋 הזמנות פתוחות",
+        "new": "🆕 הזמנות חדשות",
+        "approved": "✅ הזמנות שאושרו",
+        "processing": "📦 הזמנות בטיפול",
+        "shipping": "🚚 הזמנות במשלוח",
+        "done": "🧾 הזמנות שהושלמו",
+        "cancelled": "❌ הזמנות שבוטלו",
+    }
+    return titles.get(section, "📦 ניהול הזמנות")
+
+
+def orders_summary_text():
+    counts = get_orders_status_summary()
+
+    return (
+        "<b>📦 ניהול הזמנות</b>\n\n"
+        "<b>📋 פתוחות לעבודה</b>\n"
+        f"{field('סה״כ פתוחות', counts['open'])}\n"
+        f"{field('חדשות', counts['new'])}\n"
+        f"{field('אושרו', counts['approved'])}\n"
+        f"{field('בטיפול', counts['processing'])}\n"
+        f"{field('במשלוח', counts['shipping'])}\n\n"
+        "<b>📁 ארכיון</b>\n"
+        f"{field('הושלמו', counts['done'])}\n"
+        f"{field('בוטלו', counts['cancelled'])}\n\n"
+        "בחר קטגוריה להצגה."
+    )
 
 
 # ================== ORDER STATUS LOGIC ==================
-# לוגיקה עסקית:
-# אי אפשר לבצע אותה פעולה פעמיים.
-# אי אפשר להחזיר הזמנה אחורה בסטטוס.
-# הזמנה שהושלמה או בוטלה היא סטטוס סופי ונעולה לשינויים רגילים.
-# ביטול אפשרי כל עוד ההזמנה לא הושלמה ולא בוטלה.
-
 FINAL_ORDER_STATUSES = {"done", "cancelled"}
 
 STATUS_FLOW_LEVEL = {
@@ -282,7 +352,7 @@ def validate_status_change(current_status, new_status):
         return False, (
             "<b>🔒 לא ניתן לשנות סטטוס</b>\n\n"
             "ההזמנה נמצאת בסטטוס סופי ולכן נעולה לשינויים רגילים.\n"
-            "אם צריך לבצע תיקון חריג — יש לפתוח אותה מחדש בצורה ייעודית."
+            "הזמנות שהושלמו או בוטלו נשמרות בארכיון לצפייה בלבד."
         )
 
     if new_status == "cancelled":
@@ -294,8 +364,7 @@ def validate_status_change(current_status, new_status):
     if new_level < current_level:
         return False, (
             "<b>⚠️ פעולה לא תקינה</b>\n\n"
-            "לא ניתן להחזיר הזמנה לשלב קודם בתהליך.\n"
-            "בחר סטטוס מתקדם יותר או השאר את ההזמנה במצב הנוכחי."
+            "לא ניתן להחזיר הזמנה לשלב קודם בתהליך."
         )
 
     if current_status == "new" and new_status not in {"approved", "cancelled"}:
@@ -339,25 +408,6 @@ async def send_status_blocked_message(message, order_number, current_status, rea
         reply_markup=reply_markup,
         parse_mode="HTML"
     )
-
-
-def extract_order_number_from_button(text):
-    text = str(text or "").strip()
-
-    if text.startswith("🧾 "):
-        text = text.replace("🧾 ", "", 1)
-
-    if "|" in text:
-        return text.split("|", 1)[0].strip()
-
-    return text.strip()
-
-
-def get_orders_for_filter(status_filter, limit=20):
-    if status_filter == "all":
-        return get_recent_orders(limit)
-
-    return get_orders_by_status(status_filter, limit)
 
 
 def status_label(status):
@@ -473,16 +523,13 @@ async def orders_management_start(message: Message):
         return
 
     admin_states[message.from_user.id] = {
-        "step": "orders_filter",
-        "orders_filter": "all"
+        "step": "orders_section",
+        "orders_section": "open"
     }
 
     await message.answer(
-        rtl(
-            "<b>📦 ניהול הזמנות</b>\n\n"
-            "בחר איזה הזמנות להציג."
-        ),
-        reply_markup=orders_filter_keyboard(),
+        rtl(orders_summary_text()),
+        reply_markup=orders_main_keyboard(),
         parse_mode="HTML"
     )
 
@@ -892,38 +939,38 @@ async def admin_flow(message: Message):
         return
 
 
-    if step == "orders_filter":
-        if txt not in ORDER_FILTER_BY_BUTTON:
+    if step == "orders_section":
+        if txt not in ORDER_SECTION_BY_BUTTON:
             await message.answer(
-                rtl("<b>⚠️ בחר סינון מתוך הכפתורים בלבד.</b>"),
-                reply_markup=orders_filter_keyboard(),
+                rtl("<b>⚠️ בחר קטגוריה מתוך הכפתורים בלבד.</b>"),
+                reply_markup=orders_main_keyboard(),
                 parse_mode="HTML"
             )
             return
 
-        status_filter = ORDER_FILTER_BY_BUTTON[txt]
-        orders = get_orders_for_filter(status_filter, 20)
+        section = ORDER_SECTION_BY_BUTTON[txt]
+        orders = get_orders_for_section(section, 30)
 
-        state["orders_filter"] = status_filter
+        state["orders_section"] = section
         state["step"] = "orders_select"
 
         if not orders:
+            state["step"] = "orders_section"
             await message.answer(
                 rtl(
-                    "<b>📦 ניהול הזמנות</b>\n\n"
-                    "לא נמצאו הזמנות בסינון הזה."
+                    f"<b>{section_title(section)}</b>\n\n"
+                    "לא נמצאו הזמנות בקטגוריה הזו."
                 ),
-                reply_markup=orders_filter_keyboard(),
+                reply_markup=orders_main_keyboard(),
                 parse_mode="HTML"
             )
-            state["step"] = "orders_filter"
             return
 
         await message.answer(
             rtl(
-                "<b>📦 ניהול הזמנות</b>\n\n"
+                f"<b>{section_title(section)}</b>\n\n"
                 f"נמצאו {len(orders)} הזמנות.\n"
-                "בחר הזמנה מהרשימה כדי לפתוח ולעדכן סטטוס."
+                "בחר הזמנה מהרשימה כדי לצפות בפרטים."
             ),
             reply_markup=order_select_keyboard(orders),
             parse_mode="HTML"
@@ -931,11 +978,11 @@ async def admin_flow(message: Message):
         return
 
     if step == "orders_select":
-        if txt == "⬅️ סינון הזמנות":
-            state["step"] = "orders_filter"
+        if txt == "⬅️ חזרה לניהול הזמנות":
+            state["step"] = "orders_section"
             await message.answer(
-                rtl("<b>📦 ניהול הזמנות</b>\n\nבחר סינון הזמנות."),
-                reply_markup=orders_filter_keyboard(),
+                rtl(orders_summary_text()),
+                reply_markup=orders_main_keyboard(),
                 parse_mode="HTML"
             )
             return
@@ -955,38 +1002,64 @@ async def admin_flow(message: Message):
 
         await message.answer(
             format_order(order),
-            reply_markup=order_action_keyboard(),
+            reply_markup=order_action_keyboard(order.get("status")),
             parse_mode="HTML"
         )
         return
 
     if step == "order_actions":
         if txt == "⬅️ חזרה לרשימת הזמנות":
-            status_filter = state.get("orders_filter", "all")
-            orders = get_orders_for_filter(status_filter, 20)
+            section = state.get("orders_section", "open")
+            orders = get_orders_for_section(section, 30)
 
             state["step"] = "orders_select"
 
             if not orders:
-                state["step"] = "orders_filter"
+                state["step"] = "orders_section"
                 await message.answer(
-                    rtl("<b>📦 ניהול הזמנות</b>\n\nלא נמצאו הזמנות. בחר סינון אחר."),
-                    reply_markup=orders_filter_keyboard(),
+                    rtl(
+                        f"<b>{section_title(section)}</b>\n\n"
+                        "לא נמצאו הזמנות בקטגוריה הזו."
+                    ),
+                    reply_markup=orders_main_keyboard(),
                     parse_mode="HTML"
                 )
                 return
 
             await message.answer(
-                rtl("<b>📦 רשימת הזמנות</b>\n\nבחר הזמנה מהרשימה."),
+                rtl(
+                    f"<b>{section_title(section)}</b>\n\n"
+                    "בחר הזמנה מהרשימה."
+                ),
                 reply_markup=order_select_keyboard(orders),
                 parse_mode="HTML"
             )
             return
 
+        if txt == "👁️ צפייה בלבד":
+            order_number = state.get("order_number")
+            order = get_order_by_number(order_number)
+
+            if order:
+                await message.answer(
+                    rtl(
+                        "<b>👁️ צפייה בלבד</b>\n\n"
+                        "הזמנה זו נמצאת בסטטוס סופי ונשמרת בארכיון.\n"
+                        "לא ניתן לשנות אותה מכאן."
+                    ),
+                    reply_markup=order_action_keyboard(order.get("status")),
+                    parse_mode="HTML"
+                )
+            return
+
         if txt not in ORDER_ACTION_BY_BUTTON:
+            order_number = state.get("order_number")
+            order = get_order_by_number(order_number)
+            order_status = order.get("status") if order else "new"
+
             await message.answer(
                 rtl("<b>⚠️ בחר פעולה מתוך הכפתורים בלבד.</b>"),
-                reply_markup=order_action_keyboard(),
+                reply_markup=order_action_keyboard(order_status),
                 parse_mode="HTML"
             )
             return
@@ -1015,7 +1088,7 @@ async def admin_flow(message: Message):
                 order_number,
                 current_status,
                 reason_text,
-                order_action_keyboard()
+                order_action_keyboard(current_status)
             )
             return
 
@@ -1051,9 +1124,23 @@ async def admin_flow(message: Message):
             parse_mode="HTML"
         )
 
+        if new_status in FINAL_ORDER_STATUSES:
+            state["step"] = "orders_section"
+            await message.answer(
+                rtl(
+                    "<b>📁 ההזמנה עברה לארכיון</b>\n\n"
+                    "הזמנות שהושלמו או בוטלו לא מופיעות יותר ברשימת ההזמנות הפתוחות.\n"
+                    "ניתן למצוא אותן דרך: 🧾 הושלמו או ❌ בוטלו."
+                ),
+                reply_markup=orders_main_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        state["step"] = "order_actions"
         await message.answer(
             format_order(order),
-            reply_markup=order_action_keyboard(),
+            reply_markup=order_action_keyboard(order.get("status")),
             parse_mode="HTML"
         )
         return
