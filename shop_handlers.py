@@ -23,10 +23,14 @@ users = {}
 RTL = "\u200F"
 
 # ================== PICKUP SETTINGS ==================
-# כאן מגדירים את נקודת האיסוף העצמי.
-# אם בעתיד תרצה לשנות כתובת איסוף — משנים רק כאן.
-PICKUP_POINT_NAME = "Vendora - PickUp Point"
-PICKUP_POINT_ADDRESS = "אשדוד מדרחוב הנביאים 2"
+# כאן מגדירים את כל פרטי האיסוף העצמי.
+# אם בעתיד תרצה לשנות כתובת / שעות / ניווט — משנים רק כאן.
+PICKUP_POINT_NAME = "Vendora"
+PICKUP_POINT_ADDRESS = "אשדוד - הבנאים 2"
+PICKUP_PREP_TIME = "כ־30 דקות"
+PICKUP_HOURS = "א׳-ה׳ 10:00-19:00, ו׳ 09:00-13:00"
+PICKUP_NAVIGATION_URL = "https://www.google.com/maps/search/?api=1&query=אשדוד%20הבנאים%202"
+
 PICKUP_CITY = "איסוף עצמי"
 PICKUP_BASE_CITY = "איסוף עצמי"
 #קעקרערעק
@@ -270,12 +274,21 @@ def is_pickup_order(data):
     return data.get("fulfillment_type") == "pickup"
 
 
+def pickup_navigation_text():
+    if PICKUP_NAVIGATION_URL:
+        return f'<a href="{h(PICKUP_NAVIGATION_URL)}">פתח ניווט לנקודת האיסוף</a>'
+
+    return "קישור ניווט יוגדר בהמשך"
+
+
 def pickup_text():
     return (
         "<b>🛍️ איסוף עצמי מהחנות</b>\n\n"
         f"{field('נקודת איסוף', PICKUP_POINT_NAME)}\n"
         f"{field('כתובת', PICKUP_POINT_ADDRESS)}\n"
-        f"{field('זמן הכנה משוער', 'כ־30 דקות')}"
+        f"{field('שעות איסוף', PICKUP_HOURS)}\n"
+        f"{field('זמן הכנה משוער', PICKUP_PREP_TIME)}\n"
+        f"📍 {pickup_navigation_text()}"
     )
 
 
@@ -596,7 +609,9 @@ async def confirm_order(message: Message):
             "<b>🛍️ איסוף עצמי מהחנות</b>\n\n"
             f"{field('נקודת איסוף', PICKUP_POINT_NAME)}\n"
             f"{field('כתובת', PICKUP_POINT_ADDRESS)}\n"
-            f"{field('זמן הכנה משוער', 'כ־30 דקות')}"
+            f"{field('שעות איסוף', PICKUP_HOURS)}\n"
+            f"{field('זמן הכנה משוער', PICKUP_PREP_TIME)}\n"
+            f"📍 {pickup_navigation_text()}"
         )
     else:
         address = f"{data['city']}, {data['street']}, קומה {data['floor']}, דירה {data['apartment']}"
@@ -648,7 +663,7 @@ async def confirm_order(message: Message):
         rtl(
             "<b>✅ ההזמנה התקבלה!</b>\n\n"
             f"{field('מספר הזמנה', order_number)}\n\n"
-            f"{field('סוג הזמנה', 'איסוף עצמי' if is_pickup_order(data) else 'משלוח עד הבית')}\n"
+            f"{field('סוג הזמנה', 'איסוף עצמי מהחנות' if is_pickup_order(data) else 'משלוח עד הבית')}\n"
             "הפרטים שלך נשמרו להזמנות הבאות.\n"
             "נציג יחזור אליך לאישור סופי ותשלום.\n"
             f"{field('סה״כ לתשלום', money(final_total))}"
@@ -777,7 +792,6 @@ async def handle_shop(message: Message):
             data["step"] = "name"
             await message.answer(
                 rtl(
-                    "<b>🛍️ איסוף עצמי מהחנות</b>\n\n"
                     f"{pickup_text()}\n\n"
                     "<b>📝 פרטי לקוח</b>\n"
                     "רשום את השם המלא שלך:"
