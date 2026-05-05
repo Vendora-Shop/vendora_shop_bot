@@ -1,9 +1,9 @@
 from aiogram import Router, F
 from aiogram.filters import Command
-import calendar
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from html import escape
-from datetime import datetime, timedelta
+from datetime import datetime
+import calendar
 
 from config import ADMIN_ID
 from keyboards import admin_keyboard, main_keyboard, order_status_keyboard
@@ -123,7 +123,6 @@ def product_names_keyboard():
 
 
 
-
 def statistics_calendar_keyboard(year=None, month=None):
     today = datetime.now()
 
@@ -133,18 +132,20 @@ def statistics_calendar_keyboard(year=None, month=None):
     if month is None:
         month = today.month
 
-    month_name = f"{month:02d}.{year}"
     days_in_month = calendar.monthrange(year, month)[1]
 
     keyboard = [
-        [KeyboardButton(text=f"📅 {month_name}")],
-        [KeyboardButton(text="◀️ חודש קודם"), KeyboardButton(text="📍 היום"), KeyboardButton(text="▶️ חודש הבא")]
+        [KeyboardButton(text=f"📅 {month:02d}.{year}")],
+        [
+            KeyboardButton(text="◀️ חודש קודם"),
+            KeyboardButton(text="📍 היום"),
+            KeyboardButton(text="▶️ חודש הבא")
+        ]
     ]
 
     row = []
     for day in range(1, days_in_month + 1):
-        button_text = f"{day:02d}.{month:02d}.{year}"
-        row.append(KeyboardButton(text=button_text))
+        row.append(KeyboardButton(text=f"{day:02d}.{month:02d}.{year}"))
 
         if len(row) == 4:
             keyboard.append(row)
@@ -154,20 +155,19 @@ def statistics_calendar_keyboard(year=None, month=None):
         keyboard.append(row)
 
     keyboard.append([KeyboardButton(text="⬅️ חזרה לניהול")])
-
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
-def shift_month(year, month, shift):
-    month += shift
+def shift_month(year, month, step):
+    month += step
 
-    while month < 1:
-        month += 12
-        year -= 1
-
-    while month > 12:
-        month -= 12
+    if month > 12:
+        month = 1
         year += 1
+
+    if month < 1:
+        month = 12
+        year -= 1
 
     return year, month
 
@@ -189,7 +189,6 @@ def format_date_he(date_text):
         return datetime.strptime(date_text, "%Y-%m-%d").strftime("%d.%m.%Y")
     except Exception:
         return date_text
-
 
 def status_label(status):
     return STATUS_TEXT.get(status, status)
@@ -297,35 +296,6 @@ async def back_admin(message: Message):
     )
 
 
-
-@router.message(F.text == "📊 מצב העסק")
-async def business_dashboard(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-
-    stats = get_dashboard_statistics()
-
-    text = (
-        "<b>📊 מצב העסק</b>\n\n"
-        "💰 <b>הכנסות</b>\n"
-        f"{field('היום', money(stats['today_money']))}\n"
-        f"{field('החודש', money(stats['month_money']))}\n\n"
-        "📦 <b>הזמנות</b>\n"
-        f"{field('היום', stats['today_orders'])}\n"
-        f"{field('החודש', stats['month_orders'])}\n\n"
-        f"{field('🧍 לקוחות חדשים החודש', stats['new_customers'])}\n\n"
-        "🔥 <b>מוצר מוביל החודש</b>\n"
-        f"{field('שם מוצר', stats['top_product'])}\n"
-        f"{field('כמות נמכרה', stats['top_qty'])}"
-    )
-
-    await message.answer(
-        rtl(text),
-        reply_markup=admin_keyboard(),
-        parse_mode="HTML"
-    )
-
-
 @router.message(F.text == "🧾 הזמנות אחרונות")
 async def recent_orders(message: Message):
     if not is_admin(message.from_user.id):
@@ -393,6 +363,34 @@ async def search_by_phone_start(message: Message):
 
 
 
+@router.message(F.text == "📊 מצב העסק")
+async def business_dashboard(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    stats = get_dashboard_statistics()
+
+    text = (
+        "<b>📊 מצב העסק</b>\n\n"
+        "💰 <b>הכנסות</b>\n"
+        f"{field('היום', money(stats['today_money']))}\n"
+        f"{field('החודש', money(stats['month_money']))}\n\n"
+        "📦 <b>הזמנות</b>\n"
+        f"{field('היום', stats['today_orders'])}\n"
+        f"{field('החודש', stats['month_orders'])}\n\n"
+        f"{field('🧍 לקוחות חדשים החודש', stats['new_customers'])}\n\n"
+        "🔥 <b>מוצר מוביל החודש</b>\n"
+        f"{field('שם מוצר', stats['top_product'])}\n"
+        f"{field('כמות נמכרה', stats['top_qty'])}"
+    )
+
+    await message.answer(
+        rtl(text),
+        reply_markup=admin_keyboard(),
+        parse_mode="HTML"
+    )
+
+
 @router.message(F.text == "📅 סטטיסטיקה לפי תאריך")
 async def statistics_by_date_start(message: Message):
     if not is_admin(message.from_user.id):
@@ -408,17 +406,13 @@ async def statistics_by_date_start(message: Message):
 
     await message.answer(
         rtl(
-            "<b>📅 סטטיסטיקה לפי תאריך</b>
-
-"
-            "בחר יום מתוך לוח השנה.
-"
+            "<b>📅 סטטיסטיקה לפי תאריך</b>\n\n"
+            "בחר יום מתוך לוח השנה.\n"
             "אפשר לעבור בין חודשים עם הכפתורים למטה."
         ),
         reply_markup=statistics_calendar_keyboard(today.year, today.month),
         parse_mode="HTML"
     )
-
 
 @router.message(F.text == "📊 סטטיסטיקה יומית")
 async def daily_statistics(message: Message):
@@ -640,7 +634,6 @@ async def admin_flow(message: Message):
     state = admin_states.get(uid)
     step = state.get("step")
 
-
     if step == "statistics_calendar":
         year = int(state.get("calendar_year", datetime.now().year))
         month = int(state.get("calendar_month", datetime.now().month))
@@ -678,8 +671,7 @@ async def admin_flow(message: Message):
             return
 
         if txt == "📍 היום":
-            today = datetime.now()
-            date_value = today.strftime("%Y-%m-%d")
+            date_value = datetime.now().strftime("%Y-%m-%d")
         else:
             date_value = parse_calendar_date(txt)
 
