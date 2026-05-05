@@ -881,3 +881,84 @@ def get_all_customer_telegram_ids():
 
     return customer_ids
 
+def get_customers_list(limit=30):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, telegram_id, telegram_name, customer_name, phone, city,
+               street, floor, apartment, last_order_number, total_orders,
+               total_spent, created_at, updated_at
+        FROM customers
+        ORDER BY total_orders DESC, total_spent DESC, updated_at DESC
+        LIMIT ?
+    """, (int(limit),))
+
+    rows = cur.fetchall()
+    conn.close()
+
+    return [customer_row_to_dict(row) for row in rows]
+
+
+def search_customers(query, limit=30):
+    query = str(query or "").strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, telegram_id, telegram_name, customer_name, phone, city,
+               street, floor, apartment, last_order_number, total_orders,
+               total_spent, created_at, updated_at
+        FROM customers
+        WHERE customer_name LIKE ?
+           OR phone LIKE ?
+           OR telegram_name LIKE ?
+        ORDER BY total_orders DESC, total_spent DESC, updated_at DESC
+        LIMIT ?
+    """, (f"%{query}%", f"%{query}%", f"%{query}%", int(limit)))
+
+    rows = cur.fetchall()
+    conn.close()
+
+    return [customer_row_to_dict(row) for row in rows]
+
+
+def get_customer_by_id(customer_id):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, telegram_id, telegram_name, customer_name, phone, city,
+               street, floor, apartment, last_order_number, total_orders,
+               total_spent, created_at, updated_at
+        FROM customers
+        WHERE id = ?
+    """, (int(customer_id),))
+
+    row = cur.fetchone()
+    conn.close()
+
+    return customer_row_to_dict(row)
+
+
+def get_orders_by_customer_telegram_id(telegram_id, limit=30):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, order_number, telegram_id, telegram_name, customer_name, phone,
+               city, street, floor, apartment, address, cart_json,
+               products_total, delivery_price, final_total, base_city,
+               status, created_at, updated_at
+        FROM orders
+        WHERE telegram_id = ?
+        ORDER BY id DESC
+        LIMIT ?
+    """, (int(telegram_id), int(limit)))
+
+    rows = cur.fetchall()
+    conn.close()
+
+    return [order_row_to_dict(row) for row in rows]
+
