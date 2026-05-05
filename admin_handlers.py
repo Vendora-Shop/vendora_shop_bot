@@ -38,7 +38,6 @@ STATUS_TEXT = {
     "approved": "✅ אושרה",
     "processing": "📦 בטיפול",
     "shipping": "🚚 יצאה למשלוח",
-    "paid": "💰 שולם",
     "done": "✅ הושלמה",
     "cancelled": "❌ בוטלה",
 }
@@ -47,7 +46,6 @@ STATUS_BY_BUTTON = {
     "✅ אושרה": "approved",
     "📦 בטיפול": "processing",
     "🚚 יצאה למשלוח": "shipping",
-    "💰 שולם": "paid",
     "✅ הושלמה": "done",
     "❌ בוטלה": "cancelled",
 }
@@ -56,7 +54,6 @@ CLIENT_STATUS_MESSAGE = {
     "approved": "✅ ההזמנה שלך אושרה. נציג ייצור איתך קשר להמשך טיפול.",
     "processing": "📦 ההזמנה שלך בטיפול.",
     "shipping": "🚚 ההזמנה שלך יצאה למשלוח.",
-    "paid": "💰 התשלום עבור ההזמנה התקבל. תודה!",
     "done": "✅ ההזמנה הושלמה. תודה שקנית ב־Vendora Shop!",
     "cancelled": "❌ ההזמנה בוטלה. לפרטים נוספים ניתן לפנות לשירות לקוחות.",
 }
@@ -196,7 +193,7 @@ def orders_filter_keyboard():
             [KeyboardButton(text="📋 כל ההזמנות")],
             [KeyboardButton(text="🆕 חדשות"), KeyboardButton(text="✅ אושרו")],
             [KeyboardButton(text="📦 בטיפול"), KeyboardButton(text="🚚 במשלוח")],
-            [KeyboardButton(text="💰 שולמו"), KeyboardButton(text="✅ הושלמו")],
+            [KeyboardButton(text="✅ הושלמו")],
             [KeyboardButton(text="❌ בוטלו")],
             [KeyboardButton(text="⬅️ חזרה לניהול")]
         ],
@@ -223,8 +220,8 @@ def order_action_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="✅ אשר הזמנה"), KeyboardButton(text="📦 העבר לטיפול")],
-            [KeyboardButton(text="🚚 סמן כיצא למשלוח"), KeyboardButton(text="💰 סמן כשולם")],
-            [KeyboardButton(text="✅ סמן כהושלם"), KeyboardButton(text="❌ בטל הזמנה")],
+            [KeyboardButton(text="🚚 סמן כיצא למשלוח"), KeyboardButton(text="✅ סמן כהושלם")],
+            [KeyboardButton(text="❌ בטל הזמנה")],
             [KeyboardButton(text="⬅️ חזרה לרשימת הזמנות")],
             [KeyboardButton(text="⬅️ חזרה לניהול")]
         ],
@@ -238,7 +235,6 @@ ORDER_FILTER_BY_BUTTON = {
     "✅ אושרו": "approved",
     "📦 בטיפול": "processing",
     "🚚 במשלוח": "shipping",
-    "💰 שולמו": "paid",
     "✅ הושלמו": "done",
     "❌ בוטלו": "cancelled",
 }
@@ -248,7 +244,6 @@ ORDER_ACTION_BY_BUTTON = {
     "✅ אשר הזמנה": "approved",
     "📦 העבר לטיפול": "processing",
     "🚚 סמן כיצא למשלוח": "shipping",
-    "💰 סמן כשולם": "paid",
     "✅ סמן כהושלם": "done",
     "❌ בטל הזמנה": "cancelled",
 }
@@ -270,8 +265,7 @@ STATUS_FLOW_LEVEL = {
     "approved": 2,
     "processing": 3,
     "shipping": 4,
-    "paid": 5,
-    "done": 6,
+    "done": 5,
     "cancelled": 99,
 }
 
@@ -325,17 +319,11 @@ def validate_status_change(current_status, new_status):
             "בחר: 🚚 סמן כיצא למשלוח או ❌ בטל הזמנה."
         )
 
-    if current_status == "shipping" and new_status not in {"paid", "cancelled"}:
+    if current_status == "shipping" and new_status not in {"done", "cancelled"}:
         return False, (
             "<b>⚠️ סדר פעולה לא תקין</b>\n\n"
-            "אחרי שההזמנה יצאה למשלוח, השלב הבא הוא סימון כתשלום התקבל.\n"
-            "בחר: 💰 סמן כשולם או ❌ בטל הזמנה."
-        )
-
-    if current_status == "paid" and new_status not in {"done"}:
-        return False, (
-            "<b>⚠️ סדר פעולה לא תקין</b>\n\n"
-            "לאחר שההזמנה שולמה, ניתן לסמן אותה כהושלמה בלבד."
+            "אחרי שההזמנה יצאה למשלוח, השלב הבא הוא סימון כהושלמה.\n"
+            "בחר: ✅ סמן כהושלם או ❌ בטל הזמנה."
         )
 
     return True, ""
@@ -889,8 +877,7 @@ async def admin_flow(message: Message):
             f"{field('אושרו', stats['approved'])}\n"
             f"{field('בטיפול', stats['processing'])}\n"
             f"{field('במשלוח', stats['shipping'])}\n"
-            f"{field('שולמו', stats['paid'])}\n"
-            f"{field('הושלמו', stats['done'])}\n"
+                f"{field('הושלמו', stats['done'])}\n"
             f"{field('בוטלו', stats['cancelled'])}\n\n"
             "🔥 <b>מוצר מוביל</b>\n"
             f"{field('שם מוצר', stats['top_product'])}\n"
