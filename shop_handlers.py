@@ -25,11 +25,11 @@ RTL = "\u200F"
 # ================== PICKUP SETTINGS ==================
 # כאן מגדירים את כל פרטי האיסוף העצמי.
 # אם בעתיד תרצה לשנות כתובת / שעות / ניווט — משנים רק כאן.
-PICKUP_POINT_NAME = "Vendora"
+PICKUP_POINT_NAME = "Vendora PickUp"
 PICKUP_POINT_ADDRESS = "אשדוד - הבנאים 2"
 PICKUP_PREP_TIME = "כ־30 דקות"
-PICKUP_HOURS = "א׳-ה׳ 10:00-19:00, ו׳ 09:00-13:00"
-PICKUP_NAVIGATION_URL = "https://www.google.com/maps/search/?api=1&query=אשדוד%20הבנאים%202"
+PICKUP_HOURS = "א׳-ה׳ 10:00-18:00, ו׳ 09:00-13:00"
+PICKUP_NAVIGATION_URL = "https://waze.com/ul/hsv8su3vur"
 
 PICKUP_CITY = "איסוף עצמי"
 PICKUP_BASE_CITY = "איסוף עצמי"
