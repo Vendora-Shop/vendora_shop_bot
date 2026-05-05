@@ -1,7 +1,9 @@
 from aiogram import Router, F
 from aiogram.filters import Command
+import calendar
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from html import escape
+from datetime import datetime, timedelta
 
 from config import ADMIN_ID
 from keyboards import admin_keyboard, main_keyboard, order_status_keyboard
@@ -118,6 +120,75 @@ def product_names_keyboard():
 
     keyboard.append([KeyboardButton(text="⬅️ חזרה לניהול")])
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+
+
+
+def statistics_calendar_keyboard(year=None, month=None):
+    today = datetime.now()
+
+    if year is None:
+        year = today.year
+
+    if month is None:
+        month = today.month
+
+    month_name = f"{month:02d}.{year}"
+    days_in_month = calendar.monthrange(year, month)[1]
+
+    keyboard = [
+        [KeyboardButton(text=f"📅 {month_name}")],
+        [KeyboardButton(text="◀️ חודש קודם"), KeyboardButton(text="📍 היום"), KeyboardButton(text="▶️ חודש הבא")]
+    ]
+
+    row = []
+    for day in range(1, days_in_month + 1):
+        button_text = f"{day:02d}.{month:02d}.{year}"
+        row.append(KeyboardButton(text=button_text))
+
+        if len(row) == 4:
+            keyboard.append(row)
+            row = []
+
+    if row:
+        keyboard.append(row)
+
+    keyboard.append([KeyboardButton(text="⬅️ חזרה לניהול")])
+
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+
+def shift_month(year, month, shift):
+    month += shift
+
+    while month < 1:
+        month += 12
+        year -= 1
+
+    while month > 12:
+        month -= 12
+        year += 1
+
+    return year, month
+
+
+def parse_calendar_date(text):
+    clean = str(text).replace("📅", "").strip()
+
+    for fmt in ("%d.%m.%Y", "%d-%m-%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(clean, fmt).strftime("%Y-%m-%d")
+        except Exception:
+            pass
+
+    return None
+
+
+def format_date_he(date_text):
+    try:
+        return datetime.strptime(date_text, "%Y-%m-%d").strftime("%d.%m.%Y")
+    except Exception:
+        return date_text
 
 
 def status_label(status):
@@ -327,16 +398,24 @@ async def statistics_by_date_start(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    admin_states[message.from_user.id] = {"step": "statistics_date"}
+    today = datetime.now()
+
+    admin_states[message.from_user.id] = {
+        "step": "statistics_calendar",
+        "calendar_year": today.year,
+        "calendar_month": today.month
+    }
 
     await message.answer(
         rtl(
-            "<b>📅 סטטיסטיקה לפי תאריך</b>\n\n"
-            "רשום תאריך לבדיקה בפורמט:\n"
-            "<b>YYYY-MM-DD</b>\n\n"
-            "לדוגמה:\n"
-            "<b>2026-05-05</b>"
+            "<b>📅 סטטיסטיקה לפי תאריך</b>
+
+"
+            "בחר יום מתוך לוח השנה.
+"
+            "אפשר לעבור בין חודשים עם הכפתורים למטה."
         ),
+        reply_markup=statistics_calendar_keyboard(today.year, today.month),
         parse_mode="HTML"
     )
 
@@ -562,28 +641,65 @@ async def admin_flow(message: Message):
     step = state.get("step")
 
 
-    if step == "statistics_date":
-        try:
-            datetime.strptime(txt, "%Y-%m-%d")
-        except Exception:
+    if step == "statistics_calendar":
+        year = int(state.get("calendar_year", datetime.now().year))
+        month = int(state.get("calendar_month", datetime.now().month))
+
+        if txt == "◀️ חודש קודם":
+            year, month = shift_month(year, month, -1)
+            state["calendar_year"] = year
+            state["calendar_month"] = month
+
             await message.answer(
                 rtl(
-                    "<b>⚠️ תאריך לא תקין.</b>\n\n"
-                    "רשום תאריך בפורמט:\n"
-                    "<b>YYYY-MM-DD</b>\n\n"
-                    "לדוגמה:\n"
-                    "<b>2026-05-05</b>"
+                    "<b>📅 סטטיסטיקה לפי תאריך</b>\n\n"
+                    f"מציג חודש: <b>{month:02d}.{year}</b>\n"
+                    "בחר יום לבדיקה."
                 ),
+                reply_markup=statistics_calendar_keyboard(year, month),
                 parse_mode="HTML"
             )
             return
 
-        stats = get_statistics_by_date(txt)
+        if txt == "▶️ חודש הבא":
+            year, month = shift_month(year, month, 1)
+            state["calendar_year"] = year
+            state["calendar_month"] = month
+
+            await message.answer(
+                rtl(
+                    "<b>📅 סטטיסטיקה לפי תאריך</b>\n\n"
+                    f"מציג חודש: <b>{month:02d}.{year}</b>\n"
+                    "בחר יום לבדיקה."
+                ),
+                reply_markup=statistics_calendar_keyboard(year, month),
+                parse_mode="HTML"
+            )
+            return
+
+        if txt == "📍 היום":
+            today = datetime.now()
+            date_value = today.strftime("%Y-%m-%d")
+        else:
+            date_value = parse_calendar_date(txt)
+
+        if not date_value:
+            await message.answer(
+                rtl(
+                    "<b>⚠️ בחר יום מתוך לוח השנה.</b>\n\n"
+                    "אפשר לעבור חודש קדימה או אחורה."
+                ),
+                reply_markup=statistics_calendar_keyboard(year, month),
+                parse_mode="HTML"
+            )
+            return
+
+        stats = get_statistics_by_date(date_value)
         admin_states[uid] = {"step": "admin"}
 
         text = (
             "<b>📅 סטטיסטיקה לפי תאריך</b>\n\n"
-            f"{field('תאריך', stats['date'])}\n\n"
+            f"{field('תאריך', format_date_he(stats['date']))}\n\n"
             "💰 <b>הכנסות</b>\n"
             f"{field('סה״כ הכנסות', money(stats['total_money']))}\n\n"
             "📦 <b>הזמנות</b>\n"
