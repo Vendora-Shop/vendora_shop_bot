@@ -22,6 +22,7 @@ from database import (
     update_order_status,
     get_orders_by_phone,
     get_today_statistics,
+    get_dashboard_statistics,
 )
 
 router = Router()
@@ -222,6 +223,27 @@ async def back_admin(message: Message):
         reply_markup=admin_keyboard(),
         parse_mode="HTML"
     )
+
+
+@router.message(F.text == "📊 מצב העסק")
+async def dashboard(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    stats = get_dashboard_statistics()
+
+    text = (
+        "<b>📊 מצב העסק</b>\n\n"
+        f"{field('💰 הכנסות היום', money(stats['today_money']))}\n"
+        f"{field('💰 הכנסות החודש', money(stats['month_money']))}\n\n"
+        f"{field('📦 הזמנות היום', stats['today_orders'])}\n"
+        f"{field('📦 הזמנות החודש', stats['month_orders'])}\n\n"
+        f"{field('🧍 לקוחות חדשים החודש', stats['new_customers'])}\n\n"
+        f"{field('🔥 מוצר הכי נמכר החודש', stats['top_product'])}\n"
+        f"{field('📊 כמות שנמכרה', stats['top_qty'])}"
+    )
+
+    await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
 
 
 @router.message(F.text == "🧾 הזמנות אחרונות")
