@@ -6,7 +6,7 @@ from datetime import datetime
 import calendar
 
 from config import ADMIN_ID
-from keyboards import admin_keyboard, main_keyboard, order_status_keyboard
+from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard
 from database import (
     add_product,
     get_all_products,
@@ -29,6 +29,7 @@ from database import (
     get_done_orders,
     get_cancelled_orders,
     get_orders_status_summary,
+    get_all_customer_telegram_ids,
 )
 
 router = Router()
@@ -471,6 +472,66 @@ def format_product_row(row):
     )
 
 
+
+
+# ================== BROADCAST / MARKETING LOGIC ==================
+BROADCAST_MIN_LENGTH = 5
+BROADCAST_MAX_LENGTH = 1200
+
+
+def clean_broadcast_text(text):
+    return str(text or "").strip()
+
+
+def validate_broadcast_text(text):
+    text = clean_broadcast_text(text)
+
+    if len(text) < BROADCAST_MIN_LENGTH:
+        return False, "ההודעה קצרה מדי. רשום הודעה ברורה באורך של לפחות 5 תווים."
+
+    if len(text) > BROADCAST_MAX_LENGTH:
+        return False, "ההודעה ארוכה מדי. ניתן לשלוח עד 1,200 תווים."
+
+    return True, ""
+
+
+def format_broadcast_preview(text, customers_count):
+    return rtl(
+        "<b>📢 תצוגה מקדימה לשליחה</b>\n\n"
+        f"{field('כמות לקוחות לשליחה', customers_count)}\n\n"
+        "<b>תוכן ההודעה:</b>\n"
+        "━━━━━━━━━━━━━━\n"
+        f"{h(text)}\n"
+        "━━━━━━━━━━━━━━\n\n"
+        "אם הכול תקין לחץ על:\n"
+        "<b>✅ אשר ושלח ללקוחות</b>"
+    )
+
+
+async def send_broadcast_to_customers(bot, text, customer_ids):
+    sent = 0
+    failed = 0
+
+    final_text = rtl(
+        "<b>📢 הודעה מ־Vendora</b>\n\n"
+        f"{h(text)}"
+    )
+
+    for telegram_id in customer_ids:
+        try:
+            await bot.send_message(
+                telegram_id,
+                final_text,
+                parse_mode="HTML"
+            )
+            sent += 1
+        except Exception:
+            failed += 1
+
+    return sent, failed
+
+
+
 @router.message(Command("admin"))
 async def admin_panel(message: Message):
     if not is_admin(message.from_user.id):
@@ -484,6 +545,44 @@ async def admin_panel(message: Message):
             "בחר פעולה מהתפריט למטה."
         ),
         reply_markup=admin_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+
+@router.message(F.text == "📢 שלח הודעה ללקוחות")
+async def broadcast_start(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    customer_ids = get_all_customer_telegram_ids()
+
+    if not customer_ids:
+        await message.answer(
+            rtl(
+                "<b>📢 שליחת הודעה ללקוחות</b>\n\n"
+                "אין כרגע לקוחות שמורים לשליחה.\n"
+                "לאחר שלקוחות יבצעו הזמנות, הם יופיעו ברשימת השליחה."
+            ),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    admin_states[message.from_user.id] = {
+        "step": "broadcast_text",
+        "broadcast_customer_count": len(customer_ids)
+    }
+
+    await message.answer(
+        rtl(
+            "<b>📢 שליחת הודעה ללקוחות</b>\n\n"
+            f"{field('לקוחות זמינים לשליחה', len(customer_ids))}\n\n"
+            "רשום עכשיו את ההודעה שברצונך לשלוח.\n\n"
+            "<b>חשוב:</b>\n"
+            "ההודעה לא תישלח מיד.\n"
+            "קודם תקבל תצוגה מקדימה ותצטרך לאשר שליחה."
+        ),
         parse_mode="HTML"
     )
 
@@ -938,6 +1037,144 @@ async def admin_flow(message: Message):
         )
         return
 
+
+
+    if step == "broadcast_text":
+        broadcast_text = clean_broadcast_text(txt)
+        is_valid, error_text = validate_broadcast_text(broadcast_text)
+
+        if not is_valid:
+            await message.answer(
+                rtl(
+                    "<b>⚠️ הודעה לא תקינה</b>\n\n"
+                    f"{h(error_text)}\n\n"
+                    "רשום הודעה חדשה או לחץ: ⬅️ חזרה לניהול."
+                ),
+                parse_mode="HTML"
+            )
+            return
+
+        customer_ids = get_all_customer_telegram_ids()
+
+        if not customer_ids:
+            admin_states[uid] = {"step": "admin"}
+            await message.answer(
+                rtl(
+                    "<b>⚠️ אין לקוחות לשליחה</b>\n\n"
+                    "לא נמצאו לקוחות שמורים במערכת."
+                ),
+                reply_markup=admin_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        state["broadcast_text"] = broadcast_text
+        state["broadcast_customer_ids"] = customer_ids
+        state["step"] = "broadcast_confirm"
+
+        await message.answer(
+            format_broadcast_preview(broadcast_text, len(customer_ids)),
+            reply_markup=broadcast_confirm_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if step == "broadcast_confirm":
+        if txt == "❌ בטל שליחה":
+            admin_states[uid] = {"step": "admin"}
+            await message.answer(
+                rtl(
+                    "<b>✅ השליחה בוטלה</b>\n\n"
+                    "ההודעה לא נשלחה לאף לקוח."
+                ),
+                reply_markup=admin_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        if txt == "✏️ ערוך הודעה":
+            state.pop("broadcast_text", None)
+            state.pop("broadcast_customer_ids", None)
+            state["step"] = "broadcast_text"
+
+            await message.answer(
+                rtl(
+                    "<b>✏️ עריכת הודעה</b>\n\n"
+                    "רשום את ההודעה החדשה לשליחה."
+                ),
+                parse_mode="HTML"
+            )
+            return
+
+        if txt != "✅ אשר ושלח ללקוחות":
+            await message.answer(
+                rtl(
+                    "<b>⚠️ פעולה לא תקינה</b>\n\n"
+                    "בחר פעולה מתוך הכפתורים בלבד."
+                ),
+                reply_markup=broadcast_confirm_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        if state.get("broadcast_sent"):
+            await message.answer(
+                rtl(
+                    "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
+                    "ההודעה כבר נשלחה ללקוחות.\n"
+                    "אין צורך לאשר שוב."
+                ),
+                reply_markup=admin_keyboard(),
+                parse_mode="HTML"
+            )
+            admin_states[uid] = {"step": "admin"}
+            return
+
+        broadcast_text = state.get("broadcast_text")
+        customer_ids = state.get("broadcast_customer_ids") or []
+
+        if not broadcast_text or not customer_ids:
+            admin_states[uid] = {"step": "admin"}
+            await message.answer(
+                rtl(
+                    "<b>⚠️ לא ניתן לבצע שליחה</b>\n\n"
+                    "חסרים נתוני שליחה. התחל את התהליך מחדש."
+                ),
+                reply_markup=admin_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        state["broadcast_sent"] = True
+
+        await message.answer(
+            rtl(
+                "<b>📢 השליחה התחילה</b>\n\n"
+                "הבוט שולח עכשיו את ההודעה ללקוחות.\n"
+                "בסיום תקבל סיכום."
+            ),
+            parse_mode="HTML"
+        )
+
+        sent, failed = await send_broadcast_to_customers(
+            message.bot,
+            broadcast_text,
+            customer_ids
+        )
+
+        admin_states[uid] = {"step": "admin"}
+
+        await message.answer(
+            rtl(
+                "<b>✅ השליחה הסתיימה</b>\n\n"
+                f"{field('נשלחו בהצלחה', sent)}\n"
+                f"{field('נכשלו', failed)}\n"
+                f"{field('סה״כ לקוחות', len(customer_ids))}"
+            ),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
 
     if step == "orders_section":
         if txt not in ORDER_SECTION_BY_BUTTON:
