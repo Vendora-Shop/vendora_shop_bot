@@ -23,6 +23,7 @@ from database import (
     get_orders_by_phone,
     get_today_statistics,
     get_dashboard_statistics,
+    get_statistics_by_date,
 )
 
 router = Router()
@@ -320,6 +321,26 @@ async def search_by_phone_start(message: Message):
     )
 
 
+
+@router.message(F.text == "📅 סטטיסטיקה לפי תאריך")
+async def statistics_by_date_start(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "statistics_date"}
+
+    await message.answer(
+        rtl(
+            "<b>📅 סטטיסטיקה לפי תאריך</b>\n\n"
+            "רשום תאריך לבדיקה בפורמט:\n"
+            "<b>YYYY-MM-DD</b>\n\n"
+            "לדוגמה:\n"
+            "<b>2026-05-05</b>"
+        ),
+        parse_mode="HTML"
+    )
+
+
 @router.message(F.text == "📊 סטטיסטיקה יומית")
 async def daily_statistics(message: Message):
     if not is_admin(message.from_user.id):
@@ -539,6 +560,53 @@ async def admin_flow(message: Message):
     txt = (message.text or "").strip()
     state = admin_states.get(uid)
     step = state.get("step")
+
+
+    if step == "statistics_date":
+        try:
+            datetime.strptime(txt, "%Y-%m-%d")
+        except Exception:
+            await message.answer(
+                rtl(
+                    "<b>⚠️ תאריך לא תקין.</b>\n\n"
+                    "רשום תאריך בפורמט:\n"
+                    "<b>YYYY-MM-DD</b>\n\n"
+                    "לדוגמה:\n"
+                    "<b>2026-05-05</b>"
+                ),
+                parse_mode="HTML"
+            )
+            return
+
+        stats = get_statistics_by_date(txt)
+        admin_states[uid] = {"step": "admin"}
+
+        text = (
+            "<b>📅 סטטיסטיקה לפי תאריך</b>\n\n"
+            f"{field('תאריך', stats['date'])}\n\n"
+            "💰 <b>הכנסות</b>\n"
+            f"{field('סה״כ הכנסות', money(stats['total_money']))}\n\n"
+            "📦 <b>הזמנות</b>\n"
+            f"{field('סה״כ הזמנות', stats['total_orders'])}\n\n"
+            "🔄 <b>סטטוסים</b>\n"
+            f"{field('חדשות', stats['new'])}\n"
+            f"{field('אושרו', stats['approved'])}\n"
+            f"{field('בטיפול', stats['processing'])}\n"
+            f"{field('במשלוח', stats['shipping'])}\n"
+            f"{field('שולמו', stats['paid'])}\n"
+            f"{field('הושלמו', stats['done'])}\n"
+            f"{field('בוטלו', stats['cancelled'])}\n\n"
+            "🔥 <b>מוצר מוביל</b>\n"
+            f"{field('שם מוצר', stats['top_product'])}\n"
+            f"{field('כמות נמכרה', stats['top_qty'])}"
+        )
+
+        await message.answer(
+            rtl(text),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
 
     if step == "search_order":
         order = get_order_by_number(txt)
