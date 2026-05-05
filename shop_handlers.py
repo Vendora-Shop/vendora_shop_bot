@@ -301,10 +301,25 @@ def pickup_text():
 
 
 def order_summary_keyboard(data):
-    if is_pickup_order(data):
-        return pickup_navigation_keyboard()
-
     return confirm_keyboard()
+
+
+async def send_pickup_navigation_if_needed(message, data):
+    if not is_pickup_order(data):
+        return
+
+    nav_keyboard = pickup_navigation_keyboard()
+
+    if not nav_keyboard:
+        return
+
+    await message.answer(
+        rtl("📍 ניווט לנקודת האיסוף:"),
+        reply_markup=nav_keyboard,
+        parse_mode="HTML",
+        disable_web_page_preview=True
+    )
+
 
 
 def build_order_summary(data):
@@ -804,6 +819,7 @@ async def handle_shop(message: Message):
                     parse_mode="HTML",
                     disable_web_page_preview=True
                 )
+                await send_pickup_navigation_if_needed(message, data)
                 return
 
             data["step"] = "name"
@@ -856,6 +872,7 @@ async def handle_shop(message: Message):
                 parse_mode="HTML",
                 disable_web_page_preview=True
             )
+            await send_pickup_navigation_if_needed(message, data)
             return
 
         if txt == "✏️ הזן פרטים חדשים":
@@ -1008,6 +1025,7 @@ async def handle_shop(message: Message):
                 parse_mode="HTML",
                 disable_web_page_preview=True
             )
+            await send_pickup_navigation_if_needed(message, data)
             return
 
         data["step"] = "city"
@@ -1116,4 +1134,5 @@ async def handle_shop(message: Message):
             parse_mode="HTML",
             disable_web_page_preview=True
         )
+        await send_pickup_navigation_if_needed(message, data)
         return
