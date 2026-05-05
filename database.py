@@ -857,3 +857,27 @@ def get_orders_status_summary():
 
     return counts
 
+def get_all_customer_telegram_ids():
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT DISTINCT telegram_id
+        FROM customers
+        WHERE telegram_id IS NOT NULL
+          AND telegram_id != ''
+    """)
+
+    rows = cur.fetchall()
+    conn.close()
+
+    customer_ids = []
+
+    for row in rows:
+        try:
+            customer_ids.append(int(row[0]))
+        except Exception:
+            pass
+
+    return customer_ids
+
