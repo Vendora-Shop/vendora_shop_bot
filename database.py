@@ -743,3 +743,73 @@ def get_dashboard_statistics():
         "top_product": top_product,
         "top_qty": int(top_qty or 0),
     }
+
+def get_statistics_by_date(date_text):
+    """
+    date_text format: YYYY-MM-DD
+    Example: 2026-05-05
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT COUNT(*), COALESCE(SUM(final_total), 0)
+        FROM orders
+        WHERE created_at LIKE ?
+    """, (f"{date_text}%",))
+    total_orders, total_money = cur.fetchone()
+
+    cur.execute("""
+        SELECT status, COUNT(*)
+        FROM orders
+        WHERE created_at LIKE ?
+        GROUP BY status
+    """, (f"{date_text}%",))
+    statuses = dict(cur.fetchall())
+
+    cur.execute("""
+        SELECT cart_json
+        FROM orders
+        WHERE created_at LIKE ?
+    """, (f"{date_text}%",))
+    carts = cur.fetchall()
+
+    conn.close()
+
+    product_sales = {}
+
+    for row in carts:
+        try:
+            cart = json.loads(row[0])
+        except Exception:
+            cart = []
+
+        for item in cart:
+            name = item.get("name", "לא ידוע")
+            qty = int(item.get("qty", 0))
+            if name:
+                product_sales[name] = product_sales.get(name, 0) + qty
+
+    top_product = "-"
+    top_qty = 0
+
+    for name, qty in product_sales.items():
+        if qty > top_qty:
+            top_product = name
+            top_qty = qty
+
+    return {
+        "date": date_text,
+        "total_orders": int(total_orders or 0),
+        "total_money": float(total_money or 0),
+        "new": int(statuses.get("new", 0)),
+        "approved": int(statuses.get("approved", 0)),
+        "processing": int(statuses.get("processing", 0)),
+        "shipping": int(statuses.get("shipping", 0)),
+        "paid": int(statuses.get("paid", 0)),
+        "done": int(statuses.get("done", 0)),
+        "cancelled": int(statuses.get("cancelled", 0)),
+        "top_product": top_product,
+        "top_qty": int(top_qty or 0),
+    }
+
