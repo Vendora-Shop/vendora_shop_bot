@@ -189,6 +189,90 @@ def format_date_he(date_text):
     except Exception:
         return date_text
 
+
+def orders_filter_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📋 כל ההזמנות")],
+            [KeyboardButton(text="🆕 חדשות"), KeyboardButton(text="✅ אושרו")],
+            [KeyboardButton(text="📦 בטיפול"), KeyboardButton(text="🚚 במשלוח")],
+            [KeyboardButton(text="💰 שולמו"), KeyboardButton(text="✅ הושלמו")],
+            [KeyboardButton(text="❌ בוטלו")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def order_select_keyboard(orders):
+    keyboard = []
+
+    for order in orders:
+        order_number = order.get("order_number", "")
+        customer_name = order.get("customer_name", "")
+        final_total = money(order.get("final_total", 0))
+        keyboard.append([KeyboardButton(text=f"🧾 {order_number} | {customer_name} | {final_total}")])
+
+    keyboard.append([KeyboardButton(text="⬅️ סינון הזמנות")])
+    keyboard.append([KeyboardButton(text="⬅️ חזרה לניהול")])
+
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+
+def order_action_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✅ אשר הזמנה"), KeyboardButton(text="📦 העבר לטיפול")],
+            [KeyboardButton(text="🚚 סמן כיצא למשלוח"), KeyboardButton(text="💰 סמן כשולם")],
+            [KeyboardButton(text="✅ סמן כהושלם"), KeyboardButton(text="❌ בטל הזמנה")],
+            [KeyboardButton(text="⬅️ חזרה לרשימת הזמנות")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+ORDER_FILTER_BY_BUTTON = {
+    "📋 כל ההזמנות": "all",
+    "🆕 חדשות": "new",
+    "✅ אושרו": "approved",
+    "📦 בטיפול": "processing",
+    "🚚 במשלוח": "shipping",
+    "💰 שולמו": "paid",
+    "✅ הושלמו": "done",
+    "❌ בוטלו": "cancelled",
+}
+
+
+ORDER_ACTION_BY_BUTTON = {
+    "✅ אשר הזמנה": "approved",
+    "📦 העבר לטיפול": "processing",
+    "🚚 סמן כיצא למשלוח": "shipping",
+    "💰 סמן כשולם": "paid",
+    "✅ סמן כהושלם": "done",
+    "❌ בטל הזמנה": "cancelled",
+}
+
+
+def extract_order_number_from_button(text):
+    text = str(text or "").strip()
+
+    if text.startswith("🧾 "):
+        text = text.replace("🧾 ", "", 1)
+
+    if "|" in text:
+        return text.split("|", 1)[0].strip()
+
+    return text.strip()
+
+
+def get_orders_for_filter(status_filter, limit=20):
+    if status_filter == "all":
+        return get_recent_orders(limit)
+
+    return get_orders_by_status(status_filter, limit)
+
+
 def status_label(status):
     return STATUS_TEXT.get(status, status)
 
@@ -291,6 +375,27 @@ async def back_admin(message: Message):
     await message.answer(
         rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
         reply_markup=admin_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+
+@router.message(F.text == "📦 ניהול הזמנות")
+async def orders_management_start(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {
+        "step": "orders_filter",
+        "orders_filter": "all"
+    }
+
+    await message.answer(
+        rtl(
+            "<b>📦 ניהול הזמנות</b>\n\n"
+            "בחר איזה הזמנות להציג."
+        ),
+        reply_markup=orders_filter_keyboard(),
         parse_mode="HTML"
     )
 
@@ -696,6 +801,148 @@ async def admin_flow(message: Message):
         await message.answer(
             rtl(text),
             reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+
+    if step == "orders_filter":
+        if txt not in ORDER_FILTER_BY_BUTTON:
+            await message.answer(
+                rtl("<b>⚠️ בחר סינון מתוך הכפתורים בלבד.</b>"),
+                reply_markup=orders_filter_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        status_filter = ORDER_FILTER_BY_BUTTON[txt]
+        orders = get_orders_for_filter(status_filter, 20)
+
+        state["orders_filter"] = status_filter
+        state["step"] = "orders_select"
+
+        if not orders:
+            await message.answer(
+                rtl(
+                    "<b>📦 ניהול הזמנות</b>\n\n"
+                    "לא נמצאו הזמנות בסינון הזה."
+                ),
+                reply_markup=orders_filter_keyboard(),
+                parse_mode="HTML"
+            )
+            state["step"] = "orders_filter"
+            return
+
+        await message.answer(
+            rtl(
+                "<b>📦 ניהול הזמנות</b>\n\n"
+                f"נמצאו {len(orders)} הזמנות.\n"
+                "בחר הזמנה מהרשימה כדי לפתוח ולעדכן סטטוס."
+            ),
+            reply_markup=order_select_keyboard(orders),
+            parse_mode="HTML"
+        )
+        return
+
+    if step == "orders_select":
+        if txt == "⬅️ סינון הזמנות":
+            state["step"] = "orders_filter"
+            await message.answer(
+                rtl("<b>📦 ניהול הזמנות</b>\n\nבחר סינון הזמנות."),
+                reply_markup=orders_filter_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        order_number = extract_order_number_from_button(txt)
+        order = get_order_by_number(order_number)
+
+        if not order:
+            await message.answer(
+                rtl("<b>⚠️ ההזמנה לא נמצאה.</b>\nבחר הזמנה מהרשימה."),
+                parse_mode="HTML"
+            )
+            return
+
+        state["step"] = "order_actions"
+        state["order_number"] = order_number
+
+        await message.answer(
+            format_order(order),
+            reply_markup=order_action_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if step == "order_actions":
+        if txt == "⬅️ חזרה לרשימת הזמנות":
+            status_filter = state.get("orders_filter", "all")
+            orders = get_orders_for_filter(status_filter, 20)
+
+            state["step"] = "orders_select"
+
+            if not orders:
+                state["step"] = "orders_filter"
+                await message.answer(
+                    rtl("<b>📦 ניהול הזמנות</b>\n\nלא נמצאו הזמנות. בחר סינון אחר."),
+                    reply_markup=orders_filter_keyboard(),
+                    parse_mode="HTML"
+                )
+                return
+
+            await message.answer(
+                rtl("<b>📦 רשימת הזמנות</b>\n\nבחר הזמנה מהרשימה."),
+                reply_markup=order_select_keyboard(orders),
+                parse_mode="HTML"
+            )
+            return
+
+        if txt not in ORDER_ACTION_BY_BUTTON:
+            await message.answer(
+                rtl("<b>⚠️ בחר פעולה מתוך הכפתורים בלבד.</b>"),
+                reply_markup=order_action_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        order_number = state.get("order_number")
+        new_status = ORDER_ACTION_BY_BUTTON[txt]
+
+        ok = update_order_status(order_number, new_status)
+        order = get_order_by_number(order_number)
+
+        if not ok or not order:
+            await message.answer(
+                rtl("<b>⚠️ לא הצלחתי לעדכן את ההזמנה.</b>"),
+                reply_markup=admin_keyboard(),
+                parse_mode="HTML"
+            )
+            admin_states[uid] = {"step": "admin"}
+            return
+
+        client_msg = CLIENT_STATUS_MESSAGE.get(new_status, "סטטוס ההזמנה שלך עודכן.")
+
+        try:
+            await message.bot.send_message(
+                order["telegram_id"],
+                rtl(f"{client_msg}\n\n{field('מספר הזמנה', order_number)}"),
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
+        await message.answer(
+            rtl(
+                "<b>✅ סטטוס ההזמנה עודכן בהצלחה</b>\n\n"
+                f"{field('מספר הזמנה', order_number)}\n"
+                f"{field('סטטוס חדש', status_label(new_status))}"
+            ),
+            parse_mode="HTML"
+        )
+
+        await message.answer(
+            format_order(order),
+            reply_markup=order_action_keyboard(),
             parse_mode="HTML"
         )
         return
