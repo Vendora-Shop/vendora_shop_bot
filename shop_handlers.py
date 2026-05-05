@@ -25,8 +25,8 @@ RTL = "\u200F"
 # ================== PICKUP SETTINGS ==================
 # כאן מגדירים את נקודת האיסוף העצמי.
 # אם בעתיד תרצה לשנות כתובת איסוף — משנים רק כאן.
-PICKUP_POINT_NAME = "Vendora - מחסן"
-PICKUP_POINT_ADDRESS = "אשדוד - הנביאים 2"
+PICKUP_POINT_NAME = "נקודת איסוף Vendora"
+PICKUP_POINT_ADDRESS = "אשדוד - כתובת תעודכן במערכת"
 PICKUP_CITY = "איסוף עצמי"
 PICKUP_BASE_CITY = "איסוף עצמי"
 #קעקרערעק
@@ -126,7 +126,7 @@ def fulfillment_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🚚 משלוח עד הבית")],
-            [KeyboardButton(text="🏬 איסוף עצמי")],
+            [KeyboardButton(text="🛍️ איסוף עצמי מהחנות")],
             [KeyboardButton(text="❌ בטל הזמנה")]
         ],
         resize_keyboard=True
@@ -272,9 +272,10 @@ def is_pickup_order(data):
 
 def pickup_text():
     return (
-        f"{field('שיטת קבלה', 'איסוף עצמי')}\n"
+        "<b>🛍️ איסוף עצמי מהחנות</b>\n\n"
         f"{field('נקודת איסוף', PICKUP_POINT_NAME)}\n"
-        f"{field('כתובת איסוף', PICKUP_POINT_ADDRESS)}"
+        f"{field('כתובת', PICKUP_POINT_ADDRESS)}\n"
+        f"{field('זמן הכנה משוער', 'כ־30 דקות')}"
     )
 
 
@@ -292,7 +293,8 @@ def build_order_summary(data):
     else:
         address = f"{data['city']}, {data['street']}, קומה {data['floor']}, דירה {data['apartment']}"
         delivery_block = (
-            f"{field('כתובת משלוח', address)}\n"
+            "<b>🚚 משלוח עד הבית</b>\n\n"
+            f"{field('כתובת', address)}\n"
             f"{field('אזור משלוח', data['base_city'])}\n\n"
             f"{field('דמי משלוח', money(delivery_price))}\n"
             f"{field('סה״כ לתשלום', money(final_total))}"
@@ -591,9 +593,10 @@ async def confirm_order(message: Message):
 
     if is_pickup_order(data):
         fulfillment_admin_text = (
-            f"{field('שיטת קבלה', 'איסוף עצמי')}\n"
+            "<b>🛍️ איסוף עצמי מהחנות</b>\n\n"
             f"{field('נקודת איסוף', PICKUP_POINT_NAME)}\n"
-            f"{field('כתובת איסוף', PICKUP_POINT_ADDRESS)}"
+            f"{field('כתובת', PICKUP_POINT_ADDRESS)}\n"
+            f"{field('זמן הכנה משוער', 'כ־30 דקות')}"
         )
     else:
         address = f"{data['city']}, {data['street']}, קומה {data['floor']}, דירה {data['apartment']}"
@@ -645,7 +648,7 @@ async def confirm_order(message: Message):
         rtl(
             "<b>✅ ההזמנה התקבלה!</b>\n\n"
             f"{field('מספר הזמנה', order_number)}\n\n"
-            f"{field('שיטת קבלה', 'איסוף עצמי' if is_pickup_order(data) else 'משלוח עד הבית')}\n"
+            f"{field('סוג הזמנה', 'איסוף עצמי' if is_pickup_order(data) else 'משלוח עד הבית')}\n"
             "הפרטים שלך נשמרו להזמנות הבאות.\n"
             "נציג יחזור אליך לאישור סופי ותשלום.\n"
             f"{field('סה״כ לתשלום', money(final_total))}"
@@ -753,7 +756,7 @@ async def handle_shop(message: Message):
             )
             return
 
-        if txt == "🏬 איסוף עצמי":
+        if txt == "🛍️ איסוף עצמי מהחנות":
             data["fulfillment_type"] = "pickup"
             set_pickup_details(data)
 
@@ -774,7 +777,7 @@ async def handle_shop(message: Message):
             data["step"] = "name"
             await message.answer(
                 rtl(
-                    "<b>🏬 איסוף עצמי</b>\n\n"
+                    "<b>🛍️ איסוף עצמי מהחנות</b>\n\n"
                     f"{pickup_text()}\n\n"
                     "<b>📝 פרטי לקוח</b>\n"
                     "רשום את השם המלא שלך:"
