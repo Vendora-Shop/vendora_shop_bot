@@ -437,6 +437,18 @@ async def confirm_order(message: Message):
     uid = message.from_user.id
     data = users.get(uid)
 
+    if data and data.get("order_submitting"):
+        await message.answer(
+            rtl(
+                "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
+                "ההזמנה כבר נקלטה במערכת ונמצאת בטיפול.\n"
+                "אין צורך ללחוץ שוב על אישור הזמנה."
+            ),
+            reply_markup=main_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
@@ -454,9 +466,12 @@ async def confirm_order(message: Message):
         )
         return
 
+    data["order_submitting"] = True
+
     stock_ok, problem_product = reduce_stock(data["cart"])
 
     if not stock_ok:
+        data.pop("order_submitting", None)
         await message.answer(
             rtl(
                 "<b>⚠️ בעיית מלאי</b>\n\n"
