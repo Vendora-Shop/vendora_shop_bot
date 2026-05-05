@@ -35,7 +35,7 @@ def order_status_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="✅ אושרה"), KeyboardButton(text="📦 בטיפול")],
-            [KeyboardButton(text="🚚 יצאה למשלוח"), KeyboardButton(text="💰 שולם")],
+            [KeyboardButton(text="🚚 יצאה למשלוח")],
             [KeyboardButton(text="✅ הושלמה"), KeyboardButton(text="❌ בוטלה")],
             [KeyboardButton(text="⬅️ חזרה לניהול")]
         ],
