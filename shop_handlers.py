@@ -901,29 +901,27 @@ async def confirm_order(message: Message):
     users.pop(uid, None)
 
     if is_pickup_order(data):
-        customer_success_text = (
-            "<b>✅ ההזמנה התקבלה בהצלחה!</b>\n\n"
-            f"{field('מספר הזמנה', order_number)}\n\n"
-            f"{field('סוג הזמנה', 'איסוף עצמי מהחנות')}\n"
-            "ההזמנה נקלטה במערכת לאחר אישור התשלום.\n"
-            "לאחר אישור ההזמנה, נעדכן אותך מתי ניתן להגיע לאסוף את המוצרים מנקודת האיסוף.\n\n"
-            f"{field('סה״כ שולם', money(final_total))}"
-        )
-    else:
-        customer_success_text = (
-            "<b>✅ ההזמנה התקבלה בהצלחה!</b>\n\n"
-            f"{field('מספר הזמנה', order_number)}\n\n"
-            f"{field('סוג הזמנה', 'משלוח עד הבית')}\n"
-            "ההזמנה נקלטה במערכת לאחר אישור התשלום.\n"
-            "לאחר אישור ההזמנה, נעדכן אותך כשההזמנה תעבור לטיפול ותצא למשלוח.\n\n"
-            f"{field('סה״כ שולם', money(final_total))}"
-        )
-
-    await message.answer(
-        rtl(customer_success_text),
-        reply_markup=main_keyboard(message.from_user.id),
-        parse_mode="HTML"
+    customer_success_text = (
+        "<b>✅ ההזמנה התקבלה בהצלחה!</b>\n\n"
+        "<b>📦 איסוף עצמי</b>\n\n"
+        "ברגע שההזמנה תהיה מוכנה, "
+        "תישלח אליך הודעה אוטומטית לאיסוף.\n\n"
+        f"{field('מספר הזמנה', order_number)}"
     )
+else:
+    customer_success_text = (
+        "<b>✅ ההזמנה התקבלה בהצלחה!</b>\n\n"
+        "<b>🚚 משלוח</b>\n\n"
+        "ברגע שההזמנה תאושר ותצא למשלוח, "
+        "תישלח אליך הודעה אוטומטית.\n\n"
+        f"{field('מספר הזמנה', order_number)}"
+    )
+
+await message.answer(
+    rtl(customer_success_text),
+    reply_markup=main_keyboard(message.from_user.id),
+    parse_mode="HTML"
+)
 
 
 @router.message(F.text == "📞 שירות לקוחות")
