@@ -6,6 +6,7 @@ def main_keyboard():
         keyboard=[
             [KeyboardButton(text="🛒 חנות")],
             [KeyboardButton(text="👤 הפרטים שלי"), KeyboardButton(text="📦 ההזמנות שלי")],
+            [KeyboardButton(text="🏠 הכתובות שלי")],
             [KeyboardButton(text="📞 שירות לקוחות")]
         ],
         resize_keyboard=True
@@ -81,6 +82,44 @@ def my_orders_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🔁 הזמן שוב")],
+            [KeyboardButton(text="⬅️ חזרה לתפריט")]
+        ],
+        resize_keyboard=True
+    )
+
+def addresses_menu_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📋 הצג כתובות")],
+            [KeyboardButton(text="➕ הוסף כתובת")],
+            [KeyboardButton(text="⬅️ חזרה לתפריט")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def address_select_keyboard(addresses):
+    keyboard = []
+
+    for address in addresses:
+        address_id = address.get("id")
+        label = address.get("label") or "כתובת"
+        city = address.get("city") or "-"
+        street = address.get("street") or "-"
+        keyboard.append([KeyboardButton(text=f"🏠 {address_id} | {label} | {city}, {street}")])
+
+    keyboard.append([KeyboardButton(text="➕ הוסף כתובת")])
+    keyboard.append([KeyboardButton(text="⬅️ חזרה לכתובות")])
+    keyboard.append([KeyboardButton(text="⬅️ חזרה לתפריט")])
+
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+
+def address_actions_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🗑️ מחק כתובת")],
+            [KeyboardButton(text="⬅️ חזרה לרשימת כתובות")],
             [KeyboardButton(text="⬅️ חזרה לתפריט")]
         ],
         resize_keyboard=True
