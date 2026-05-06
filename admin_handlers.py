@@ -400,6 +400,9 @@ NOTIFICATION_ACTION_BY_BUTTON = {
 
 
 def order_notification_keyboard(order_number, status):
+    order = get_order_by_number(order_number)
+    pickup = is_order_pickup(order) if order else False
+
     buttons = []
 
     if status == "new":
@@ -407,28 +410,49 @@ def order_notification_keyboard(order_number, status):
             InlineKeyboardButton(text="✅ אשר הזמנה", callback_data=f"order_action:approve:{order_number}"),
             InlineKeyboardButton(text="❌ בטל", callback_data=f"order_action:cancel:{order_number}")
         ])
+
     elif status == "approved":
-        buttons.append([
-            InlineKeyboardButton(text="📦 העבר לטיפול", callback_data=f"order_action:processing:{order_number}"),
-            InlineKeyboardButton(text="❌ בטל", callback_data=f"order_action:cancel:{order_number}")
-        ])
+        if pickup:
+            buttons.append([
+                InlineKeyboardButton(text="📦 העבר להכנה", callback_data=f"order_action:processing:{order_number}"),
+                InlineKeyboardButton(text="❌ בטל", callback_data=f"order_action:cancel:{order_number}")
+            ])
+        else:
+            buttons.append([
+                InlineKeyboardButton(text="📦 העבר לטיפול", callback_data=f"order_action:processing:{order_number}"),
+                InlineKeyboardButton(text="❌ בטל", callback_data=f"order_action:cancel:{order_number}")
+            ])
+
     elif status == "processing":
-        buttons.append([
-            InlineKeyboardButton(text="🚚 יצא למשלוח", callback_data=f"order_action:shipping:{order_number}"),
-            InlineKeyboardButton(text="❌ בטל", callback_data=f"order_action:cancel:{order_number}")
-        ])
+        if pickup:
+            buttons.append([
+                InlineKeyboardButton(text="🛍️ מוכן לאיסוף", callback_data=f"order_action:shipping:{order_number}"),
+                InlineKeyboardButton(text="❌ בטל", callback_data=f"order_action:cancel:{order_number}")
+            ])
+        else:
+            buttons.append([
+                InlineKeyboardButton(text="🚚 יצא למשלוח", callback_data=f"order_action:shipping:{order_number}"),
+                InlineKeyboardButton(text="❌ בטל", callback_data=f"order_action:cancel:{order_number}")
+            ])
+
     elif status == "shipping":
-        buttons.append([
-            InlineKeyboardButton(text="✅ הושלמה", callback_data=f"order_action:done:{order_number}"),
-            InlineKeyboardButton(text="❌ בטל", callback_data=f"order_action:cancel:{order_number}")
-        ])
+        if pickup:
+            buttons.append([
+                InlineKeyboardButton(text="✅ נאסף", callback_data=f"order_action:done:{order_number}"),
+                InlineKeyboardButton(text="❌ בטל", callback_data=f"order_action:cancel:{order_number}")
+            ])
+        else:
+            buttons.append([
+                InlineKeyboardButton(text="✅ הושלמה", callback_data=f"order_action:done:{order_number}"),
+                InlineKeyboardButton(text="❌ בטל", callback_data=f"order_action:cancel:{order_number}")
+            ])
+
     else:
         buttons.append([
             InlineKeyboardButton(text="👁️ צפייה בלבד", callback_data=f"order_action:view:{order_number}")
         ])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
-
 
 
 def h(text):
@@ -519,7 +543,7 @@ def format_customer_orders_summary(customer, orders):
         text += (
             f"🧾 <b>{h(order.get('order_number'))}</b>\n"
             f"{field('תאריך', order.get('created_at') or '-')}\n"
-            f"{field('סטטוס', status_label(order.get('status')))}\n"
+            f"{field('סטטוס', status_label_for_order(order))}\n"
             f"{field('סה״כ', money(order.get('final_total') or 0))}\n\n"
         )
 
@@ -710,7 +734,7 @@ def order_select_keyboard(orders, back_text="⬅️ חזרה לניהול הזמ
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
-def order_action_keyboard(order_status):
+def order_action_keyboard(order_status, pickup=False):
     if order_status in {"done", "cancelled"}:
         return ReplyKeyboardMarkup(
             keyboard=[
@@ -725,12 +749,25 @@ def order_action_keyboard(order_status):
 
     if order_status == "new":
         keyboard.append([KeyboardButton(text="✅ אשר הזמנה"), KeyboardButton(text="❌ בטל הזמנה")])
+
     elif order_status == "approved":
-        keyboard.append([KeyboardButton(text="📦 העבר לטיפול"), KeyboardButton(text="❌ בטל הזמנה")])
+        if pickup:
+            keyboard.append([KeyboardButton(text="📦 העבר להכנה"), KeyboardButton(text="❌ בטל הזמנה")])
+        else:
+            keyboard.append([KeyboardButton(text="📦 העבר לטיפול"), KeyboardButton(text="❌ בטל הזמנה")])
+
     elif order_status == "processing":
-        keyboard.append([KeyboardButton(text="🚚 סמן כיצא למשלוח"), KeyboardButton(text="❌ בטל הזמנה")])
+        if pickup:
+            keyboard.append([KeyboardButton(text="🛍️ מוכן לאיסוף"), KeyboardButton(text="❌ בטל הזמנה")])
+        else:
+            keyboard.append([KeyboardButton(text="🚚 סמן כיצא למשלוח"), KeyboardButton(text="❌ בטל הזמנה")])
+
     elif order_status == "shipping":
-        keyboard.append([KeyboardButton(text="✅ סמן כהושלם"), KeyboardButton(text="❌ בטל הזמנה")])
+        if pickup:
+            keyboard.append([KeyboardButton(text="✅ סמן כנאסף"), KeyboardButton(text="❌ בטל הזמנה")])
+        else:
+            keyboard.append([KeyboardButton(text="✅ סמן כהושלם"), KeyboardButton(text="❌ בטל הזמנה")])
+
     else:
         keyboard.append([KeyboardButton(text="❌ בטל הזמנה")])
 
@@ -754,8 +791,11 @@ ORDER_SECTION_BY_BUTTON = {
 ORDER_ACTION_BY_BUTTON = {
     "✅ אשר הזמנה": "approved",
     "📦 העבר לטיפול": "processing",
+    "📦 העבר להכנה": "processing",
     "🚚 סמן כיצא למשלוח": "shipping",
+    "🛍️ מוכן לאיסוף": "shipping",
     "✅ סמן כהושלם": "done",
+    "✅ סמן כנאסף": "done",
     "❌ בטל הזמנה": "cancelled",
 }
 
@@ -903,6 +943,23 @@ def status_label(status):
     return STATUS_TEXT.get(status, status)
 
 
+def status_label_for_order(order):
+    status = order.get("status") if order else ""
+
+    if is_order_pickup(order):
+        pickup_statuses = {
+            "new": "🆕 חדשה",
+            "approved": "✅ אושרה",
+            "processing": "📦 בהכנה",
+            "shipping": "🛍️ מוכן לאיסוף",
+            "done": "✅ נאספה",
+            "cancelled": "❌ בוטלה",
+        }
+        return pickup_statuses.get(status, status)
+
+    return status_label(status)
+
+
 
 def is_order_pickup(order):
     return (
@@ -936,7 +993,7 @@ def order_fulfillment_text(order):
 def format_order(order):
     text = (
         f"<b>🧾 הזמנה {h(order['order_number'])}</b>\n\n"
-        f"{field('סטטוס', status_label(order.get('status')))}\n"
+        f"{field('סטטוס', status_label_for_order(order))}\n"
         f"{field('תאריך', order.get('created_at'))}\n\n"
         f"{field('שם לקוח', order.get('customer_name'))}\n"
         f"{field('טלפון', order.get('phone'))}\n\n"
@@ -1023,7 +1080,17 @@ async def order_notification_action(callback: CallbackQuery):
         await callback.answer("לא הצלחתי לעדכן את ההזמנה.", show_alert=True)
         return
 
-    client_msg = CLIENT_STATUS_MESSAGE.get(new_status, "סטטוס ההזמנה שלך עודכן.")
+    if is_order_pickup(order):
+        pickup_client_messages = {
+            "approved": "✅ ההזמנה שלך אושרה. נציג יעדכן אותך כשהיא תהיה מוכנה.",
+            "processing": "📦 ההזמנה שלך בהכנה.",
+            "shipping": "🛍️ ההזמנה שלך מוכנה לאיסוף מהחנות.",
+            "done": "✅ ההזמנה נאספה. תודה שקנית ב־Vendora Shop!",
+            "cancelled": "❌ ההזמנה בוטלה. לפרטים נוספים ניתן לפנות לשירות לקוחות.",
+        }
+        client_msg = pickup_client_messages.get(new_status, "סטטוס ההזמנה שלך עודכן.")
+    else:
+        client_msg = CLIENT_STATUS_MESSAGE.get(new_status, "סטטוס ההזמנה שלך עודכן.")
 
     try:
         await callback.bot.send_message(
@@ -1982,7 +2049,7 @@ async def admin_flow(message: Message):
 
         await message.answer(
             format_order(order),
-            reply_markup=order_action_keyboard(order.get("status")),
+            reply_markup=order_action_keyboard(order.get("status"), is_order_pickup(order)),
             parse_mode="HTML"
         )
         return
@@ -2027,7 +2094,7 @@ async def admin_flow(message: Message):
                         "הזמנה זו נמצאת בסטטוס סופי ונשמרת בארכיון.\n"
                         "לא ניתן לשנות אותה מכאן."
                     ),
-                    reply_markup=order_action_keyboard(order.get("status")),
+                    reply_markup=order_action_keyboard(order.get("status"), is_order_pickup(order)),
                     parse_mode="HTML"
                 )
             return
@@ -2120,7 +2187,7 @@ async def admin_flow(message: Message):
         state["step"] = "order_actions"
         await message.answer(
             format_order(order),
-            reply_markup=order_action_keyboard(order.get("status")),
+            reply_markup=order_action_keyboard(order.get("status"), is_order_pickup(order)),
             parse_mode="HTML"
         )
         return
