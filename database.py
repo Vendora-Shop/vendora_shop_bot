@@ -885,91 +885,111 @@ def get_orders_status_summary():
     return counts
 
 def get_all_customer_telegram_ids():
+    create_tables()
+
     conn = get_connection()
     cur = conn.cursor()
 
-    cur.execute("""
-        SELECT DISTINCT telegram_id
-        FROM customers
-        WHERE telegram_id IS NOT NULL
-          AND telegram_id != ''
-    """)
+    ids = set()
 
-    rows = cur.fetchall()
+    try:
+        cur.execute("""
+            SELECT DISTINCT telegram_id
+            FROM customers
+            WHERE telegram_id IS NOT NULL
+        """)
+        for row in cur.fetchall():
+            if row[0]:
+                ids.add(int(row[0]))
+    except Exception:
+        pass
+
+    try:
+        cur.execute("""
+            SELECT DISTINCT telegram_id
+            FROM orders
+            WHERE telegram_id IS NOT NULL
+        """)
+        for row in cur.fetchall():
+            if row[0]:
+                ids.add(int(row[0]))
+    except Exception:
+        pass
+
     conn.close()
 
-    customer_ids = []
+    return list(ids)
 
-    for row in rows:
-        try:
-            customer_ids.append(int(row[0]))
-        except Exception:
-            pass
-
-    return customer_ids
 
 def get_customers_list(limit=30):
     create_tables()
+
     conn = get_connection()
     cur = conn.cursor()
 
     results = []
     seen = set()
 
-    cur.execute("""
-        SELECT id, telegram_id, telegram_name, customer_name, phone, city,
-               street, floor, apartment, last_order_number, total_orders,
-               total_spent, created_at, updated_at
-        FROM customers
-        ORDER BY total_orders DESC, total_spent DESC, updated_at DESC
-        LIMIT ?
-    """, (int(limit),))
-
-    for row in cur.fetchall():
-        customer = customer_row_to_dict(row)
-        if customer:
-            results.append(customer)
-            seen.add(customer.get("telegram_id"))
-
-    if len(results) < int(limit):
+    try:
         cur.execute("""
-            SELECT telegram_id, MAX(telegram_name), MAX(customer_name), MAX(phone),
-                   MAX(city), MAX(street), MAX(floor), MAX(apartment),
-                   MAX(order_number), COUNT(*), COALESCE(SUM(final_total), 0),
-                   MIN(created_at), MAX(created_at)
-            FROM orders
-            GROUP BY telegram_id
-            ORDER BY MAX(created_at) DESC
+            SELECT id, telegram_id, telegram_name, customer_name, phone, city,
+                   street, floor, apartment, last_order_number, total_orders,
+                   total_spent, created_at, updated_at
+            FROM customers
+            ORDER BY total_orders DESC, total_spent DESC, updated_at DESC
             LIMIT ?
         """, (int(limit),))
 
         for row in cur.fetchall():
-            telegram_id, telegram_name, customer_name, phone, city, street, floor, apartment, last_order_number, total_orders, total_spent, created_at, updated_at = row
+            customer = customer_row_to_dict(row)
+            if customer:
+                results.append(customer)
+                seen.add(customer.get("telegram_id"))
+    except Exception:
+        pass
 
-            if telegram_id in seen:
-                continue
+    if len(results) < int(limit):
+        try:
+            cur.execute("""
+                SELECT telegram_id, MAX(telegram_name), MAX(customer_name), MAX(phone),
+                       MAX(city), MAX(street), MAX(floor), MAX(apartment),
+                       MAX(order_number), COUNT(*), COALESCE(SUM(final_total), 0),
+                       MIN(created_at), MAX(created_at)
+                FROM orders
+                GROUP BY telegram_id
+                ORDER BY MAX(created_at) DESC
+                LIMIT ?
+            """, (int(limit),))
 
-            results.append({
-                "id": int(telegram_id),
-                "telegram_id": telegram_id,
-                "telegram_name": telegram_name,
-                "customer_name": customer_name,
-                "phone": phone,
-                "city": city,
-                "street": street,
-                "floor": floor,
-                "apartment": apartment,
-                "last_order_number": last_order_number,
-                "total_orders": total_orders,
-                "total_spent": total_spent,
-                "created_at": created_at,
-                "updated_at": updated_at
-            })
+            for row in cur.fetchall():
+                telegram_id, telegram_name, customer_name, phone, city, street, floor, apartment, last_order_number, total_orders, total_spent, created_at, updated_at = row
 
-            seen.add(telegram_id)
+                if telegram_id in seen:
+                    continue
 
-            if len(results) >= int(limit):
-                break
+                results.append({
+                    "id": int(telegram_id),
+                    "telegram_id": telegram_id,
+                    "telegram_name": telegram_name,
+                    "customer_name": customer_name,
+                    "phone": phone,
+                    "city": city,
+                    "street": street,
+                    "floor": floor,
+                    "apartment": apartment,
+                    "last_order_number": last_order_number,
+                    "total_orders": total_orders,
+                    "total_spent": total_spent,
+                    "created_at": created_at,
+                    "updated_at": updated_at
+                })
+
+                seen.add(telegram_id)
+
+                if len(results) >= int(limit):
+                    break
+        except Exception:
+            pass
 
     conn.close()
     return results[:int(limit)]
@@ -1002,94 +1022,100 @@ def search_customers(query, limit=30):
     results = []
     seen = set()
 
-    if is_phone:
-        cur.execute("""
-            SELECT id, telegram_id, telegram_name, customer_name, phone, city,
-                   street, floor, apartment, last_order_number, total_orders,
-                   total_spent, created_at, updated_at
-            FROM customers
-            WHERE REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+972', '0'), '972', '0') LIKE ?
-               OR REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+972', '0'), '972', '0') LIKE ?
-               OR phone LIKE ?
-            ORDER BY total_orders DESC, total_spent DESC, updated_at DESC
-            LIMIT ?
-        """, (f"%{clean_query}%", f"%{phone_tail}%", f"%{query}%", int(limit)))
-    else:
-        cur.execute("""
-            SELECT id, telegram_id, telegram_name, customer_name, phone, city,
-                   street, floor, apartment, last_order_number, total_orders,
-                   total_spent, created_at, updated_at
-            FROM customers
-            WHERE customer_name LIKE ?
-               OR phone LIKE ?
-               OR telegram_name LIKE ?
-            ORDER BY total_orders DESC, total_spent DESC, updated_at DESC
-            LIMIT ?
-        """, (f"%{query}%", f"%{query}%", f"%{query}%", int(limit)))
-
-    for row in cur.fetchall():
-        customer = customer_row_to_dict(row)
-        if customer:
-            results.append(customer)
-            seen.add(customer.get("telegram_id"))
-
-    if len(results) < int(limit):
+    try:
         if is_phone:
             cur.execute("""
-                SELECT telegram_id, MAX(telegram_name), MAX(customer_name), MAX(phone),
-                       MAX(city), MAX(street), MAX(floor), MAX(apartment),
-                       MAX(order_number), COUNT(*), COALESCE(SUM(final_total), 0),
-                       MIN(created_at), MAX(created_at)
-                FROM orders
+                SELECT id, telegram_id, telegram_name, customer_name, phone, city,
+                       street, floor, apartment, last_order_number, total_orders,
+                       total_spent, created_at, updated_at
+                FROM customers
                 WHERE REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+972', '0'), '972', '0') LIKE ?
                    OR REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+972', '0'), '972', '0') LIKE ?
                    OR phone LIKE ?
-                GROUP BY telegram_id
-                ORDER BY MAX(created_at) DESC
+                ORDER BY total_orders DESC, total_spent DESC, updated_at DESC
                 LIMIT ?
             """, (f"%{clean_query}%", f"%{phone_tail}%", f"%{query}%", int(limit)))
         else:
             cur.execute("""
-                SELECT telegram_id, MAX(telegram_name), MAX(customer_name), MAX(phone),
-                       MAX(city), MAX(street), MAX(floor), MAX(apartment),
-                       MAX(order_number), COUNT(*), COALESCE(SUM(final_total), 0),
-                       MIN(created_at), MAX(created_at)
-                FROM orders
+                SELECT id, telegram_id, telegram_name, customer_name, phone, city,
+                       street, floor, apartment, last_order_number, total_orders,
+                       total_spent, created_at, updated_at
+                FROM customers
                 WHERE customer_name LIKE ?
                    OR phone LIKE ?
                    OR telegram_name LIKE ?
-                GROUP BY telegram_id
-                ORDER BY MAX(created_at) DESC
+                ORDER BY total_orders DESC, total_spent DESC, updated_at DESC
                 LIMIT ?
             """, (f"%{query}%", f"%{query}%", f"%{query}%", int(limit)))
 
         for row in cur.fetchall():
-            telegram_id, telegram_name, customer_name, phone, city, street, floor, apartment, last_order_number, total_orders, total_spent, created_at, updated_at = row
+            customer = customer_row_to_dict(row)
+            if customer:
+                results.append(customer)
+                seen.add(customer.get("telegram_id"))
+    except Exception:
+        pass
 
-            if telegram_id in seen:
-                continue
+    if len(results) < int(limit):
+        try:
+            if is_phone:
+                cur.execute("""
+                    SELECT telegram_id, MAX(telegram_name), MAX(customer_name), MAX(phone),
+                           MAX(city), MAX(street), MAX(floor), MAX(apartment),
+                           MAX(order_number), COUNT(*), COALESCE(SUM(final_total), 0),
+                           MIN(created_at), MAX(created_at)
+                    FROM orders
+                    WHERE REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+972', '0'), '972', '0') LIKE ?
+                       OR REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+972', '0'), '972', '0') LIKE ?
+                       OR phone LIKE ?
+                    GROUP BY telegram_id
+                    ORDER BY MAX(created_at) DESC
+                    LIMIT ?
+                """, (f"%{clean_query}%", f"%{phone_tail}%", f"%{query}%", int(limit)))
+            else:
+                cur.execute("""
+                    SELECT telegram_id, MAX(telegram_name), MAX(customer_name), MAX(phone),
+                           MAX(city), MAX(street), MAX(floor), MAX(apartment),
+                           MAX(order_number), COUNT(*), COALESCE(SUM(final_total), 0),
+                           MIN(created_at), MAX(created_at)
+                    FROM orders
+                    WHERE customer_name LIKE ?
+                       OR phone LIKE ?
+                       OR telegram_name LIKE ?
+                    GROUP BY telegram_id
+                    ORDER BY MAX(created_at) DESC
+                    LIMIT ?
+                """, (f"%{query}%", f"%{query}%", f"%{query}%", int(limit)))
 
-            results.append({
-                "id": int(telegram_id),
-                "telegram_id": telegram_id,
-                "telegram_name": telegram_name,
-                "customer_name": customer_name,
-                "phone": phone,
-                "city": city,
-                "street": street,
-                "floor": floor,
-                "apartment": apartment,
-                "last_order_number": last_order_number,
-                "total_orders": total_orders,
-                "total_spent": total_spent,
-                "created_at": created_at,
-                "updated_at": updated_at
-            })
+            for row in cur.fetchall():
+                telegram_id, telegram_name, customer_name, phone, city, street, floor, apartment, last_order_number, total_orders, total_spent, created_at, updated_at = row
 
-            seen.add(telegram_id)
+                if telegram_id in seen:
+                    continue
 
-            if len(results) >= int(limit):
-                break
+                results.append({
+                    "id": int(telegram_id),
+                    "telegram_id": telegram_id,
+                    "telegram_name": telegram_name,
+                    "customer_name": customer_name,
+                    "phone": phone,
+                    "city": city,
+                    "street": street,
+                    "floor": floor,
+                    "apartment": apartment,
+                    "last_order_number": last_order_number,
+                    "total_orders": total_orders,
+                    "total_spent": total_spent,
+                    "created_at": created_at,
+                    "updated_at": updated_at
+                })
+
+                seen.add(telegram_id)
+
+                if len(results) >= int(limit):
+                    break
+        except Exception:
+            pass
 
     conn.close()
     return results[:int(limit)]
