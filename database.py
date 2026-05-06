@@ -927,28 +927,170 @@ def get_customers_list(limit=30):
     return [customer_row_to_dict(row) for row in rows]
 
 
+def clean_phone_for_search(value):
+    phone = str(value or "").strip()
+    phone = phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+
+    if phone.startswith("+972"):
+        phone = "0" + phone[4:]
+
+    if phone.startswith("972"):
+        phone = "0" + phone[3:]
+
+    return phone
+
+
 def search_customers(query, limit=30):
     query = str(query or "").strip()
+    clean_query = clean_phone_for_search(query)
+    is_phone_search = clean_query.isdigit() and len(clean_query) >= 7
 
     conn = get_connection()
     cur = conn.cursor()
 
-    cur.execute("""
-        SELECT id, telegram_id, telegram_name, customer_name, phone, city,
-               street, floor, apartment, last_order_number, total_orders,
-               total_spent, created_at, updated_at
-        FROM customers
-        WHERE customer_name LIKE ?
-           OR phone LIKE ?
-           OR telegram_name LIKE ?
-        ORDER BY total_orders DESC, total_spent DESC, updated_at DESC
-        LIMIT ?
-    """, (f"%{query}%", f"%{query}%", f"%{query}%", int(limit)))
+    results = []
+    seen_telegram_ids = set()
+
+    # חיפוש ראשי בטבלת customers
+    if is_phone_search:
+        cur.execute("""
+            SELECT id, telegram_id, telegram_name, customer_name, phone, city,
+                   street, floor, apartment, last_order_number, total_orders,
+                   total_spent, created_at, updated_at
+            FROM customers
+            WHERE REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+972', '0'), '972', '0') LIKE ?
+               OR phone LIKE ?
+               OR customer_name LIKE ?
+               OR telegram_name LIKE ?
+            ORDER BY total_orders DESC, total_spent DESC, updated_at DESC
+            LIMIT ?
+        """, (
+            f"%{clean_query}%",
+            f"%{query}%",
+            f"%{query}%",
+            f"%{query}%",
+            int(limit)
+        ))
+    else:
+        cur.execute("""
+            SELECT id, telegram_id, telegram_name, customer_name, phone, city,
+                   street, floor, apartment, last_order_number, total_orders,
+                   total_spent, created_at, updated_at
+            FROM customers
+            WHERE customer_name LIKE ?
+               OR phone LIKE ?
+               OR telegram_name LIKE ?
+            ORDER BY total_orders DESC, total_spent DESC, updated_at DESC
+            LIMIT ?
+        """, (f"%{query}%", f"%{query}%", f"%{query}%", int(limit)))
 
     rows = cur.fetchall()
+
+    for row in rows:
+        customer = customer_row_to_dict(row)
+        if customer:
+            results.append(customer)
+            seen_telegram_ids.add(customer.get("telegram_id"))
+
+    # גיבוי חשוב:
+    # אם לקוח לא נמצא ב-customers, נחפש גם בטבלת orders.
+    # זה פותר מצב שבו היו הזמנות ישנות לפני שמירת פרופיל לקוח.
+    if len(results) < int(limit):
+        if is_phone_search:
+            cur.execute("""
+                SELECT
+                    telegram_id,
+                    MAX(telegram_name),
+                    MAX(customer_name),
+                    MAX(phone),
+                    MAX(city),
+                    MAX(street),
+                    MAX(floor),
+                    MAX(apartment),
+                    MAX(order_number),
+                    COUNT(*),
+                    COALESCE(SUM(final_total), 0),
+                    MIN(created_at),
+                    MAX(updated_at)
+                FROM orders
+                WHERE REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+972', '0'), '972', '0') LIKE ?
+                   OR phone LIKE ?
+                GROUP BY telegram_id
+                ORDER BY MAX(updated_at) DESC
+                LIMIT ?
+            """, (f"%{clean_query}%", f"%{query}%", int(limit)))
+        else:
+            cur.execute("""
+                SELECT
+                    telegram_id,
+                    MAX(telegram_name),
+                    MAX(customer_name),
+                    MAX(phone),
+                    MAX(city),
+                    MAX(street),
+                    MAX(floor),
+                    MAX(apartment),
+                    MAX(order_number),
+                    COUNT(*),
+                    COALESCE(SUM(final_total), 0),
+                    MIN(created_at),
+                    MAX(updated_at)
+                FROM orders
+                WHERE customer_name LIKE ?
+                   OR phone LIKE ?
+                   OR telegram_name LIKE ?
+                GROUP BY telegram_id
+                ORDER BY MAX(updated_at) DESC
+                LIMIT ?
+            """, (f"%{query}%", f"%{query}%", f"%{query}%", int(limit)))
+
+        order_rows = cur.fetchall()
+
+        for row in order_rows:
+            (
+                telegram_id,
+                telegram_name,
+                customer_name,
+                phone,
+                city,
+                street,
+                floor,
+                apartment,
+                last_order_number,
+                total_orders,
+                total_spent,
+                created_at,
+                updated_at
+            ) = row
+
+            if telegram_id in seen_telegram_ids:
+                continue
+
+            results.append({
+                "id": int(telegram_id),
+                "telegram_id": telegram_id,
+                "telegram_name": telegram_name,
+                "customer_name": customer_name,
+                "phone": phone,
+                "city": city,
+                "street": street,
+                "floor": floor,
+                "apartment": apartment,
+                "last_order_number": last_order_number,
+                "total_orders": total_orders,
+                "total_spent": total_spent,
+                "created_at": created_at,
+                "updated_at": updated_at
+            })
+
+            seen_telegram_ids.add(telegram_id)
+
+            if len(results) >= int(limit):
+                break
+
     conn.close()
 
-    return [customer_row_to_dict(row) for row in rows]
+    return results[:int(limit)]
 
 
 def get_customer_by_id(customer_id):
