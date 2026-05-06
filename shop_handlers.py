@@ -900,29 +900,28 @@ async def confirm_order(message: Message):
 
     users.pop(uid, None)
 
-   if is_pickup_order(data):
-    customer_success_text = (
-        "<b>✅ ההזמנה התקבלה בהצלחה!</b>\n\n"
-        "<b>📦 איסוף עצמי</b>\n\n"
-        "כאשר ההזמנה תהיה מוכנה, "
-        "תישלח אליך הודעה אוטומטית לאיסוף.\n\n"
-        f"{field('מספר הזמנה', order_number)}"
-    )
-else:
-    customer_success_text = (
-        "<b>✅ ההזמנה התקבלה בהצלחה!</b>\n\n"
-        "<b>🚚 משלוח</b>\n\n"
-        "כאשר ההזמנה תאושר ותצא למשלוח, "
-        "תישלח אליך הודעה אוטומטית.\n\n"
-        f"{field('מספר הזמנה', order_number)}"
-    )
+    if is_pickup_order(data):
+        customer_success_text = (
+            "<b>✅ ההזמנה התקבלה בהצלחה!</b>\n\n"
+            "<b>🛍️ איסוף עצמי</b>\n\n"
+            "כאשר ההזמנה תהיה מוכנה, "
+            "תישלח אליך הודעה אוטומטית לאיסוף.\n\n"
+            f"{field('מספר הזמנה', order_number)}"
+        )
+    else:
+        customer_success_text = (
+            "<b>✅ ההזמנה התקבלה בהצלחה!</b>\n\n"
+            "<b>🚚 משלוח</b>\n\n"
+            "כאשר ההזמנה תאושר ותצא למשלוח, "
+            "תישלח אליך הודעה אוטומטית.\n\n"
+            f"{field('מספר הזמנה', order_number)}"
+        )
 
-await message.answer(
-    rtl(customer_success_text),
-    reply_markup=main_keyboard(message.from_user.id),
-    parse_mode="HTML"
-)
-
+    await message.answer(
+        rtl(customer_success_text),
+        reply_markup=main_keyboard(message.from_user.id),
+        parse_mode="HTML"
+    )
 
 @router.message(F.text == "📞 שירות לקוחות")
 async def support(message: Message):
