@@ -6,7 +6,7 @@ from datetime import datetime
 import calendar
 
 from config import ADMIN_ID
-from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard, customers_menu_keyboard, customer_actions_keyboard
+from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard, customers_menu_keyboard, customer_actions_keyboard, customer_select_keyboard
 from database import (
     add_product,
     get_all_products,
@@ -450,6 +450,127 @@ def field(label, value):
     return f"<b>{h(label)}:</b> {h(value)}"
 
 
+# ============================================================
+# MISSING ADMIN HELPERS — CUSTOMERS / BROADCAST / PRODUCTS
+# ============================================================
+
+def format_product_row(row):
+    product_id, category, name, price, description, max_qty, stock, sku, image_file_id, active = row
+
+    status = "פעיל 🟢" if int(active or 0) == 1 else "כבוי 🔴"
+
+    return (
+        f"<b>📦 {h(name)}</b>\n\n"
+        f"{field('קטגוריה', category)}\n"
+        f"{field('מחיר', money(price))}\n"
+        f"{field('מלאי', stock)}\n"
+        f"{field('מקסימום להזמנה', max_qty)}\n"
+        f"{field('מק״ט', sku or '-')}\n"
+        f"{field('סטטוס', status)}\n"
+        f"{field('תיאור', description or '-')}"
+    )
+
+
+def extract_customer_id_from_button(text):
+    text = str(text or "").strip()
+
+    if text.startswith("👤"):
+        text = text.replace("👤", "", 1).strip()
+
+    if "|" in text:
+        first = text.split("|", 1)[0].strip()
+    else:
+        first = text.strip()
+
+    try:
+        return int(first)
+    except Exception:
+        return None
+
+
+def format_customer_profile(customer):
+    return rtl(
+        "<b>👤 כרטיס לקוח</b>\n\n"
+        f"{field('שם לקוח', customer.get('customer_name') or '-')}\n"
+        f"{field('טלפון', customer.get('phone') or '-')}\n"
+        f"{field('Telegram', customer.get('telegram_name') or '-')}\n"
+        f"{field('Telegram ID', customer.get('telegram_id') or '-')}\n\n"
+        f"{field('עיר', customer.get('city') or '-')}\n"
+        f"{field('רחוב', customer.get('street') or '-')}\n"
+        f"{field('קומה', customer.get('floor') or '-')}\n"
+        f"{field('דירה', customer.get('apartment') or '-')}\n\n"
+        f"{field('הזמנה אחרונה', customer.get('last_order_number') or '-')}\n"
+        f"{field('סה״כ הזמנות', customer.get('total_orders') or 0)}\n"
+        f"{field('סה״כ רכישות', money(customer.get('total_spent') or 0))}"
+    )
+
+
+def format_customer_orders_summary(customer, orders):
+    text = (
+        "<b>📦 היסטוריית הזמנות לקוח</b>\n\n"
+        f"{field('לקוח', customer.get('customer_name') or '-')}\n"
+        f"{field('טלפון', customer.get('phone') or '-')}\n\n"
+    )
+
+    if not orders:
+        return rtl(text + "אין הזמנות להצגה עבור הלקוח הזה.")
+
+    for order in orders[:10]:
+        text += (
+            f"🧾 <b>{h(order.get('order_number'))}</b>\n"
+            f"{field('תאריך', order.get('created_at') or '-')}\n"
+            f"{field('סטטוס', status_label(order.get('status')))}\n"
+            f"{field('סה״כ', money(order.get('final_total') or 0))}\n\n"
+        )
+
+    return rtl(text)
+
+
+def clean_broadcast_text(text):
+    return str(text or "").strip()
+
+
+def validate_broadcast_text(text):
+    text = str(text or "").strip()
+
+    if len(text) < 2:
+        return False, "ההודעה קצרה מדי."
+
+    if len(text) > 3500:
+        return False, "ההודעה ארוכה מדי. קצר אותה לפני השליחה."
+
+    return True, ""
+
+
+def format_broadcast_preview(text, count):
+    return rtl(
+        "<b>📢 תצוגה מקדימה לשליחה</b>\n\n"
+        f"{field('לקוחות לשליחה', count)}\n\n"
+        "<b>תוכן ההודעה:</b>\n"
+        f"{h(text)}\n\n"
+        "בחר אם לאשר שליחה, לערוך או לבטל."
+    )
+
+
+async def send_broadcast_to_customers(bot, text, customer_ids):
+    sent = 0
+    failed = 0
+
+    for customer_id in customer_ids:
+        try:
+            await bot.send_message(
+                int(customer_id),
+                rtl(text),
+                parse_mode="HTML"
+            )
+            sent += 1
+        except Exception:
+            failed += 1
+
+    return sent, failed
+
+
+
 def is_admin(user_id):
     return user_id == ADMIN_ID
 
@@ -460,7 +581,7 @@ def is_admin_active_step(message: Message):
     if not is_admin(uid):
         return False
 
-    txt = (message.text or "").strip()
+    txt = clean_admin_text(message.text)
 
     if txt.startswith("/"):
         return False
@@ -1380,45 +1501,28 @@ async def handle_photo(message: Message):
 
 
 
-@router.message(lambda message: is_admin(message.from_user.id) and message.text and is_customers_menu_button(message.text))
-async def customers_menu_direct(message: Message):
-    await open_customers_menu_screen(message)
-
-
-@router.message(lambda message: is_admin(message.from_user.id) and message.text and is_customers_list_button(message.text))
-async def customers_list_direct(message: Message):
-    await open_customers_list_screen(message)
-
-
-@router.message(lambda message: is_admin(message.from_user.id) and message.text and is_customer_search_button(message.text))
-async def customers_search_direct(message: Message):
-    await open_customer_search_screen(message)
-
-
-@router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "customers_search")
-async def customers_search_query_direct(message: Message):
-    await run_customer_search_screen(message)
-
-
-@router.message(lambda message: is_admin(message.from_user.id) and message.text and is_broadcast_button(message.text))
-async def broadcast_start_direct(message: Message):
-    await open_broadcast_screen(message)
-
-
-@router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "broadcast_text")
-async def broadcast_text_direct(message: Message):
-    await handle_broadcast_text_screen(message)
-
-
-@router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "broadcast_confirm")
-async def broadcast_confirm_direct(message: Message):
-    await handle_broadcast_confirm_screen(message)
-
-
 @router.message(is_admin_active_step)
 async def admin_flow(message: Message):
+    # PRIORITY CUSTOMER BROADCAST STATES
     uid = message.from_user.id
-    txt = (message.text or "").strip()
+    txt = clean_admin_text(message.text)
+    state = admin_states.get(uid) or {}
+    step = state.get("step")
+
+    if step == "broadcast_text":
+        await handle_broadcast_text_screen(message)
+        return
+
+    if step == "broadcast_confirm":
+        await handle_broadcast_confirm_screen(message)
+        return
+
+    if step == "customers_search":
+        await run_customer_search_screen(message)
+        return
+
+    uid = message.from_user.id
+    txt = clean_admin_text(message.text)
     state = admin_states.get(uid)
     step = state.get("step")
 
@@ -1555,7 +1659,7 @@ async def admin_flow(message: Message):
         return
 
     if step == "customers_search":
-        query = txt.strip()
+        query = clean_admin_text(txt)
 
         if len(query) < 2:
             await message.answer(
