@@ -24,6 +24,55 @@ from pdf_generator import create_invoice_pdf
 
 router = Router()
 
+# ================== SAFE CUSTOMER FLOW HELPERS ==================
+def ensure_user_state(uid):
+    if uid not in users:
+        users[uid] = {"cart": [], "step": "main"}
+
+    if "cart" not in users[uid]:
+        users[uid]["cart"] = []
+
+    if "step" not in users[uid]:
+        users[uid]["step"] = "main"
+
+    return users[uid]
+
+
+def clear_temporary_customer_flow(data, keep_cart=True):
+    cart = data.get("cart", []) if keep_cart else []
+
+    for key in [
+        "step",
+        "selected_order_number",
+        "last_order_number",
+        "selected_address_id",
+        "new_address",
+        "saved_profile",
+        "delivery_pending",
+        "fulfillment_type"
+    ]:
+        data.pop(key, None)
+
+    data["cart"] = cart
+    data["step"] = "main"
+
+
+def reset_to_cart_state(data):
+    for key in [
+        "selected_order_number",
+        "last_order_number",
+        "selected_address_id",
+        "new_address",
+        "saved_profile",
+        "delivery_pending",
+        "fulfillment_type"
+    ]:
+        data.pop(key, None)
+
+    data["step"] = "cart"
+
+
+
 
 # ================== SAVED ADDRESSES UI ==================
 def format_address(address):
@@ -598,6 +647,11 @@ async def my_details(message: Message):
 @router.message(F.text == "🛒 חנות")
 async def shop(message: Message):
     uid = message.from_user.id
+    data = ensure_user_state(uid)
+    clear_temporary_customer_flow(data, keep_cart=True)
+    data["step"] = "browse_products"
+
+    uid = message.from_user.id
 
     if uid not in users:
         users[uid] = {"cart": []}
@@ -669,21 +723,28 @@ async def show_cart(message: Message):
 
 
 @router.message(F.text == "🧹 רוקן סל")
-async def clear_cart(message: Message):
+async def clear_cart_handler(message: Message):
     uid = message.from_user.id
-    users[uid] = {"cart": [], "step": None}
+    data = ensure_user_state(uid)
+
+    clear_temporary_customer_flow(data, keep_cart=False)
+
     await message.answer(
-        rtl("<b>🧹 הסל התרוקן בהצלחה.</b>"),
-        reply_markup=categories_keyboard(),
+        rtl("<b>🧹 הסל רוקן בהצלחה.</b>\n\nאפשר לחזור לחנות ולבחור מוצרים מחדש."),
+        reply_markup=main_keyboard(),
         parse_mode="HTML"
     )
 
 
 @router.message(F.text == "❌ בטל הזמנה")
-async def cancel_order(message: Message):
-    users.pop(message.from_user.id, None)
+async def cancel_customer_order_flow(message: Message):
+    uid = message.from_user.id
+    data = ensure_user_state(uid)
+
+    clear_temporary_customer_flow(data, keep_cart=False)
+
     await message.answer(
-        rtl("<b>❌ ההזמנה בוטלה.</b>"),
+        rtl("<b>❌ ההזמנה בוטלה.</b>\n\nאפשר להתחיל הזמנה חדשה מהחנות."),
         reply_markup=main_keyboard(),
         parse_mode="HTML"
     )
@@ -712,11 +773,12 @@ async def edit_details(message: Message):
 @router.message(F.text == "✅ המשך להזמנה")
 async def checkout(message: Message):
     uid = message.from_user.id
-    data = users.get(uid)
+    data = ensure_user_state(uid)
 
-    if not data or not data.get("cart"):
+    if not data.get("cart"):
         await message.answer(
-            rtl("<b>🛒 הסל שלך ריק.</b>\n\nקודם בחר מוצר."),
+            rtl("<b>🛒 הסל שלך ריק.</b>\n\nקודם בחר מוצר מהחנות."),
+            reply_markup=main_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -732,6 +794,7 @@ async def checkout(message: Message):
         reply_markup=fulfillment_keyboard(),
         parse_mode="HTML"
     )
+
 
 @router.message(F.text == "✅ אשר הזמנה")
 async def confirm_order(message: Message):
@@ -964,18 +1027,15 @@ async def reorder_choose_order(message: Message):
 @router.message(F.text == "⬅️ חזרה לתפריט")
 async def back_to_main_menu(message: Message):
     uid = message.from_user.id
+    data = ensure_user_state(uid)
 
-    if uid not in users:
-        users[uid] = {"cart": []}
-
-    users[uid]["step"] = "main"
+    clear_temporary_customer_flow(data, keep_cart=True)
 
     await message.answer(
         rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט למטה."),
         reply_markup=main_keyboard(),
         parse_mode="HTML"
     )
-
 
 
 @router.message(F.text == "🏠 הכתובות שלי")
@@ -1210,7 +1270,7 @@ async def handle_shop(message: Message):
             return
 
         users[uid]["cart"] = result["cart"]
-        users[uid]["step"] = "cart"
+        reset_to_cart_state(users[uid])
 
         if result.get("warning"):
             await message.answer(
