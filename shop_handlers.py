@@ -162,17 +162,40 @@ def reorder_orders_list_text(orders):
 
 def clone_cart_from_order(order):
     cloned_cart = []
+    unavailable_products = []
 
     for item in order.get("cart", []):
+        item_name = item.get("name")
+        qty = int(item.get("qty", 1))
+
+        if not item_name:
+            continue
+
+        product = get_product_by_name(item_name)
+
+        if not product:
+            unavailable_products.append(item_name)
+            continue
+
+        is_active = product.get("active", 1)
+
+        if is_active in [0, "0", False, "false", "False", None]:
+            unavailable_products.append(item_name)
+            continue
+
+        stock = int(product.get("stock", 0) or 0)
+
+        if stock < qty:
+            unavailable_products.append(item_name)
+            continue
+
         cloned_cart.append({
-            "name": item.get("name"),
-            "price": float(item.get("price", 0)),
-            "qty": int(item.get("qty", 1))
+            "name": product.get("name", item_name),
+            "price": float(product.get("price", item.get("price", 0))),
+            "qty": qty
         })
 
-    return cloned_cart
-
-
+    return cloned_cart, unavailable_products
 
 
 @router.message(CommandStart())
@@ -1190,14 +1213,11 @@ async def handle_shop(message: Message):
             )
             return
 
-        cloned_cart = clone_cart_from_order(order)
+        cloned_cart, unavailable_products = clone_cart_from_order(order)
 
         if not cloned_cart:
             await message.answer(
-                rtl(
-                    "<b>⚠️ לא ניתן לשחזר את ההזמנה.</b>\n\n"
-                    "ההזמנה שבחרת לא כוללת מוצרים זמינים לשחזור."
-                ),
+                rtl("<b>⚠️ המוצר שבחרת אזל מהמלאי.</b>"),
                 parse_mode="HTML"
             )
             return
@@ -1205,12 +1225,18 @@ async def handle_shop(message: Message):
         users[uid]["cart"] = cloned_cart
         users[uid]["step"] = "cart"
 
+        if unavailable_products:
+            await message.answer(
+                rtl("<b>⚠️ חלק מהמוצרים אזלו מהמלאי ולא נוספו לסל.</b>"),
+                parse_mode="HTML"
+            )
+
         await message.answer(
             rtl(
                 "<b>✅ ההזמנה שוחזרה לסל</b>\n\n"
-                f"{field('מספר הזמנה', order_number)}\n\n"
-                "המוצרים מההזמנה שבחרת נוספו לסל הקניות שלך.\n"
-                "אפשר להמשיך לסיום הזמנה או לערוך את הסל."
+                f"{field('שוחזר מהזמנה', order_number)}\n\n"
+                "המוצרים הזמינים נוספו לסל הקניות שלך.\n"
+                "לאחר אישור ההזמנה ייווצר מספר הזמנה חדש."
             ),
             reply_markup=cart_keyboard(),
             parse_mode="HTML"
