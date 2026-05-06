@@ -41,25 +41,29 @@ admin_states = {}
 
 RTL = "\u200F"
 
-def clean_admin_text(text):
+def normalize_admin_text(text):
     return str(text or "").replace("\u200f", "").replace("\u200e", "").strip()
 
 
-async def open_customers_list(message: Message):
-    state = admin_states.setdefault(message.from_user.id, {"step": "customers_menu"})
+async def show_customers_list_screen(message: Message):
     customers = get_customers_list(50)
 
     if not customers:
-        state["step"] = "customers_menu"
+        admin_states[message.from_user.id] = {"step": "customers_menu"}
         await message.answer(
-            rtl("<b>👥 רשימת לקוחות</b>\n\nאין עדיין לקוחות שמורים במערכת."),
+            rtl(
+                "<b>👥 רשימת לקוחות</b>\n\n"
+                "אין עדיין לקוחות שמורים במערכת."
+            ),
             reply_markup=customers_menu_keyboard(),
             parse_mode="HTML"
         )
         return
 
-    state["step"] = "customers_select"
-    state["customers_last_mode"] = "list"
+    admin_states[message.from_user.id] = {
+        "step": "customers_select",
+        "customers_last_mode": "list"
+    }
 
     await message.answer(
         rtl(
@@ -72,12 +76,58 @@ async def open_customers_list(message: Message):
     )
 
 
-async def open_customer_search(message: Message):
-    state = admin_states.setdefault(message.from_user.id, {"step": "customers_menu"})
-    state["step"] = "customers_search"
+async def start_customer_search_screen(message: Message):
+    admin_states[message.from_user.id] = {"step": "customer_search_waiting"}
 
     await message.answer(
-        rtl("<b>🔎 חיפוש לקוח</b>\n\nרשום שם, טלפון או שם Telegram לחיפוש."),
+        rtl(
+            "<b>🔎 חיפוש לקוח</b>\n\n"
+            "רשום שם, טלפון או שם Telegram לחיפוש."
+        ),
+        parse_mode="HTML"
+    )
+
+
+async def run_customer_search_screen(message: Message):
+    query = normalize_admin_text(message.text)
+
+    if len(query) < 2:
+        await message.answer(
+            rtl(
+                "<b>⚠️ חיפוש קצר מדי</b>\n\n"
+                "רשום לפחות 2 תווים לחיפוש."
+            ),
+            parse_mode="HTML"
+        )
+        return
+
+    customers = search_customers(query, 50)
+
+    if not customers:
+        admin_states[message.from_user.id] = {"step": "customers_menu"}
+        await message.answer(
+            rtl(
+                "<b>🔎 תוצאות חיפוש</b>\n\n"
+                "לא נמצאו לקוחות לפי החיפוש הזה."
+            ),
+            reply_markup=customers_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    admin_states[message.from_user.id] = {
+        "step": "customers_select",
+        "customers_last_mode": "search",
+        "customers_last_query": query
+    }
+
+    await message.answer(
+        rtl(
+            "<b>🔎 תוצאות חיפוש</b>\n\n"
+            f"נמצאו {len(customers)} לקוחות.\n"
+            "בחר לקוח מהרשימה כדי לפתוח כרטיס."
+        ),
+        reply_markup=customer_select_keyboard(customers),
         parse_mode="HTML"
     )
 
@@ -695,21 +745,6 @@ async def admin_panel(message: Message):
 
 
 
-@router.message(F.text.in_({"👥 לקוחות", "לקוחות 👥"}))
-async def customers_panel_start(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-
-    admin_states[message.from_user.id] = {"step": "customers_menu"}
-
-    await message.answer(
-        rtl(
-            "<b>👥 ניהול לקוחות</b>\n\n"
-            "בחר פעולה מהתפריט."
-        ),
-        reply_markup=customers_menu_keyboard(),
-        parse_mode="HTML"
-    )
 
 
 @router.message(F.text == "📢 שלח הודעה ללקוחות")
@@ -763,7 +798,7 @@ async def exit_admin(message: Message):
     )
 
 
-@router.message(F.text.in_({"⬅️ חזרה לניהול", "חזרה לניהול ⬅️"}))
+@router.message(F.text == "⬅️ חזרה לניהול")
 async def back_admin(message: Message):
     if not is_admin(message.from_user.id):
         return
@@ -1112,150 +1147,46 @@ async def handle_photo(message: Message):
 
 
 
-@router.message(F.text.in_({"📋 רשימת לקוחות", "רשימת לקוחות 📋"}))
-async def customers_list_direct(message: Message):
+@router.message(F.text.in_({"👥 לקוחות", "לקוחות 👥"}))
+async def customers_panel_start_fixed(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    state = admin_states.setdefault(message.from_user.id, {"step": "customers_menu"})
-
-    customers = get_customers_list(30)
-
-    if not customers:
-        state["step"] = "customers_menu"
-        await message.answer(
-            rtl(
-                "<b>👥 רשימת לקוחות</b>\n\n"
-                "אין עדיין לקוחות שמורים במערכת."
-            ),
-            reply_markup=customers_menu_keyboard(),
-            parse_mode="HTML"
-        )
-        return
-
-    state["step"] = "customers_select"
-    state["customers_last_mode"] = "list"
+    admin_states[message.from_user.id] = {"step": "customers_menu"}
 
     await message.answer(
         rtl(
-            "<b>👥 רשימת לקוחות</b>\n\n"
-            f"נמצאו {len(customers)} לקוחות.\n"
-            "בחר לקוח מהרשימה כדי לפתוח כרטיס."
+            "<b>👥 ניהול לקוחות</b>\n\n"
+            "בחר פעולה מהתפריט."
         ),
-        reply_markup=customer_select_keyboard(customers),
+        reply_markup=customers_menu_keyboard(),
         parse_mode="HTML"
     )
+
+
+@router.message(F.text.in_({"📋 רשימת לקוחות", "רשימת לקוחות 📋"}))
+async def customers_list_fixed(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    await show_customers_list_screen(message)
 
 
 @router.message(F.text.in_({"🔎 חפש לקוח", "חפש לקוח 🔎"}))
-async def customers_search_direct(message: Message):
+async def customers_search_start_fixed(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    state = admin_states.setdefault(message.from_user.id, {"step": "customers_menu"})
-    state["step"] = "customers_search"
-
-    await message.answer(
-        rtl(
-            "<b>🔎 חיפוש לקוח</b>\n\n"
-            "רשום שם, טלפון או שם Telegram לחיפוש."
-        ),
-        parse_mode="HTML"
-    )
+    await start_customer_search_screen(message)
 
 
-
-@router.message(F.text.contains("רשימת לקוחות"))
-async def customers_list_direct_any_state(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-    await open_customers_list(message)
-
-
-@router.message(F.text.contains("חפש לקוח"))
-async def customers_search_direct_any_state(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-    await open_customer_search(message)
-
-
-
-@router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "customers_search")
-async def customers_search_query_direct(message: Message):
-    query = clean_admin_text(message.text)
-
-    if "רשימת לקוחות" in query:
-        await open_customers_list(message)
-        return
-
-    if "חפש לקוח" in query:
-        await open_customer_search(message)
-        return
-
-    if len(query) < 2:
-        await message.answer(
-            rtl(
-                "<b>⚠️ חיפוש קצר מדי</b>\n\n"
-                "רשום לפחות 2 תווים לחיפוש."
-            ),
-            parse_mode="HTML"
-        )
-        return
-
-    customers = search_customers(query, 50)
-
-    if not customers:
-        admin_states[message.from_user.id] = {"step": "customers_menu"}
-        await message.answer(
-            rtl(
-                "<b>🔎 תוצאות חיפוש</b>\n\n"
-                "לא נמצאו לקוחות לפי החיפוש הזה."
-            ),
-            reply_markup=customers_menu_keyboard(),
-            parse_mode="HTML"
-        )
-        return
-
-    state = admin_states.setdefault(message.from_user.id, {})
-    state["step"] = "customers_select"
-    state["customers_last_mode"] = "search"
-    state["customers_last_query"] = query
-
-    await message.answer(
-        rtl(
-            "<b>🔎 תוצאות חיפוש</b>\n\n"
-            f"נמצאו {len(customers)} לקוחות.\n"
-            "בחר לקוח מהרשימה כדי לפתוח כרטיס."
-        ),
-        reply_markup=customer_select_keyboard(customers),
-        parse_mode="HTML"
-    )
-
-
-
-@router.message(lambda message: is_admin(message.from_user.id) and message.text and "רשימת לקוחות" in message.text)
-async def customers_list_query_direct(message: Message):
-    await open_customers_list(message)
-
-
-@router.message(lambda message: is_admin(message.from_user.id) and message.text and "חפש לקוח" in message.text)
-async def customers_search_open_direct(message: Message):
-    await open_customer_search(message)
+@router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "customer_search_waiting")
+async def customers_search_query_fixed(message: Message):
+    await run_customer_search_screen(message)
 
 
 @router.message(is_admin_active_step)
 async def admin_flow(message: Message):
-    # טיפול מהיר בכפתורי לקוחות גם אם ה-step נתקע
-    raw_txt = clean_admin_text(message.text)
-
-    if "רשימת לקוחות" in raw_txt:
-        await open_customers_list(message)
-        return
-
-    if "חפש לקוח" in raw_txt:
-        await open_customer_search(message)
-        return
-
     uid = message.from_user.id
     txt = (message.text or "").strip()
     state = admin_states.get(uid)
@@ -1346,7 +1277,7 @@ async def admin_flow(message: Message):
 
 
     if step == "customers_menu":
-        if "רשימת לקוחות" in txt:
+        if txt in {"📋 רשימת לקוחות", "רשימת לקוחות 📋"}:
             customers = get_customers_list(30)
 
             if not customers:
@@ -1374,7 +1305,7 @@ async def admin_flow(message: Message):
             )
             return
 
-        if "חפש לקוח" in txt:
+        if txt in {"🔎 חפש לקוח", "חפש לקוח 🔎"}:
             state["step"] = "customers_search"
 
             await message.answer(
@@ -1393,7 +1324,7 @@ async def admin_flow(message: Message):
         )
         return
 
-    if step == "customers_search":
+    if step in {"customers_search", "customer_search_waiting"}:
         query = txt.strip()
 
         if len(query) < 2:
@@ -1498,7 +1429,7 @@ async def admin_flow(message: Message):
             )
             return
 
-        if txt in {"⬅️ חזרה לרשימת לקוחות", "חזרה לרשימת לקוחות ⬅️"}:
+        if txt == "⬅️ חזרה לרשימת לקוחות":
             customers = get_customers_list(30)
 
             state["step"] = "customers_select"
