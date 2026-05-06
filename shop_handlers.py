@@ -162,19 +162,19 @@ def reorder_orders_list_text(orders):
 
 def clone_cart_from_order(order):
     """
-    משחזר הזמנה קודמת לסל בצורה בטוחה:
-    - בודק שהמוצר עדיין קיים
-    - בודק שהמוצר פעיל
-    - בודק שיש מספיק מלאי
-    - משתמש במחיר העדכני של המוצר
+    שחזור הזמנה לסל עם בדיקת מלאי פשוטה ונקייה:
+    - מוצר חייב להיות קיים
+    - מוצר חייב להיות פעיל
+    - חייב להיות מספיק מלאי
+    - המחיר נלקח מהמוצר הנוכחי בחנות
     """
 
-    valid_cart = []
+    cloned_cart = []
     unavailable_products = []
 
     for item in order.get("cart", []):
         item_name = item.get("name")
-        requested_qty = int(item.get("qty", 1))
+        qty = int(item.get("qty", 1))
 
         if not item_name:
             continue
@@ -193,47 +193,17 @@ def clone_cart_from_order(order):
 
         stock = int(product.get("stock", 0) or 0)
 
-        if stock <= 0 or stock < requested_qty:
+        if stock < qty:
             unavailable_products.append(item_name)
             continue
 
-        valid_cart.append({
+        cloned_cart.append({
             "name": product.get("name", item_name),
             "price": float(product.get("price", item.get("price", 0))),
-            "qty": requested_qty
+            "qty": qty
         })
 
-    if not valid_cart:
-        return {
-            "success": False,
-            "cart": [],
-            "message": rtl(
-                "<b>⚠️ לא ניתן לבצע הזמנה חוזרת</b>\n\n"
-                "המוצרים מההזמנה שבחרת אינם זמינים כרגע במלאי.\n"
-                "ייתכן שהמוצר אזל, הוסר מהחנות או אינו זמין להזמנה כרגע.\n\n"
-                "אפשר להיכנס לחנות ולבחור מוצרים זמינים אחרים."
-            ),
-            "warning": None
-        }
-
-    warning_message = None
-
-    if unavailable_products:
-        unavailable_text = "\n".join([f"• {h(name)}" for name in unavailable_products])
-
-        warning_message = rtl(
-            "<b>⚠️ חלק מהמוצרים אינם זמינים</b>\n\n"
-            "המוצרים הבאים אינם זמינים כרגע ולכן לא נוספו לסל:\n\n"
-            f"{unavailable_text}\n\n"
-            "שאר המוצרים הזמינים נוספו לסל הקניות שלך."
-        )
-
-    return {
-        "success": True,
-        "cart": valid_cart,
-        "message": None,
-        "warning": warning_message
-    }
+    return cloned_cart, unavailable_products
 
 
 def h(text):
@@ -797,7 +767,6 @@ async def confirm_order(message: Message):
     delivery_price = float(data["delivery_price"])
     final_total = products_total + delivery_price
 
-    # create_order יוצר תמיד מספר הזמנה חדש — גם כאשר ההזמנה נוצרה מתוך הזמנה חוזרת.
     order_number = create_order(
         telegram_id=uid,
         telegram_name=message.from_user.full_name,
@@ -1209,23 +1178,21 @@ async def handle_shop(message: Message):
             )
             return
 
-        result = clone_cart_from_order(order)
+        cloned_cart, unavailable_products = clone_cart_from_order(order)
 
-        if not result.get("success"):
+        if not cloned_cart:
             await message.answer(
-                result.get("message") or rtl("<b>⚠️ לא ניתן לבצע הזמנה חוזרת.</b>"),
-                reply_markup=main_keyboard(),
+                rtl("<b>⚠️ המוצר שבחרת אזל מהמלאי.</b>"),
                 parse_mode="HTML"
             )
             return
 
-        users[uid]["cart"] = result["cart"]
+        users[uid]["cart"] = cloned_cart
         users[uid]["step"] = "cart"
-        users[uid]["reorder_source_order_number"] = order_number
 
-        if result.get("warning"):
+        if unavailable_products:
             await message.answer(
-                result["warning"],
+                rtl("<b>⚠️ חלק מהמוצרים אזלו מהמלאי ולא נוספו לסל.</b>"),
                 parse_mode="HTML"
             )
 
@@ -1233,9 +1200,8 @@ async def handle_shop(message: Message):
             rtl(
                 "<b>✅ ההזמנה שוחזרה לסל</b>\n\n"
                 f"{field('שוחזר מהזמנה', order_number)}\n\n"
-                "המוצרים הזמינים מההזמנה שבחרת נוספו לסל הקניות שלך.\n"
-                "אפשר להמשיך לסיום הזמנה או לערוך את הסל.\n\n"
-                "<b>חשוב:</b> לאחר אישור ההזמנה ייווצר מספר הזמנה חדש במערכת."
+                "המוצרים הזמינים נוספו לסל הקניות שלך.\n"
+                "לאחר אישור ההזמנה ייווצר מספר הזמנה חדש."
             ),
             reply_markup=cart_keyboard(),
             parse_mode="HTML"
