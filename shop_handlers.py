@@ -220,7 +220,7 @@ async def start(message: Message):
             "<b>צריכים עזרה?</b>\n"
             "לחצו על 📞 שירות לקוחות."
         ),
-        reply_markup=main_keyboard(),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
@@ -583,7 +583,7 @@ async def start(message: Message):
             "חנות חכמה לציוד הובלות, שילוח ושליחים.\n"
             "בחר פעולה מהתפריט למטה."
         ),
-        reply_markup=main_keyboard(),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML",
         disable_web_page_preview=True
     )
@@ -601,12 +601,12 @@ async def my_details(message: Message):
                 "אין פרטים שמורים עדיין.\n"
                 "אחרי ההזמנה הראשונה, הבוט ישמור את הפרטים שלך להזמנות הבאות."
             ),
-            reply_markup=main_keyboard(),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
 
-    await message.answer(saved_profile_text(profile), reply_markup=main_keyboard(), parse_mode="HTML")
+    await message.answer(saved_profile_text(profile), reply_markup=main_keyboard(message.from_user.id), parse_mode="HTML")
 
 
 @router.message(F.text == "🛒 חנות")
@@ -642,7 +642,7 @@ async def back_main(message: Message):
     users.pop(message.from_user.id, None)
     await message.answer(
         rtl("<b>↩️ חזרת לתפריט הראשי</b>"),
-        reply_markup=main_keyboard(),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
@@ -698,7 +698,7 @@ async def cancel_order(message: Message):
     users.pop(message.from_user.id, None)
     await message.answer(
         rtl("<b>❌ ההזמנה בוטלה.</b>"),
-        reply_markup=main_keyboard(),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
@@ -711,7 +711,7 @@ async def edit_details(message: Message):
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard(),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -759,7 +759,7 @@ async def confirm_order(message: Message):
                 "ההזמנה כבר נקלטה במערכת ונמצאת בטיפול.\n"
                 "אין צורך ללחוץ שוב על אישור הזמנה."
             ),
-            reply_markup=main_keyboard(),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -767,7 +767,7 @@ async def confirm_order(message: Message):
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard(),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -909,7 +909,7 @@ async def confirm_order(message: Message):
             "נציג יחזור אליך לאישור סופי ותשלום.\n"
             f"{field('סה״כ לתשלום', money(final_total))}"
         ),
-        reply_markup=main_keyboard(),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
@@ -961,7 +961,7 @@ async def reorder_choose_order(message: Message):
                 "<b>⚠️ אין הזמנות קודמות לשחזור.</b>\n\n"
                 "אפשר להיכנס לחנות ולבצע הזמנה חדשה."
             ),
-            reply_markup=main_keyboard(),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -986,7 +986,7 @@ async def back_to_main_menu(message: Message):
 
     await message.answer(
         rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט למטה."),
-        reply_markup=main_keyboard(),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
@@ -1485,7 +1485,7 @@ async def handle_shop(message: Message):
         users.pop(uid, None)
         await message.answer(
             rtl("<b>✅ קיבלנו את הפנייה שלך.</b>\nנציג יחזור אליך בהקדם."),
-            reply_markup=main_keyboard(),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
