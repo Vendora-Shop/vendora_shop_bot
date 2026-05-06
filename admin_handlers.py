@@ -41,11 +41,48 @@ admin_states = {}
 
 RTL = "\u200F"
 
-def normalize_admin_text(text):
+# ============================================================
+# CUSTOMERS + BROADCAST CLEAN FEATURE
+# ============================================================
+
+def clean_admin_text(text):
     return str(text or "").replace("\u200f", "").replace("\u200e", "").strip()
 
 
-async def show_customers_list_screen(message: Message):
+def is_customers_list_button(text):
+    text = clean_admin_text(text)
+    return "רשימת לקוחות" in text
+
+
+def is_customer_search_button(text):
+    text = clean_admin_text(text)
+    return "חפש לקוח" in text
+
+
+def is_customers_menu_button(text):
+    text = clean_admin_text(text)
+    return text in {"👥 לקוחות", "לקוחות 👥"}
+
+
+def is_broadcast_button(text):
+    text = clean_admin_text(text)
+    return "שלח הודעה ללקוחות" in text
+
+
+async def open_customers_menu_screen(message: Message):
+    admin_states[message.from_user.id] = {"step": "customers_menu"}
+
+    await message.answer(
+        rtl(
+            "<b>👥 ניהול לקוחות</b>\n\n"
+            "בחר פעולה מהתפריט."
+        ),
+        reply_markup=customers_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+async def open_customers_list_screen(message: Message):
     customers = get_customers_list(50)
 
     if not customers:
@@ -76,8 +113,8 @@ async def show_customers_list_screen(message: Message):
     )
 
 
-async def start_customer_search_screen(message: Message):
-    admin_states[message.from_user.id] = {"step": "customer_search_waiting"}
+async def open_customer_search_screen(message: Message):
+    admin_states[message.from_user.id] = {"step": "customers_search"}
 
     await message.answer(
         rtl(
@@ -89,7 +126,8 @@ async def start_customer_search_screen(message: Message):
 
 
 async def run_customer_search_screen(message: Message):
-    query = normalize_admin_text(message.text)
+    uid = message.from_user.id
+    query = clean_admin_text(message.text)
 
     if len(query) < 2:
         await message.answer(
@@ -104,7 +142,7 @@ async def run_customer_search_screen(message: Message):
     customers = search_customers(query, 50)
 
     if not customers:
-        admin_states[message.from_user.id] = {"step": "customers_menu"}
+        admin_states[uid] = {"step": "customers_menu"}
         await message.answer(
             rtl(
                 "<b>🔎 תוצאות חיפוש</b>\n\n"
@@ -115,7 +153,7 @@ async def run_customer_search_screen(message: Message):
         )
         return
 
-    admin_states[message.from_user.id] = {
+    admin_states[uid] = {
         "step": "customers_select",
         "customers_last_mode": "search",
         "customers_last_query": query
@@ -128,6 +166,186 @@ async def run_customer_search_screen(message: Message):
             "בחר לקוח מהרשימה כדי לפתוח כרטיס."
         ),
         reply_markup=customer_select_keyboard(customers),
+        parse_mode="HTML"
+    )
+
+
+async def open_broadcast_screen(message: Message):
+    customer_ids = get_all_customer_telegram_ids()
+
+    if not customer_ids:
+        admin_states[message.from_user.id] = {"step": "admin"}
+        await message.answer(
+            rtl(
+                "<b>📢 שליחת הודעה ללקוחות</b>\n\n"
+                "אין כרגע לקוחות שמורים לשליחה."
+            ),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    admin_states[message.from_user.id] = {
+        "step": "broadcast_text",
+        "broadcast_customer_count": len(customer_ids)
+    }
+
+    await message.answer(
+        rtl(
+            "<b>📢 שליחת הודעה ללקוחות</b>\n\n"
+            f"{field('לקוחות זמינים לשליחה', len(customer_ids))}\n\n"
+            "רשום עכשיו את ההודעה שברצונך לשלוח.\n\n"
+            "<b>חשוב:</b>\n"
+            "ההודעה לא תישלח מיד.\n"
+            "קודם תקבל תצוגה מקדימה ותצטרך לאשר שליחה."
+        ),
+        parse_mode="HTML"
+    )
+
+
+async def handle_broadcast_text_screen(message: Message):
+    uid = message.from_user.id
+    state = admin_states.get(uid)
+
+    if not state:
+        return
+
+    broadcast_text = clean_broadcast_text(clean_admin_text(message.text))
+    is_valid, error_text = validate_broadcast_text(broadcast_text)
+
+    if not is_valid:
+        await message.answer(
+            rtl(
+                "<b>⚠️ הודעה לא תקינה</b>\n\n"
+                f"{h(error_text)}\n\n"
+                "רשום הודעה חדשה או לחץ: ⬅️ חזרה לניהול."
+            ),
+            parse_mode="HTML"
+        )
+        return
+
+    customer_ids = get_all_customer_telegram_ids()
+
+    if not customer_ids:
+        admin_states[uid] = {"step": "admin"}
+        await message.answer(
+            rtl(
+                "<b>⚠️ אין לקוחות לשליחה</b>\n\n"
+                "לא נמצאו לקוחות שמורים במערכת."
+            ),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    state["broadcast_text"] = broadcast_text
+    state["broadcast_customer_ids"] = customer_ids
+    state["step"] = "broadcast_confirm"
+
+    await message.answer(
+        format_broadcast_preview(broadcast_text, len(customer_ids)),
+        reply_markup=broadcast_confirm_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+async def handle_broadcast_confirm_screen(message: Message):
+    uid = message.from_user.id
+    state = admin_states.get(uid)
+    txt = clean_admin_text(message.text)
+
+    if not state:
+        return
+
+    if txt == "❌ בטל שליחה":
+        admin_states[uid] = {"step": "admin"}
+        await message.answer(
+            rtl(
+                "<b>✅ השליחה בוטלה</b>\n\n"
+                "ההודעה לא נשלחה לאף לקוח."
+            ),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if txt == "✏️ ערוך הודעה":
+        state.pop("broadcast_text", None)
+        state.pop("broadcast_customer_ids", None)
+        state["step"] = "broadcast_text"
+
+        await message.answer(
+            rtl(
+                "<b>✏️ עריכת הודעה</b>\n\n"
+                "רשום את ההודעה החדשה לשליחה."
+            ),
+            parse_mode="HTML"
+        )
+        return
+
+    if txt != "✅ אשר ושלח ללקוחות":
+        await message.answer(
+            rtl(
+                "<b>⚠️ פעולה לא תקינה</b>\n\n"
+                "בחר פעולה מתוך הכפתורים בלבד."
+            ),
+            reply_markup=broadcast_confirm_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if state.get("broadcast_sent"):
+        admin_states[uid] = {"step": "admin"}
+        await message.answer(
+            rtl(
+                "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
+                "ההודעה כבר נשלחה ללקוחות."
+            ),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    broadcast_text = state.get("broadcast_text")
+    customer_ids = state.get("broadcast_customer_ids") or []
+
+    if not broadcast_text or not customer_ids:
+        admin_states[uid] = {"step": "admin"}
+        await message.answer(
+            rtl(
+                "<b>⚠️ לא ניתן לבצע שליחה</b>\n\n"
+                "חסרים נתוני שליחה. התחל את התהליך מחדש."
+            ),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    state["broadcast_sent"] = True
+
+    sent_count = 0
+    failed_count = 0
+
+    for customer_id in customer_ids:
+        try:
+            await message.bot.send_message(
+                customer_id,
+                rtl(broadcast_text),
+                parse_mode="HTML"
+            )
+            sent_count += 1
+        except Exception:
+            failed_count += 1
+
+    admin_states[uid] = {"step": "admin"}
+
+    await message.answer(
+        rtl(
+            "<b>✅ שליחת הודעה הסתיימה</b>\n\n"
+            f"{field('נשלחו בהצלחה', sent_count)}\n"
+            f"{field('נכשלו', failed_count)}"
+        ),
+        reply_markup=admin_keyboard(),
         parse_mode="HTML"
     )
 
@@ -745,6 +963,21 @@ async def admin_panel(message: Message):
 
 
 
+@router.message(F.text.in_({"👥 לקוחות", "לקוחות 👥"}))
+async def customers_panel_start(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "customers_menu"}
+
+    await message.answer(
+        rtl(
+            "<b>👥 ניהול לקוחות</b>\n\n"
+            "בחר פעולה מהתפריט."
+        ),
+        reply_markup=customers_menu_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text.in_({"📢 שלח הודעה ללקוחות", "שלח הודעה ללקוחות 📢"}))
@@ -1147,192 +1380,39 @@ async def handle_photo(message: Message):
 
 
 
-@router.message(F.text.in_({"👥 לקוחות", "לקוחות 👥"}))
-async def customers_panel_start_fixed(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-
-    admin_states[message.from_user.id] = {"step": "customers_menu"}
-
-    await message.answer(
-        rtl(
-            "<b>👥 ניהול לקוחות</b>\n\n"
-            "בחר פעולה מהתפריט."
-        ),
-        reply_markup=customers_menu_keyboard(),
-        parse_mode="HTML"
-    )
+@router.message(lambda message: is_admin(message.from_user.id) and message.text and is_customers_menu_button(message.text))
+async def customers_menu_direct(message: Message):
+    await open_customers_menu_screen(message)
 
 
-@router.message(F.text.in_({"📋 רשימת לקוחות", "רשימת לקוחות 📋"}))
-async def customers_list_fixed(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-
-    await show_customers_list_screen(message)
+@router.message(lambda message: is_admin(message.from_user.id) and message.text and is_customers_list_button(message.text))
+async def customers_list_direct(message: Message):
+    await open_customers_list_screen(message)
 
 
-@router.message(F.text.in_({"🔎 חפש לקוח", "חפש לקוח 🔎"}))
-async def customers_search_start_fixed(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-
-    await start_customer_search_screen(message)
+@router.message(lambda message: is_admin(message.from_user.id) and message.text and is_customer_search_button(message.text))
+async def customers_search_direct(message: Message):
+    await open_customer_search_screen(message)
 
 
-@router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "customer_search_waiting")
-async def customers_search_query_fixed(message: Message):
+@router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "customers_search")
+async def customers_search_query_direct(message: Message):
     await run_customer_search_screen(message)
 
+
+@router.message(lambda message: is_admin(message.from_user.id) and message.text and is_broadcast_button(message.text))
+async def broadcast_start_direct(message: Message):
+    await open_broadcast_screen(message)
 
 
 @router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "broadcast_text")
 async def broadcast_text_direct(message: Message):
-    uid = message.from_user.id
-    txt = (message.text or "").strip()
-    state = admin_states.get(uid)
-
-    if not state:
-        return
-
-    broadcast_text = clean_broadcast_text(txt)
-    is_valid, error_text = validate_broadcast_text(broadcast_text)
-
-    if not is_valid:
-        await message.answer(
-            rtl(
-                "<b>⚠️ הודעה לא תקינה</b>\n\n"
-                f"{h(error_text)}\n\n"
-                "רשום הודעה חדשה או לחץ: ⬅️ חזרה לניהול."
-            ),
-            parse_mode="HTML"
-        )
-        return
-
-    customer_ids = get_all_customer_telegram_ids()
-
-    if not customer_ids:
-        admin_states[uid] = {"step": "admin"}
-        await message.answer(
-            rtl(
-                "<b>⚠️ אין לקוחות לשליחה</b>\n\n"
-                "לא נמצאו לקוחות שמורים במערכת."
-            ),
-            reply_markup=admin_keyboard(),
-            parse_mode="HTML"
-        )
-        return
-
-    state["broadcast_text"] = broadcast_text
-    state["broadcast_customer_ids"] = customer_ids
-    state["step"] = "broadcast_confirm"
-
-    await message.answer(
-        format_broadcast_preview(broadcast_text, len(customer_ids)),
-        reply_markup=broadcast_confirm_keyboard(),
-        parse_mode="HTML"
-    )
+    await handle_broadcast_text_screen(message)
 
 
 @router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "broadcast_confirm")
 async def broadcast_confirm_direct(message: Message):
-    uid = message.from_user.id
-    txt = (message.text or "").strip()
-    state = admin_states.get(uid)
-
-    if not state:
-        return
-
-    if txt == "❌ בטל שליחה":
-        admin_states[uid] = {"step": "admin"}
-        await message.answer(
-            rtl(
-                "<b>✅ השליחה בוטלה</b>\n\n"
-                "ההודעה לא נשלחה לאף לקוח."
-            ),
-            reply_markup=admin_keyboard(),
-            parse_mode="HTML"
-        )
-        return
-
-    if txt == "✏️ ערוך הודעה":
-        state.pop("broadcast_text", None)
-        state.pop("broadcast_customer_ids", None)
-        state["step"] = "broadcast_text"
-
-        await message.answer(
-            rtl(
-                "<b>✏️ עריכת הודעה</b>\n\n"
-                "רשום את ההודעה החדשה לשליחה."
-            ),
-            parse_mode="HTML"
-        )
-        return
-
-    if txt != "✅ אשר ושלח ללקוחות":
-        await message.answer(
-            rtl(
-                "<b>⚠️ פעולה לא תקינה</b>\n\n"
-                "בחר פעולה מתוך הכפתורים בלבד."
-            ),
-            reply_markup=broadcast_confirm_keyboard(),
-            parse_mode="HTML"
-        )
-        return
-
-    if state.get("broadcast_sent"):
-        await message.answer(
-            rtl(
-                "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
-                "ההודעה כבר נשלחה ללקוחות."
-            ),
-            reply_markup=admin_keyboard(),
-            parse_mode="HTML"
-        )
-        admin_states[uid] = {"step": "admin"}
-        return
-
-    broadcast_text = state.get("broadcast_text")
-    customer_ids = state.get("broadcast_customer_ids") or []
-
-    if not broadcast_text or not customer_ids:
-        admin_states[uid] = {"step": "admin"}
-        await message.answer(
-            rtl(
-                "<b>⚠️ לא ניתן לבצע שליחה</b>\n\n"
-                "חסרים נתוני שליחה. התחל את התהליך מחדש."
-            ),
-            reply_markup=admin_keyboard(),
-            parse_mode="HTML"
-        )
-        return
-
-    state["broadcast_sent"] = True
-    sent_count = 0
-    failed_count = 0
-
-    for customer_id in customer_ids:
-        try:
-            await message.bot.send_message(
-                customer_id,
-                rtl(broadcast_text),
-                parse_mode="HTML"
-            )
-            sent_count += 1
-        except Exception:
-            failed_count += 1
-
-    admin_states[uid] = {"step": "admin"}
-
-    await message.answer(
-        rtl(
-            "<b>✅ שליחת הודעה הסתיימה</b>\n\n"
-            f"{field('נשלחו בהצלחה', sent_count)}\n"
-            f"{field('נכשלו', failed_count)}"
-        ),
-        reply_markup=admin_keyboard(),
-        parse_mode="HTML"
-    )
+    await handle_broadcast_confirm_screen(message)
 
 
 @router.message(is_admin_active_step)
@@ -1427,7 +1507,7 @@ async def admin_flow(message: Message):
 
 
     if step == "customers_menu":
-        if txt in {"📋 רשימת לקוחות", "רשימת לקוחות 📋"}:
+        if txt == "📋 רשימת לקוחות":
             customers = get_customers_list(30)
 
             if not customers:
@@ -1455,7 +1535,7 @@ async def admin_flow(message: Message):
             )
             return
 
-        if txt in {"🔎 חפש לקוח", "חפש לקוח 🔎"}:
+        if txt == "🔎 חפש לקוח":
             state["step"] = "customers_search"
 
             await message.answer(
@@ -1474,7 +1554,7 @@ async def admin_flow(message: Message):
         )
         return
 
-    if step in {"customers_search", "customer_search_waiting"}:
+    if step == "customers_search":
         query = txt.strip()
 
         if len(query) < 2:
