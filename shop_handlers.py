@@ -4,7 +4,7 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, FSInputF
 from html import escape
 
 from config import ADMIN_ID
-from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard
+from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard
 from database import (
     get_active_products,
     get_product_by_name,
@@ -107,6 +107,42 @@ def customer_orders_text(orders):
 
     return rtl(text)
 
+
+
+
+def extract_order_number_from_reorder_button(text):
+    text = str(text or "").strip()
+
+    if text.startswith("🔁 "):
+        text = text.replace("🔁 ", "", 1)
+
+    if "|" in text:
+        return text.split("|", 1)[0].strip()
+
+    return text.strip()
+
+
+def reorder_orders_list_text(orders):
+    if not orders:
+        return rtl(
+            "<b>🔁 הזמנה חוזרת</b>\n\n"
+            "לא נמצאו הזמנות שניתן לשחזר."
+        )
+
+    text = (
+        "<b>🔁 הזמנה חוזרת</b>\n\n"
+        "בחר מהרשימה איזו הזמנה תרצה לשחזר לסל.\n\n"
+    )
+
+    for order in orders[:10]:
+        text += (
+            f"<b>🧾 {h(order.get('order_number'))}</b>\n"
+            f"{field('תאריך', order.get('created_at') or '-')}\n"
+            f"{field('סטטוס', order.get('status') or '-')}\n"
+            f"{field('סה״כ', money(order.get('final_total') or 0))}\n\n"
+        )
+
+    return rtl(text)
 
 def clone_cart_from_order(order):
     cloned_cart = []
@@ -872,18 +908,18 @@ async def my_orders(message: Message):
 
 
 @router.message(F.text == "🔁 הזמן שוב")
-async def reorder_last_order(message: Message):
+async def reorder_choose_order(message: Message):
     uid = message.from_user.id
 
     if uid not in users:
         users[uid] = {"cart": []}
 
-    orders = get_orders_by_customer_telegram_id(uid, 1)
+    orders = get_orders_by_customer_telegram_id(uid, 10)
 
     if not orders:
         await message.answer(
             rtl(
-                "<b>⚠️ אין הזמנה קודמת לשחזור.</b>\n\n"
+                "<b>⚠️ אין הזמנות קודמות לשחזור.</b>\n\n"
                 "אפשר להיכנס לחנות ולבצע הזמנה חדשה."
             ),
             reply_markup=main_keyboard(),
@@ -891,30 +927,11 @@ async def reorder_last_order(message: Message):
         )
         return
 
-    last_order = orders[0]
-    cloned_cart = clone_cart_from_order(last_order)
-
-    if not cloned_cart:
-        await message.answer(
-            rtl(
-                "<b>⚠️ לא ניתן לשחזר את ההזמנה.</b>\n\n"
-                "ההזמנה הקודמת לא כוללת מוצרים זמינים לשחזור."
-            ),
-            reply_markup=main_keyboard(),
-            parse_mode="HTML"
-        )
-        return
-
-    users[uid]["cart"] = cloned_cart
-    users[uid]["step"] = "cart"
+    users[uid]["step"] = "reorder_select"
 
     await message.answer(
-        rtl(
-            "<b>🔁 ההזמנה שוחזרה לסל</b>\n\n"
-            "המוצרים מההזמנה האחרונה נוספו לסל הקניות שלך.\n"
-            "אפשר להמשיך לסיום הזמנה או לערוך את הסל."
-        ),
-        reply_markup=cart_keyboard(),
+        reorder_orders_list_text(orders),
+        reply_markup=reorder_select_keyboard(orders),
         parse_mode="HTML"
     )
 
@@ -1125,6 +1142,64 @@ async def handle_shop(message: Message):
         )
         return
 
+
+
+    if data.get("step") == "reorder_select":
+        if txt == "⬅️ חזרה להזמנות שלי":
+            orders = get_orders_by_customer_telegram_id(uid, 10)
+
+            await message.answer(
+                customer_orders_text(orders),
+                reply_markup=my_orders_keyboard(),
+                parse_mode="HTML"
+            )
+            data["step"] = "my_orders"
+            return
+
+        order_number = extract_order_number_from_reorder_button(txt)
+
+        if not order_number:
+            await message.answer(
+                rtl("<b>⚠️ בחר הזמנה מתוך הרשימה בלבד.</b>"),
+                parse_mode="HTML"
+            )
+            return
+
+        order = get_order_by_number(order_number)
+
+        if not order or int(order.get("telegram_id") or 0) != uid:
+            await message.answer(
+                rtl("<b>⚠️ ההזמנה לא נמצאה או אינה שייכת לחשבון שלך.</b>"),
+                parse_mode="HTML"
+            )
+            return
+
+        cloned_cart = clone_cart_from_order(order)
+
+        if not cloned_cart:
+            await message.answer(
+                rtl(
+                    "<b>⚠️ לא ניתן לשחזר את ההזמנה.</b>\n\n"
+                    "ההזמנה שבחרת לא כוללת מוצרים זמינים לשחזור."
+                ),
+                parse_mode="HTML"
+            )
+            return
+
+        users[uid]["cart"] = cloned_cart
+        users[uid]["step"] = "cart"
+
+        await message.answer(
+            rtl(
+                "<b>✅ ההזמנה שוחזרה לסל</b>\n\n"
+                f"{field('מספר הזמנה', order_number)}\n\n"
+                "המוצרים מההזמנה שבחרת נוספו לסל הקניות שלך.\n"
+                "אפשר להמשיך לסיום הזמנה או לערוך את הסל."
+            ),
+            reply_markup=cart_keyboard(),
+            parse_mode="HTML"
+        )
+        return
 
     if data.get("step") == "address_select":
         if txt == "⬅️ חזרה לכתובות":
