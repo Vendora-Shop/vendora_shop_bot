@@ -990,8 +990,10 @@ def clean_phone_for_search(value):
 
 def search_customers(query, limit=30):
     create_tables()
+
     query = str(query or "").strip()
     clean_query = clean_phone_for_search(query)
+    phone_tail = clean_query[-7:] if len(clean_query) >= 7 else clean_query
     is_phone = clean_query.isdigit() and len(clean_query) >= 7
 
     conn = get_connection()
@@ -1007,10 +1009,11 @@ def search_customers(query, limit=30):
                    total_spent, created_at, updated_at
             FROM customers
             WHERE REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+972', '0'), '972', '0') LIKE ?
+               OR REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+972', '0'), '972', '0') LIKE ?
                OR phone LIKE ?
             ORDER BY total_orders DESC, total_spent DESC, updated_at DESC
             LIMIT ?
-        """, (f"%{clean_query}%", f"%{query}%", int(limit)))
+        """, (f"%{clean_query}%", f"%{phone_tail}%", f"%{query}%", int(limit)))
     else:
         cur.execute("""
             SELECT id, telegram_id, telegram_name, customer_name, phone, city,
@@ -1039,11 +1042,12 @@ def search_customers(query, limit=30):
                        MIN(created_at), MAX(created_at)
                 FROM orders
                 WHERE REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+972', '0'), '972', '0') LIKE ?
+                   OR REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+972', '0'), '972', '0') LIKE ?
                    OR phone LIKE ?
                 GROUP BY telegram_id
                 ORDER BY MAX(created_at) DESC
                 LIMIT ?
-            """, (f"%{clean_query}%", f"%{query}%", int(limit)))
+            """, (f"%{clean_query}%", f"%{phone_tail}%", f"%{query}%", int(limit)))
         else:
             cur.execute("""
                 SELECT telegram_id, MAX(telegram_name), MAX(customer_name), MAX(phone),
