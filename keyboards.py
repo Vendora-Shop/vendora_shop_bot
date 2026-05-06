@@ -127,13 +127,30 @@ def address_actions_keyboard():
 
 
 
+
+def translate_order_status_for_keyboard(status):
+    statuses = {
+        "new": "חדשה",
+        "approved": "אושרה",
+        "processing": "בטיפול",
+        "shipping": "בדרך",
+        "done": "הושלמה",
+        "completed": "הושלמה",
+        "cancelled": "בוטלה",
+        "canceled": "בוטלה"
+    }
+
+    return statuses.get(str(status or "").lower(), str(status or "-"))
+
+
 def reorder_select_keyboard(orders):
     keyboard = []
 
     for order in orders:
         order_number = order.get("order_number")
         total = int(float(order.get("final_total") or 0))
-        status = order.get("status") or "-"
+        status = translate_order_status_for_keyboard(order.get("status"))
+
         keyboard.append([
             KeyboardButton(text=f"🔁 {order_number} | {total}₪ | {status}")
         ])
