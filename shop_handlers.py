@@ -904,7 +904,7 @@ async def confirm_order(message: Message):
         customer_success_text = (
             "<b>✅ ההזמנה התקבלה בהצלחה!</b>\n\n"
             "<b>🛍️ איסוף עצמי</b>\n\n"
-            "כאשר ההזמנה תהיה מוכנה, "
+            "ברגע שההזמנה תהיה מוכנה, "
             "תישלח אליך הודעה אוטומטית לאיסוף.\n\n"
             f"{field('מספר הזמנה', order_number)}"
         )
