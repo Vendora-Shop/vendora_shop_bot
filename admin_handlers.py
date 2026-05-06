@@ -1082,7 +1082,7 @@ async def order_notification_action(callback: CallbackQuery):
 
     if is_order_pickup(order):
         pickup_client_messages = {
-            "approved": "✅ ההזמנה שלך אושרה.\nנעדכן אותך ברגע שההזמנה תהיה מוכנה לאיסוף מנקודת האיסוף.",
+            "approved": "✅ <b>ההזמנה שלך אושרה</b><br>.\nנעדכן אותך ברגע שההזמנה תהיה מוכנה לאיסוף מנקודת האיסוף.",
             "processing": "📦 ההזמנה שלך בהכנה.",
             "shipping": "🛍️ ההזמנה שלך מוכנה לאיסוף.\nניתן להגיע לנקודת האיסוף בשעות הפעילות.",
             "done": "✅ ההזמנה נאספה. תודה שקנית ב־Vendora Shop!",
