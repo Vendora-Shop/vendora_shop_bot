@@ -900,11 +900,11 @@ async def confirm_order(message: Message):
 
     users.pop(uid, None)
 
-    if is_pickup_order(data):
+   if is_pickup_order(data):
     customer_success_text = (
         "<b>✅ ההזמנה התקבלה בהצלחה!</b>\n\n"
         "<b>📦 איסוף עצמי</b>\n\n"
-        "ברגע שההזמנה תהיה מוכנה, "
+        "כאשר ההזמנה תהיה מוכנה, "
         "תישלח אליך הודעה אוטומטית לאיסוף.\n\n"
         f"{field('מספר הזמנה', order_number)}"
     )
@@ -912,7 +912,7 @@ else:
     customer_success_text = (
         "<b>✅ ההזמנה התקבלה בהצלחה!</b>\n\n"
         "<b>🚚 משלוח</b>\n\n"
-        "ברגע שההזמנה תאושר ותצא למשלוח, "
+        "כאשר ההזמנה תאושר ותצא למשלוח, "
         "תישלח אליך הודעה אוטומטית.\n\n"
         f"{field('מספר הזמנה', order_number)}"
     )
