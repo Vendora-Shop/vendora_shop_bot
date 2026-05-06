@@ -24,6 +24,22 @@ from pdf_generator import create_invoice_pdf
 
 router = Router()
 
+@router.message(CommandStart())
+async def start(message: Message):
+    uid = message.from_user.id
+
+    if uid not in users:
+        users[uid] = {"cart": []}
+
+    users[uid]["step"] = "main"
+
+    await message.answer(
+        rtl('<b>🛍️ ברוכים הבאים ל־Vendora</b>\n\nכאן תוכלו ליהנות מחוויית קנייה נוחה, מהירה ומתקדמת —\nעם מגוון מוצרים, הזמנה פשוטה ושירות מקצועי לאורך כל הדרך.\n\n<b>באמצעות הבוט תוכלו:</b>\n\n🛒 לצפות במוצרים ולבצע הזמנות בקלות\n🚚 לבחור בין משלוח עד הבית לבין איסוף עצמי\n📦 להתעדכן בפרטי ההזמנות שלכם\n📞 לקבל שירות ותמיכה במהירות ובנוחות\n\n<b>כדי להתחיל:</b>\nלחצו על 🛒 חנות בתפריט למטה.'),
+        reply_markup=main_keyboard(),
+        parse_mode="HTML"
+    )
+
+
 
 # ================== SAVED ADDRESSES UI ==================
 def format_address(address):
@@ -558,21 +574,6 @@ def fill_saved_profile_into_data(data, profile):
     data["delivery_price"] = float(delivery_price)
     data["base_city"] = base_city
     return True
-
-
-@router.message(CommandStart())
-async def start(message: Message):
-    users.pop(message.from_user.id, None)
-    await message.answer(
-        rtl(
-            "<b>🔥 ברוך הבא ל־Vendora Shop</b>\n\n"
-            "חנות חכמה לציוד הובלות, שילוח ושליחים.\n"
-            "בחר פעולה מהתפריט למטה."
-        ),
-        reply_markup=main_keyboard(),
-        parse_mode="HTML",
-        disable_web_page_preview=True
-    )
 
 
 @router.message(F.text == "👤 הפרטים שלי")
