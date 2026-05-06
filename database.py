@@ -1122,9 +1122,12 @@ def search_customers(query, limit=30):
 
 
 def get_customer_by_id(customer_id):
+    create_tables()
+
     conn = get_connection()
     cur = conn.cursor()
 
+    # קודם מחפשים לפי id בטבלת customers
     cur.execute("""
         SELECT id, telegram_id, telegram_name, customer_name, phone, city,
                street, floor, apartment, last_order_number, total_orders,
@@ -1134,9 +1137,70 @@ def get_customer_by_id(customer_id):
     """, (int(customer_id),))
 
     row = cur.fetchone()
+
+    if row:
+        conn.close()
+        return customer_row_to_dict(row)
+
+    # גיבוי: אם הלקוח הגיע מרשימת orders, ה-id הוא telegram_id
+    cur.execute("""
+        SELECT
+            telegram_id,
+            MAX(telegram_name),
+            MAX(customer_name),
+            MAX(phone),
+            MAX(city),
+            MAX(street),
+            MAX(floor),
+            MAX(apartment),
+            MAX(order_number),
+            COUNT(*),
+            COALESCE(SUM(final_total), 0),
+            MIN(created_at),
+            MAX(created_at)
+        FROM orders
+        WHERE telegram_id = ?
+        GROUP BY telegram_id
+    """, (int(customer_id),))
+
+    order_row = cur.fetchone()
     conn.close()
 
-    return customer_row_to_dict(row)
+    if not order_row:
+        return None
+
+    (
+        telegram_id,
+        telegram_name,
+        customer_name,
+        phone,
+        city,
+        street,
+        floor,
+        apartment,
+        last_order_number,
+        total_orders,
+        total_spent,
+        created_at,
+        updated_at
+    ) = order_row
+
+    return {
+        "id": int(telegram_id),
+        "telegram_id": telegram_id,
+        "telegram_name": telegram_name,
+        "customer_name": customer_name,
+        "phone": phone,
+        "city": city,
+        "street": street,
+        "floor": floor,
+        "apartment": apartment,
+        "last_order_number": last_order_number,
+        "total_orders": total_orders,
+        "total_spent": total_spent,
+        "created_at": created_at,
+        "updated_at": updated_at
+    }
 
 
 def get_orders_by_customer_telegram_id(telegram_id, limit=30):
