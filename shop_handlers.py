@@ -900,15 +900,27 @@ async def confirm_order(message: Message):
 
     users.pop(uid, None)
 
-    await message.answer(
-        rtl(
-            "<b>✅ ההזמנה התקבלה!</b>\n\n"
+    if is_pickup_order(data):
+        customer_success_text = (
+            "<b>✅ ההזמנה התקבלה בהצלחה!</b>\n\n"
             f"{field('מספר הזמנה', order_number)}\n\n"
-            f"{field('סוג הזמנה', 'איסוף עצמי מהחנות' if is_pickup_order(data) else 'משלוח עד הבית')}\n"
-            "הפרטים שלך נשמרו להזמנות הבאות.\n"
-            "נציג יחזור אליך לאישור סופי ותשלום.\n"
-            f"{field('סה״כ לתשלום', money(final_total))}"
-        ),
+            f"{field('סוג הזמנה', 'איסוף עצמי מהחנות')}\n"
+            "ההזמנה נקלטה במערכת לאחר אישור התשלום.\n"
+            "לאחר אישור ההזמנה, נעדכן אותך מתי ניתן להגיע לאסוף את המוצרים מנקודת האיסוף.\n\n"
+            f"{field('סה״כ שולם', money(final_total))}"
+        )
+    else:
+        customer_success_text = (
+            "<b>✅ ההזמנה התקבלה בהצלחה!</b>\n\n"
+            f"{field('מספר הזמנה', order_number)}\n\n"
+            f"{field('סוג הזמנה', 'משלוח עד הבית')}\n"
+            "ההזמנה נקלטה במערכת לאחר אישור התשלום.\n"
+            "לאחר אישור ההזמנה, נעדכן אותך כשההזמנה תעבור לטיפול ותצא למשלוח.\n\n"
+            f"{field('סה״כ שולם', money(final_total))}"
+        )
+
+    await message.answer(
+        rtl(customer_success_text),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
