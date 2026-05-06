@@ -721,7 +721,7 @@ async def exit_admin(message: Message):
     )
 
 
-@router.message(F.text == "⬅️ חזרה לניהול")
+@router.message(F.text.in_({"⬅️ חזרה לניהול", "חזרה לניהול ⬅️"}))
 async def back_admin(message: Message):
     if not is_admin(message.from_user.id):
         return
@@ -1161,7 +1161,7 @@ async def admin_flow(message: Message):
 
 
     if step == "customers_menu":
-        if txt == "📋 רשימת לקוחות":
+        if txt in {"📋 רשימת לקוחות", "רשימת לקוחות 📋"}:
             customers = get_customers_list(30)
 
             if not customers:
@@ -1189,7 +1189,7 @@ async def admin_flow(message: Message):
             )
             return
 
-        if txt == "🔎 חפש לקוח":
+        if txt in {"🔎 חפש לקוח", "חפש לקוח 🔎"}:
             state["step"] = "customers_search"
 
             await message.answer(
@@ -1313,7 +1313,7 @@ async def admin_flow(message: Message):
             )
             return
 
-        if txt == "⬅️ חזרה לרשימת לקוחות":
+        if txt in {"⬅️ חזרה לרשימת לקוחות", "חזרה לרשימת לקוחות ⬅️"}:
             customers = get_customers_list(30)
 
             state["step"] = "customers_select"
