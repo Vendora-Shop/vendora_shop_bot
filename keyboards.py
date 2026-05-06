@@ -125,3 +125,23 @@ def address_actions_keyboard():
         resize_keyboard=True
     )
 
+
+
+def reorder_select_keyboard(orders):
+    keyboard = []
+
+    for order in orders:
+        order_number = order.get("order_number")
+        total = int(float(order.get("final_total") or 0))
+        status = order.get("status") or "-"
+        keyboard.append([
+            KeyboardButton(text=f"🔁 {order_number} | {total}₪ | {status}")
+        ])
+
+    keyboard.append([KeyboardButton(text="⬅️ חזרה להזמנות שלי")])
+    keyboard.append([KeyboardButton(text="⬅️ חזרה לתפריט")])
+
+    return ReplyKeyboardMarkup(
+        keyboard=keyboard,
+        resize_keyboard=True
+    )
