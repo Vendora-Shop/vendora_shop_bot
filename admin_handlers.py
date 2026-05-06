@@ -619,24 +619,6 @@ async def order_notification_action(callback: CallbackQuery):
         )
 
 
-
-@router.message(F.text == "🔐 פאנל ניהול")
-async def admin_panel_button(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-
-    admin_states[message.from_user.id] = {"step": "admin"}
-
-    await message.answer(
-        rtl(
-            "<b>🔐 פאנל ניהול Vendora</b>\n\n"
-            "בחר פעולה מהתפריט למטה."
-        ),
-        reply_markup=admin_keyboard(),
-        parse_mode="HTML"
-    )
-
-
 @router.message(Command("admin"))
 async def admin_panel(message: Message):
     if not is_admin(message.from_user.id):
@@ -719,7 +701,7 @@ async def exit_admin(message: Message):
 
     await message.answer(
         rtl("<b>✅ יצאת מפאנל הניהול.</b>"),
-        reply_markup=main_keyboard(message.from_user.id),
+        reply_markup=main_keyboard(),
         parse_mode="HTML"
     )
 
