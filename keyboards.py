@@ -168,3 +168,26 @@ def reorder_select_keyboard(orders):
         keyboard=keyboard,
         resize_keyboard=True
     )
+
+
+
+def customer_select_keyboard(customers):
+    keyboard = []
+
+    for customer in customers:
+        customer_id = customer.get("id")
+        name = customer.get("customer_name") or customer.get("telegram_name") or "לקוח"
+        phone = customer.get("phone") or "-"
+        total_orders = customer.get("total_orders") or 0
+
+        keyboard.append([
+            KeyboardButton(text=f"👤 {customer_id} | {name} | {phone} | {total_orders} הזמנות")
+        ])
+
+    keyboard.append([KeyboardButton(text="⬅️ חזרה ללקוחות")])
+    keyboard.append([KeyboardButton(text="⬅️ חזרה לניהול")])
+
+    return ReplyKeyboardMarkup(
+        keyboard=keyboard,
+        resize_keyboard=True
+    )
