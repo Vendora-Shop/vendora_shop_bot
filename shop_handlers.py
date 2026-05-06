@@ -81,11 +81,27 @@ def apply_saved_address_to_order(data, address):
 
 
 # ================== CUSTOMER ORDERS / REORDER ==================
+
+def translate_order_status(status):
+    statuses = {
+        "new": "🆕 חדשה",
+        "approved": "✅ אושרה",
+        "processing": "📦 בטיפול",
+        "shipping": "🚚 בדרך",
+        "done": "✅ הושלמה",
+        "completed": "✅ הושלמה",
+        "cancelled": "❌ בוטלה",
+        "canceled": "❌ בוטלה"
+    }
+
+    return statuses.get(str(status or "").lower(), str(status or "-"))
+
+
 def customer_order_short_text(order):
     return (
         f"<b>🧾 {h(order.get('order_number'))}</b>\n"
         f"{field('תאריך', order.get('created_at') or '-')}\n"
-        f"{field('סטטוס', order.get('status') or '-')}\n"
+        f"{field('סטטוס', translate_order_status(order.get('status')))}\n"
         f"{field('סה״כ', money(order.get('final_total') or 0))}"
     )
 
@@ -138,7 +154,7 @@ def reorder_orders_list_text(orders):
         text += (
             f"<b>🧾 {h(order.get('order_number'))}</b>\n"
             f"{field('תאריך', order.get('created_at') or '-')}\n"
-            f"{field('סטטוס', order.get('status') or '-')}\n"
+            f"{field('סטטוס', translate_order_status(order.get('status')))}\n"
             f"{field('סה״כ', money(order.get('final_total') or 0))}\n\n"
         )
 
