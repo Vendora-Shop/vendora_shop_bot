@@ -5,7 +5,8 @@ def main_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🛒 חנות")],
-            [KeyboardButton(text="👤 הפרטים שלי"), KeyboardButton(text="📞 שירות לקוחות")]
+            [KeyboardButton(text="👤 הפרטים שלי"), KeyboardButton(text="📞 שירות לקוחות")],
+            [KeyboardButton(text="🔐 פאנל ניהול")]
         ],
         resize_keyboard=True
     )
@@ -44,6 +45,7 @@ def order_status_keyboard():
         resize_keyboard=True
     )
 
+
 def broadcast_confirm_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -54,6 +56,7 @@ def broadcast_confirm_keyboard():
         ],
         resize_keyboard=True
     )
+
 
 def customers_menu_keyboard():
     return ReplyKeyboardMarkup(
@@ -75,4 +78,3 @@ def customer_actions_keyboard():
         ],
         resize_keyboard=True
     )
-
