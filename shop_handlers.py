@@ -18,6 +18,33 @@ from delivery import get_delivery_price
 from pdf_generator import create_invoice_pdf
 
 router = Router()
+
+@router.message(Command("start"))
+async def start(message: Message):
+    users[message.from_user.id] = {
+        "cart": [],
+        "step": "start"
+    }
+
+    await message.answer(
+        rtl(
+            "<b>👋 ברוכים הבאים ל־Vendora</b>\n\n"
+            "הגעתם לחנות הדיגיטלית של Vendora.\n\n"
+            "כאן תוכלו לבצע הזמנה בצורה נוחה ומהירה:\n"
+            "🛒 לבחור מוצרים מהחנות\n"
+            "🧺 להוסיף מוצרים לסל\n"
+            "🚚 לבחור משלוח עד הבית או איסוף עצמי\n"
+            "👤 לשמור פרטים להזמנות הבאות\n"
+            "📞 לפנות לשירות לקוחות במקרה הצורך\n\n"
+            "<b>איך מתחילים?</b>\n"
+            "לחצו על 🛒 חנות בתפריט למטה ובחרו מוצרים.\n\n"
+            "<b>צריכים עזרה?</b>\n"
+            "לחצו על 📞 שירות לקוחות."
+        ),
+        reply_markup=main_keyboard(),
+        parse_mode="HTML"
+    )
+
 users = {}
 
 RTL = "\u200F"
@@ -405,6 +432,13 @@ async def my_details(message: Message):
 
 @router.message(F.text == "🛒 חנות")
 async def shop(message: Message):
+    uid = message.from_user.id
+
+    if uid not in users:
+        users[uid] = {"cart": []}
+
+    users[uid]["step"] = "browse_products"
+
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
 
