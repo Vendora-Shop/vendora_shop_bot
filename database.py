@@ -989,3 +989,332 @@ def get_orders_by_customer_telegram_id(telegram_id, limit=30):
 
     return [order_row_to_dict(row) for row in rows]
 
+# ============================================================
+# CUSTOMER EXPERIENCE FEATURES
+# ============================================================
+# הפונקציות הבאות הן בסיס מקצועי לפיצ'רים שמעלים את חוויית הלקוח:
+# 1. הזמנה חוזרת
+# 2. שמירת כתובות
+# 3. קופונים
+# 4. ביקורות
+# 5. מעקב הזמנה חי
+# 6. מוצרים קשורים
+# 7. מועדון נקודות
+# 8. עגלות נטושות
+# ============================================================
+
+
+def create_customer_experience_tables():
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS customer_addresses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id INTEGER NOT NULL,
+            label TEXT DEFAULT 'כתובת',
+            city TEXT NOT NULL,
+            street TEXT NOT NULL,
+            floor TEXT DEFAULT '',
+            apartment TEXT DEFAULT '',
+            is_default INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS favorite_products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id INTEGER NOT NULL,
+            product_name TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(telegram_id, product_name)
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS product_relations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_name TEXT NOT NULL,
+            related_product_name TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(product_name, related_product_name)
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS coupons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL UNIQUE,
+            discount_type TEXT NOT NULL,
+            discount_value REAL NOT NULL,
+            min_order_total REAL DEFAULT 0,
+            max_uses INTEGER DEFAULT 0,
+            used_count INTEGER DEFAULT 0,
+            active INTEGER DEFAULT 1,
+            expires_at TEXT DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS coupon_usages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL,
+            telegram_id INTEGER NOT NULL,
+            order_number TEXT DEFAULT '',
+            used_at TEXT NOT NULL,
+            UNIQUE(code, telegram_id, order_number)
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS order_reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_number TEXT NOT NULL UNIQUE,
+            telegram_id INTEGER NOT NULL,
+            rating INTEGER NOT NULL,
+            comment TEXT DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS order_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_number TEXT NOT NULL,
+            status TEXT NOT NULL,
+            note TEXT DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS loyalty_points (
+            telegram_id INTEGER PRIMARY KEY,
+            points INTEGER DEFAULT 0,
+            updated_at TEXT NOT NULL
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS abandoned_carts (
+            telegram_id INTEGER PRIMARY KEY,
+            cart_json TEXT NOT NULL,
+            last_total REAL DEFAULT 0,
+            reminder_sent INTEGER DEFAULT 0,
+            updated_at TEXT NOT NULL
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+# ---------- Addresses ----------
+def add_customer_address(telegram_id, label, city, street, floor='', apartment='', is_default=0):
+    create_customer_experience_tables()
+    now = israel_now_str() if 'israel_now_str' in globals() else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_connection()
+    cur = conn.cursor()
+
+    if int(is_default):
+        cur.execute("UPDATE customer_addresses SET is_default = 0 WHERE telegram_id = ?", (int(telegram_id),))
+
+    cur.execute("""
+        INSERT INTO customer_addresses
+        (telegram_id, label, city, street, floor, apartment, is_default, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (int(telegram_id), label, city, street, floor, apartment, int(is_default), now, now))
+
+    conn.commit()
+    conn.close()
+    return True
+
+
+def get_customer_addresses(telegram_id):
+    create_customer_experience_tables()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, label, city, street, floor, apartment, is_default
+        FROM customer_addresses
+        WHERE telegram_id = ?
+        ORDER BY is_default DESC, id DESC
+    """, (int(telegram_id),))
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            'id': r[0], 'label': r[1], 'city': r[2], 'street': r[3],
+            'floor': r[4], 'apartment': r[5], 'is_default': r[6]
+        }
+        for r in rows
+    ]
+
+
+# ---------- Favorites ----------
+def toggle_favorite_product(telegram_id, product_name):
+    create_customer_experience_tables()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM favorite_products WHERE telegram_id = ? AND product_name = ?", (int(telegram_id), product_name))
+    row = cur.fetchone()
+    if row:
+        cur.execute("DELETE FROM favorite_products WHERE id = ?", (row[0],))
+        conn.commit(); conn.close()
+        return False
+    now = israel_now_str() if 'israel_now_str' in globals() else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    cur.execute("INSERT OR IGNORE INTO favorite_products (telegram_id, product_name, created_at) VALUES (?, ?, ?)", (int(telegram_id), product_name, now))
+    conn.commit(); conn.close()
+    return True
+
+
+def get_favorite_products(telegram_id):
+    create_customer_experience_tables()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT product_name FROM favorite_products WHERE telegram_id = ? ORDER BY id DESC", (int(telegram_id),))
+    rows = cur.fetchall(); conn.close()
+    return [r[0] for r in rows]
+
+
+# ---------- Related Products ----------
+def add_related_product(product_name, related_product_name):
+    create_customer_experience_tables()
+    now = israel_now_str() if 'israel_now_str' in globals() else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_connection(); cur = conn.cursor()
+    cur.execute("INSERT OR IGNORE INTO product_relations (product_name, related_product_name, created_at) VALUES (?, ?, ?)", (product_name, related_product_name, now))
+    conn.commit(); conn.close(); return True
+
+
+def get_related_products(product_name, limit=5):
+    create_customer_experience_tables()
+    conn = get_connection(); cur = conn.cursor()
+    cur.execute("SELECT related_product_name FROM product_relations WHERE product_name = ? LIMIT ?", (product_name, int(limit)))
+    rows = cur.fetchall(); conn.close()
+    return [r[0] for r in rows]
+
+
+# ---------- Coupons ----------
+def create_coupon(code, discount_type, discount_value, min_order_total=0, max_uses=0, expires_at=''):
+    create_customer_experience_tables()
+    now = israel_now_str() if 'israel_now_str' in globals() else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_connection(); cur = conn.cursor()
+    cur.execute("""
+        INSERT OR REPLACE INTO coupons
+        (code, discount_type, discount_value, min_order_total, max_uses, expires_at, active, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+    """, (code.upper().strip(), discount_type, float(discount_value), float(min_order_total), int(max_uses), expires_at, now))
+    conn.commit(); conn.close(); return True
+
+
+def validate_coupon(code, telegram_id, order_total):
+    create_customer_experience_tables()
+    code = str(code or '').upper().strip()
+    conn = get_connection(); cur = conn.cursor()
+    cur.execute("SELECT code, discount_type, discount_value, min_order_total, max_uses, used_count, active, expires_at FROM coupons WHERE code = ?", (code,))
+    row = cur.fetchone(); conn.close()
+    if not row:
+        return False, 0, 'קוד קופון לא נמצא.'
+    _, dtype, dvalue, min_total, max_uses, used_count, active, expires_at = row
+    if not active:
+        return False, 0, 'הקופון אינו פעיל.'
+    if float(order_total) < float(min_total or 0):
+        return False, 0, f'הקופון תקף להזמנות מעל {min_total}₪.'
+    if int(max_uses or 0) > 0 and int(used_count or 0) >= int(max_uses):
+        return False, 0, 'הקופון הגיע למגבלת שימושים.'
+    if dtype == 'percent':
+        discount = float(order_total) * float(dvalue) / 100
+    else:
+        discount = float(dvalue)
+    discount = max(0, min(discount, float(order_total)))
+    return True, round(discount, 2), 'ok'
+
+
+def mark_coupon_used(code, telegram_id, order_number):
+    create_customer_experience_tables()
+    now = israel_now_str() if 'israel_now_str' in globals() else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_connection(); cur = conn.cursor()
+    cur.execute("INSERT OR IGNORE INTO coupon_usages (code, telegram_id, order_number, used_at) VALUES (?, ?, ?, ?)", (code.upper().strip(), int(telegram_id), order_number, now))
+    cur.execute("UPDATE coupons SET used_count = used_count + 1 WHERE code = ?", (code.upper().strip(),))
+    conn.commit(); conn.close(); return True
+
+
+# ---------- Reviews ----------
+def save_order_review(order_number, telegram_id, rating, comment=''):
+    create_customer_experience_tables()
+    rating = int(rating)
+    if rating < 1 or rating > 5:
+        return False
+    now = israel_now_str() if 'israel_now_str' in globals() else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_connection(); cur = conn.cursor()
+    cur.execute("INSERT OR REPLACE INTO order_reviews (order_number, telegram_id, rating, comment, created_at) VALUES (?, ?, ?, ?, ?)", (order_number, int(telegram_id), rating, comment, now))
+    conn.commit(); conn.close(); return True
+
+
+# ---------- Order Tracking ----------
+def add_order_event(order_number, status, note=''):
+    create_customer_experience_tables()
+    now = israel_now_str() if 'israel_now_str' in globals() else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_connection(); cur = conn.cursor()
+    cur.execute("INSERT INTO order_events (order_number, status, note, created_at) VALUES (?, ?, ?, ?)", (order_number, status, note, now))
+    conn.commit(); conn.close(); return True
+
+
+def get_order_events(order_number):
+    create_customer_experience_tables()
+    conn = get_connection(); cur = conn.cursor()
+    cur.execute("SELECT status, note, created_at FROM order_events WHERE order_number = ? ORDER BY id ASC", (order_number,))
+    rows = cur.fetchall(); conn.close()
+    return [{'status': r[0], 'note': r[1], 'created_at': r[2]} for r in rows]
+
+
+# ---------- Loyalty ----------
+def add_loyalty_points(telegram_id, order_total):
+    create_customer_experience_tables()
+    points = int(float(order_total) // 10)  # כל 10₪ = נקודה אחת
+    now = israel_now_str() if 'israel_now_str' in globals() else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_connection(); cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO loyalty_points (telegram_id, points, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(telegram_id) DO UPDATE SET
+            points = points + excluded.points,
+            updated_at = excluded.updated_at
+    """, (int(telegram_id), points, now))
+    conn.commit(); conn.close(); return points
+
+
+def get_loyalty_points(telegram_id):
+    create_customer_experience_tables()
+    conn = get_connection(); cur = conn.cursor()
+    cur.execute("SELECT points FROM loyalty_points WHERE telegram_id = ?", (int(telegram_id),))
+    row = cur.fetchone(); conn.close()
+    return int(row[0]) if row else 0
+
+
+# ---------- Abandoned Carts ----------
+def save_abandoned_cart(telegram_id, cart, total):
+    create_customer_experience_tables()
+    now = israel_now_str() if 'israel_now_str' in globals() else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_connection(); cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO abandoned_carts (telegram_id, cart_json, last_total, reminder_sent, updated_at)
+        VALUES (?, ?, ?, 0, ?)
+        ON CONFLICT(telegram_id) DO UPDATE SET
+            cart_json = excluded.cart_json,
+            last_total = excluded.last_total,
+            reminder_sent = 0,
+            updated_at = excluded.updated_at
+    """, (int(telegram_id), json.dumps(cart, ensure_ascii=False), float(total), now))
+    conn.commit(); conn.close(); return True
+
+
+def clear_abandoned_cart(telegram_id):
+    create_customer_experience_tables()
+    conn = get_connection(); cur = conn.cursor()
+    cur.execute("DELETE FROM abandoned_carts WHERE telegram_id = ?", (int(telegram_id),))
+    conn.commit(); conn.close(); return True
+
