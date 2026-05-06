@@ -1318,3 +1318,156 @@ def clear_abandoned_cart(telegram_id):
     cur.execute("DELETE FROM abandoned_carts WHERE telegram_id = ?", (int(telegram_id),))
     conn.commit(); conn.close(); return True
 
+# ================== SAVED ADDRESSES ==================
+def create_customer_addresses_table():
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS customer_addresses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id INTEGER NOT NULL,
+            label TEXT DEFAULT 'כתובת',
+            city TEXT NOT NULL,
+            street TEXT NOT NULL,
+            floor TEXT DEFAULT '',
+            apartment TEXT DEFAULT '',
+            is_default INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+def save_customer_address(telegram_id, label, city, street, floor="", apartment="", is_default=0):
+    create_customer_addresses_table()
+
+    now = israel_now_str() if "israel_now_str" in globals() else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    if int(is_default) == 1:
+        cur.execute(
+            "UPDATE customer_addresses SET is_default = 0 WHERE telegram_id = ?",
+            (int(telegram_id),)
+        )
+
+    cur.execute("""
+        INSERT INTO customer_addresses (
+            telegram_id, label, city, street, floor, apartment,
+            is_default, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        int(telegram_id), label, city, street, floor, apartment,
+        int(is_default), now, now
+    ))
+
+    conn.commit()
+    address_id = cur.lastrowid
+    conn.close()
+
+    return address_id
+
+
+def get_customer_addresses(telegram_id, limit=10):
+    create_customer_addresses_table()
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, telegram_id, label, city, street, floor, apartment,
+               is_default, created_at, updated_at
+        FROM customer_addresses
+        WHERE telegram_id = ?
+        ORDER BY is_default DESC, id DESC
+        LIMIT ?
+    """, (int(telegram_id), int(limit)))
+
+    rows = cur.fetchall()
+    conn.close()
+
+    addresses = []
+
+    for row in rows:
+        (
+            address_id, telegram_id, label, city, street, floor, apartment,
+            is_default, created_at, updated_at
+        ) = row
+
+        addresses.append({
+            "id": address_id,
+            "telegram_id": telegram_id,
+            "label": label,
+            "city": city,
+            "street": street,
+            "floor": floor,
+            "apartment": apartment,
+            "is_default": is_default,
+            "created_at": created_at,
+            "updated_at": updated_at
+        })
+
+    return addresses
+
+
+def get_customer_address_by_id(telegram_id, address_id):
+    create_customer_addresses_table()
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, telegram_id, label, city, street, floor, apartment,
+               is_default, created_at, updated_at
+        FROM customer_addresses
+        WHERE telegram_id = ? AND id = ?
+    """, (int(telegram_id), int(address_id)))
+
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    (
+        address_id, telegram_id, label, city, street, floor, apartment,
+        is_default, created_at, updated_at
+    ) = row
+
+    return {
+        "id": address_id,
+        "telegram_id": telegram_id,
+        "label": label,
+        "city": city,
+        "street": street,
+        "floor": floor,
+        "apartment": apartment,
+        "is_default": is_default,
+        "created_at": created_at,
+        "updated_at": updated_at
+    }
+
+
+def delete_customer_address(telegram_id, address_id):
+    create_customer_addresses_table()
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        "DELETE FROM customer_addresses WHERE telegram_id = ? AND id = ?",
+        (int(telegram_id), int(address_id))
+    )
+
+    conn.commit()
+    changed = cur.rowcount
+    conn.close()
+
+    return changed > 0
+
