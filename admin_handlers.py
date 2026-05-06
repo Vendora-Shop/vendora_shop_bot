@@ -653,7 +653,7 @@ async def admin_panel(message: Message):
 
 
 
-@router.message(F.text == "👥 לקוחות")
+@router.message(F.text.in_({"👥 לקוחות", "לקוחות 👥"}))
 async def customers_panel_start(message: Message):
     if not is_admin(message.from_user.id):
         return
@@ -1067,6 +1067,59 @@ async def handle_photo(message: Message):
         text = "<b>⚠️ המוצר לא נמצא.</b>"
 
     await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
+
+
+
+@router.message(F.text.in_({"📋 רשימת לקוחות", "רשימת לקוחות 📋"}))
+async def customers_list_direct(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    state = admin_states.setdefault(message.from_user.id, {"step": "customers_menu"})
+
+    customers = get_customers_list(30)
+
+    if not customers:
+        state["step"] = "customers_menu"
+        await message.answer(
+            rtl(
+                "<b>👥 רשימת לקוחות</b>\n\n"
+                "אין עדיין לקוחות שמורים במערכת."
+            ),
+            reply_markup=customers_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    state["step"] = "customers_select"
+    state["customers_last_mode"] = "list"
+
+    await message.answer(
+        rtl(
+            "<b>👥 רשימת לקוחות</b>\n\n"
+            f"נמצאו {len(customers)} לקוחות.\n"
+            "בחר לקוח מהרשימה כדי לפתוח כרטיס."
+        ),
+        reply_markup=customer_select_keyboard(customers),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text.in_({"🔎 חפש לקוח", "חפש לקוח 🔎"}))
+async def customers_search_direct(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    state = admin_states.setdefault(message.from_user.id, {"step": "customers_menu"})
+    state["step"] = "customers_search"
+
+    await message.answer(
+        rtl(
+            "<b>🔎 חיפוש לקוח</b>\n\n"
+            "רשום שם, טלפון או שם Telegram לחיפוש."
+        ),
+        parse_mode="HTML"
+    )
 
 
 @router.message(is_admin_active_step)
