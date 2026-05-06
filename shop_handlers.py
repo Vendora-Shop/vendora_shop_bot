@@ -4,7 +4,7 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, FSInputF
 from html import escape
 
 from config import ADMIN_ID
-from keyboards import main_keyboard, my_orders_keyboard
+from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard
 from database import (
     get_active_products,
     get_product_by_name,
@@ -14,11 +14,70 @@ from database import (
     get_customer_profile,
     save_customer_profile,
     get_orders_by_customer_telegram_id,
+    save_customer_address,
+    get_customer_addresses,
+    get_customer_address_by_id,
+    delete_customer_address,
 )
 from delivery import get_delivery_price
 from pdf_generator import create_invoice_pdf
 
 router = Router()
+
+
+# ================== SAVED ADDRESSES UI ==================
+def format_address(address):
+    return (
+        f"{field('שם כתובת', address.get('label') or 'כתובת')}\n"
+        f"{field('עיר / יישוב', address.get('city') or '-')}\n"
+        f"{field('רחוב', address.get('street') or '-')}\n"
+        f"{field('קומה', address.get('floor') or '-')}\n"
+        f"{field('דירה', address.get('apartment') or '-')}"
+    )
+
+
+def address_profile_text(address):
+    return rtl(
+        "<b>🏠 פרטי כתובת</b>\n\n"
+        f"{format_address(address)}"
+    )
+
+
+def extract_address_id_from_button(text):
+    text = str(text or "").strip()
+
+    if text.startswith("🏠 "):
+        text = text.replace("🏠 ", "", 1)
+
+    if "|" in text:
+        value = text.split("|", 1)[0].strip()
+    else:
+        value = text.strip()
+
+    if not value.isdigit():
+        return None
+
+    return int(value)
+
+
+def apply_saved_address_to_order(data, address):
+    data["city"] = address["city"]
+    data["street"] = address["street"]
+    data["floor"] = address.get("floor") or "0"
+    data["apartment"] = address.get("apartment") or "0"
+
+    delivery_price, base_city, status = get_delivery_price(address["city"])
+
+    if status == "ok" and delivery_price is not None:
+        data["delivery_price"] = float(delivery_price)
+        data["base_city"] = base_city or address["city"]
+        data["delivery_pending"] = False
+    else:
+        data["delivery_price"] = 0
+        data["base_city"] = base_city or "לתיאום מול נציג"
+        data["delivery_pending"] = True
+
+
 
 
 # ================== CUSTOMER ORDERS / REORDER ==================
@@ -876,6 +935,70 @@ async def back_to_main_menu(message: Message):
     )
 
 
+
+@router.message(F.text == "🏠 הכתובות שלי")
+async def my_addresses(message: Message):
+    uid = message.from_user.id
+
+    if uid not in users:
+        users[uid] = {"cart": []}
+
+    users[uid]["step"] = "addresses_menu"
+
+    await message.answer(
+        rtl("<b>🏠 הכתובות שלי</b>\n\nבחר פעולה מהתפריט."),
+        reply_markup=addresses_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "📋 הצג כתובות")
+async def show_my_addresses(message: Message):
+    uid = message.from_user.id
+
+    addresses = get_customer_addresses(uid, 10)
+
+    if not addresses:
+        await message.answer(
+            rtl(
+                "<b>🏠 הכתובות שלי</b>\n\n"
+                "לא שמורות עדיין כתובות בחשבון שלך."
+            ),
+            reply_markup=addresses_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    users.setdefault(uid, {"cart": []})
+    users[uid]["step"] = "address_select"
+
+    await message.answer(
+        rtl(
+            "<b>🏠 הכתובות שלי</b>\n\n"
+            "בחר כתובת מהרשימה כדי לצפות בפרטים."
+        ),
+        reply_markup=address_select_keyboard(addresses),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "➕ הוסף כתובת")
+async def add_address_start(message: Message):
+    uid = message.from_user.id
+
+    users.setdefault(uid, {"cart": []})
+    users[uid]["step"] = "add_address_label"
+    users[uid]["new_address"] = {}
+
+    await message.answer(
+        rtl(
+            "<b>➕ הוספת כתובת חדשה</b>\n\n"
+            "רשום שם לכתובת.\n"
+            "לדוגמה: בית / עבודה / הורים"
+        ),
+        parse_mode="HTML"
+    )
+
 @router.message()
 async def handle_shop(message: Message):
     uid = message.from_user.id
@@ -998,6 +1121,177 @@ async def handle_shop(message: Message):
         await message.answer(
             rtl("<b>⚠️ בחר אפשרות מתוך הכפתורים בלבד.</b>"),
             reply_markup=fulfillment_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+
+    if data.get("step") == "address_select":
+        if txt == "⬅️ חזרה לכתובות":
+            data["step"] = "addresses_menu"
+            await message.answer(
+                rtl("<b>🏠 הכתובות שלי</b>\n\nבחר פעולה מהתפריט."),
+                reply_markup=addresses_menu_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        address_id = extract_address_id_from_button(txt)
+
+        if not address_id:
+            await message.answer(
+                rtl("<b>⚠️ בחר כתובת מתוך הרשימה בלבד.</b>"),
+                parse_mode="HTML"
+            )
+            return
+
+        address = get_customer_address_by_id(uid, address_id)
+
+        if not address:
+            await message.answer(
+                rtl("<b>⚠️ הכתובת לא נמצאה.</b>"),
+                reply_markup=addresses_menu_keyboard(),
+                parse_mode="HTML"
+            )
+            data["step"] = "addresses_menu"
+            return
+
+        data["step"] = "address_profile"
+        data["selected_address_id"] = address_id
+
+        await message.answer(
+            address_profile_text(address),
+            reply_markup=address_actions_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if data.get("step") == "address_profile":
+        if txt == "⬅️ חזרה לרשימת כתובות":
+            addresses = get_customer_addresses(uid, 10)
+            data["step"] = "address_select"
+
+            await message.answer(
+                rtl("<b>🏠 הכתובות שלי</b>\n\nבחר כתובת מהרשימה."),
+                reply_markup=address_select_keyboard(addresses),
+                parse_mode="HTML"
+            )
+            return
+
+        if txt == "🗑️ מחק כתובת":
+            address_id = data.get("selected_address_id")
+            ok = delete_customer_address(uid, address_id)
+
+            data["step"] = "addresses_menu"
+
+            await message.answer(
+                rtl(
+                    "<b>✅ הכתובת נמחקה</b>"
+                    if ok else
+                    "<b>⚠️ לא הצלחתי למחוק את הכתובת.</b>"
+                ),
+                reply_markup=addresses_menu_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        await message.answer(
+            rtl("<b>⚠️ בחר פעולה מתוך הכפתורים בלבד.</b>"),
+            reply_markup=address_actions_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if data.get("step") == "add_address_label":
+        label = txt.strip()
+
+        if len(label) < 2:
+            await message.answer(
+                rtl("<b>⚠️ שם כתובת קצר מדי.</b>\nרשום לפחות 2 תווים."),
+                parse_mode="HTML"
+            )
+            return
+
+        data["new_address"]["label"] = label
+        data["step"] = "add_address_city"
+
+        await message.answer(
+            rtl("<b>📍 עיר / יישוב</b>\n\nרשום את שם העיר או היישוב."),
+            parse_mode="HTML"
+        )
+        return
+
+    if data.get("step") == "add_address_city":
+        city = txt.strip()
+
+        if len(city) < 2:
+            await message.answer(
+                rtl("<b>⚠️ שם עיר/יישוב קצר מדי.</b>"),
+                parse_mode="HTML"
+            )
+            return
+
+        data["new_address"]["city"] = city
+        data["step"] = "add_address_street"
+
+        await message.answer(
+            rtl("<b>🏠 רחוב ומספר בית</b>\n\nלדוגמה: הרצל 10"),
+            parse_mode="HTML"
+        )
+        return
+
+    if data.get("step") == "add_address_street":
+        street = txt.strip()
+
+        if len(street) < 2:
+            await message.answer(
+                rtl("<b>⚠️ כתובת קצרה מדי.</b>"),
+                parse_mode="HTML"
+            )
+            return
+
+        data["new_address"]["street"] = street
+        data["step"] = "add_address_floor"
+
+        await message.answer(
+            rtl("<b>קומה</b>\n\nאם אין, רשום 0."),
+            parse_mode="HTML"
+        )
+        return
+
+    if data.get("step") == "add_address_floor":
+        data["new_address"]["floor"] = txt.strip()
+        data["step"] = "add_address_apartment"
+
+        await message.answer(
+            rtl("<b>דירה</b>\n\nאם אין, רשום 0."),
+            parse_mode="HTML"
+        )
+        return
+
+    if data.get("step") == "add_address_apartment":
+        data["new_address"]["apartment"] = txt.strip()
+
+        address = data["new_address"]
+
+        save_customer_address(
+            telegram_id=uid,
+            label=address["label"],
+            city=address["city"],
+            street=address["street"],
+            floor=address.get("floor", "0"),
+            apartment=address.get("apartment", "0")
+        )
+
+        data.pop("new_address", None)
+        data["step"] = "addresses_menu"
+
+        await message.answer(
+            rtl(
+                "<b>✅ הכתובת נשמרה בהצלחה</b>\n\n"
+                "אפשר להשתמש בה להזמנות הבאות."
+            ),
+            reply_markup=addresses_menu_keyboard(),
             parse_mode="HTML"
         )
         return
