@@ -161,62 +161,80 @@ def reorder_orders_list_text(orders):
     return rtl(text)
 
 def clone_cart_from_order(order):
-    cloned_cart = []
+    """
+    משחזר הזמנה קודמת לסל, אבל עם בדיקת היגיון עסקי:
+    - מוצר חייב עדיין להיות קיים בחנות
+    - מוצר חייב להיות פעיל
+    - חייב להיות מספיק מלאי לכמות שהלקוח הזמין בעבר
+    - המחיר נלקח מהמוצר הנוכחי בחנות, לא מההזמנה הישנה
+    """
+
+    valid_cart = []
+    unavailable_products = []
 
     for item in order.get("cart", []):
-        cloned_cart.append({
-            "name": item.get("name"),
-            "price": float(item.get("price", 0)),
-            "qty": int(item.get("qty", 1))
+        item_name = item.get("name")
+        requested_qty = int(item.get("qty", 1))
+
+        if not item_name:
+            continue
+
+        product = get_product_by_name(item_name)
+
+        if not product:
+            unavailable_products.append(item_name)
+            continue
+
+        is_active = product.get("active", 1)
+
+        if is_active in [0, "0", False, "false", "False", None]:
+            unavailable_products.append(item_name)
+            continue
+
+        stock = int(product.get("stock", 0) or 0)
+
+        if stock <= 0 or stock < requested_qty:
+            unavailable_products.append(item_name)
+            continue
+
+        valid_cart.append({
+            "name": product.get("name", item_name),
+            "price": float(product.get("price", item.get("price", 0))),
+            "qty": requested_qty
         })
 
-    return cloned_cart
+    if not valid_cart:
+        return {
+            "success": False,
+            "cart": [],
+            "message": rtl(
+                "<b>⚠️ לא ניתן לבצע הזמנה חוזרת</b>\n\n"
+                "המוצרים מההזמנה שבחרת אינם זמינים כרגע במלאי.\n"
+                "ייתכן שהמוצר אזל, הוסר מהחנות או אינו זמין להזמנה כרגע.\n\n"
+                "אפשר להיכנס לחנות ולבחור מוצרים זמינים אחרים."
+            ),
+            "warning": None
+        }
 
+    warning_message = None
 
+    if unavailable_products:
+        unavailable_text = "\n".join([f"• {h(name)}" for name in unavailable_products])
 
+        warning_message = rtl(
+            "<b>⚠️ חלק מהמוצרים אינם זמינים</b>\n\n"
+            "המוצרים הבאים אינם זמינים כרגע ולכן לא נוספו לסל:\n\n"
+            f"{unavailable_text}\n\n"
+            "שאר המוצרים הזמינים נוספו לסל הקניות שלך."
+        )
 
-@router.message(CommandStart())
-async def start(message: Message):
-    users[message.from_user.id] = {
-        "cart": [],
-        "step": "start"
+    return {
+        "success": True,
+        "cart": valid_cart,
+        "message": None,
+        "warning": warning_message
     }
 
-    await message.answer(
-        rtl(
-            "<b>👋 ברוכים הבאים ל־Vendora</b>\n\n"
-            "הגעתם לחנות הדיגיטלית של Vendora.\n\n"
-            "כאן תוכלו לבצע הזמנה בצורה נוחה ומהירה:\n"
-            "🛒 לבחור מוצרים מהחנות\n"
-            "🧺 להוסיף מוצרים לסל\n"
-            "🚚 לבחור משלוח עד הבית או איסוף עצמי\n"
-            "👤 לשמור פרטים להזמנות הבאות\n"
-            "📞 לפנות לשירות לקוחות במקרה הצורך\n\n"
-            "<b>איך מתחילים?</b>\n"
-            "לחצו על 🛒 חנות בתפריט למטה ובחרו מוצרים.\n\n"
-            "<b>צריכים עזרה?</b>\n"
-            "לחצו על 📞 שירות לקוחות."
-        ),
-        reply_markup=main_keyboard(),
-        parse_mode="HTML"
-    )
-
-users = {}
-
-RTL = "\u200F"
-
-# ================== PICKUP SETTINGS ==================
-# כאן מגדירים את כל פרטי האיסוף העצמי.
-# אם בעתיד תרצה לשנות כתובת / שעות / ניווט — משנים רק כאן.
-PICKUP_POINT_NAME = "Vendora"
-PICKUP_POINT_ADDRESS = "אשדוד - הבנאים 2"
-PICKUP_PREP_TIME = "כ־30 דקות"
-PICKUP_HOURS = "א׳-ה׳ 10:00-19:00, ו׳ 09:00-13:00"
-PICKUP_NAVIGATION_URL = "https://waze.com/ul/hsv8su3vur"
-
-PICKUP_CITY = "איסוף עצמי"
-PICKUP_BASE_CITY = "איסוף עצמי"
-#קעקרערעק
 
 def h(text):
     return escape(str(text))
@@ -779,6 +797,8 @@ async def confirm_order(message: Message):
     delivery_price = float(data["delivery_price"])
     final_total = products_total + delivery_price
 
+    # גם בהזמנה חוזרת לא משתמשים במספר ההזמנה הישן.
+    # create_order יוצר תמיד מספר הזמנה חדש כדי למנוע כפילויות ובעיות ניהול.
     order_number = create_order(
         telegram_id=uid,
         telegram_name=message.from_user.full_name,
@@ -1190,27 +1210,33 @@ async def handle_shop(message: Message):
             )
             return
 
-        cloned_cart = clone_cart_from_order(order)
+        result = clone_cart_from_order(order)
 
-        if not cloned_cart:
+        if not result.get("success"):
             await message.answer(
-                rtl(
-                    "<b>⚠️ לא ניתן לשחזר את ההזמנה.</b>\n\n"
-                    "ההזמנה שבחרת לא כוללת מוצרים זמינים לשחזור."
-                ),
+                result.get("message") or rtl("<b>⚠️ לא ניתן לבצע הזמנה חוזרת.</b>"),
+                reply_markup=main_keyboard(),
                 parse_mode="HTML"
             )
             return
 
-        users[uid]["cart"] = cloned_cart
+        users[uid]["cart"] = result["cart"]
         users[uid]["step"] = "cart"
+        users[uid]["reorder_source_order_number"] = order_number
+
+        if result.get("warning"):
+            await message.answer(
+                result["warning"],
+                parse_mode="HTML"
+            )
 
         await message.answer(
             rtl(
                 "<b>✅ ההזמנה שוחזרה לסל</b>\n\n"
-                f"{field('מספר הזמנה', order_number)}\n\n"
-                "המוצרים מההזמנה שבחרת נוספו לסל הקניות שלך.\n"
-                "אפשר להמשיך לסיום הזמנה או לערוך את הסל."
+                f"{field('שוחזר מהזמנה', order_number)}\n\n"
+                "המוצרים הזמינים מההזמנה שבחרת נוספו לסל הקניות שלך.\n"
+                "אפשר להמשיך לסיום הזמנה או לערוך את הסל.\n\n"
+                "<b>חשוב:</b> לאחר אישור ההזמנה ייווצר מספר הזמנה חדש במערכת."
             ),
             reply_markup=cart_keyboard(),
             parse_mode="HTML"
