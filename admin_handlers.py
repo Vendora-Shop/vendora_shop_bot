@@ -41,6 +41,48 @@ admin_states = {}
 
 RTL = "\u200F"
 
+def clean_admin_text(text):
+    return str(text or "").replace("\u200f", "").replace("\u200e", "").strip()
+
+
+async def open_customers_list(message: Message):
+    state = admin_states.setdefault(message.from_user.id, {"step": "customers_menu"})
+    customers = get_customers_list(50)
+
+    if not customers:
+        state["step"] = "customers_menu"
+        await message.answer(
+            rtl("<b>👥 רשימת לקוחות</b>\n\nאין עדיין לקוחות שמורים במערכת."),
+            reply_markup=customers_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    state["step"] = "customers_select"
+    state["customers_last_mode"] = "list"
+
+    await message.answer(
+        rtl(
+            "<b>👥 רשימת לקוחות</b>\n\n"
+            f"נמצאו {len(customers)} לקוחות.\n"
+            "בחר לקוח מהרשימה כדי לפתוח כרטיס."
+        ),
+        reply_markup=customer_select_keyboard(customers),
+        parse_mode="HTML"
+    )
+
+
+async def open_customer_search(message: Message):
+    state = admin_states.setdefault(message.from_user.id, {"step": "customers_menu"})
+    state["step"] = "customers_search"
+
+    await message.answer(
+        rtl("<b>🔎 חיפוש לקוח</b>\n\nרשום שם, טלפון או שם Telegram לחיפוש."),
+        parse_mode="HTML"
+    )
+
+
+
 # ================== PICKUP DISPLAY SETTINGS ==================
 # תצוגת איסוף עצמי בפאנל אדמין.
 # אם שינית את הכתובת ב־shop_handlers.py, עדכן גם כאן כדי שהתצוגה באדמין תהיה זהה.
@@ -1122,8 +1164,34 @@ async def customers_search_direct(message: Message):
     )
 
 
+
+@router.message(F.text.contains("רשימת לקוחות"))
+async def customers_list_direct_any_state(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    await open_customers_list(message)
+
+
+@router.message(F.text.contains("חפש לקוח"))
+async def customers_search_direct_any_state(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    await open_customer_search(message)
+
+
 @router.message(is_admin_active_step)
 async def admin_flow(message: Message):
+    # טיפול מהיר בכפתורי לקוחות גם אם ה-step נתקע
+    raw_txt = clean_admin_text(message.text)
+
+    if "רשימת לקוחות" in raw_txt:
+        await open_customers_list(message)
+        return
+
+    if "חפש לקוח" in raw_txt:
+        await open_customer_search(message)
+        return
+
     uid = message.from_user.id
     txt = (message.text or "").strip()
     state = admin_states.get(uid)
@@ -1214,7 +1282,7 @@ async def admin_flow(message: Message):
 
 
     if step == "customers_menu":
-        if txt in {"📋 רשימת לקוחות", "רשימת לקוחות 📋"}:
+        if "רשימת לקוחות" in txt:
             customers = get_customers_list(30)
 
             if not customers:
@@ -1242,7 +1310,7 @@ async def admin_flow(message: Message):
             )
             return
 
-        if txt in {"🔎 חפש לקוח", "חפש לקוח 🔎"}:
+        if "חפש לקוח" in txt:
             state["step"] = "customers_search"
 
             await message.answer(
