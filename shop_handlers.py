@@ -19,7 +19,7 @@ from pdf_generator import create_invoice_pdf
 
 router = Router()
 
-@router.message(Command("start"))
+@router.message(CommandStart())
 async def start(message: Message):
     users[message.from_user.id] = {
         "cart": [],
