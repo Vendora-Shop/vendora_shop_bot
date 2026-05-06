@@ -161,50 +161,62 @@ def reorder_orders_list_text(orders):
     return rtl(text)
 
 def clone_cart_from_order(order):
-    """
-    שחזור הזמנה לסל עם בדיקת מלאי פשוטה ונקייה:
-    - מוצר חייב להיות קיים
-    - מוצר חייב להיות פעיל
-    - חייב להיות מספיק מלאי
-    - המחיר נלקח מהמוצר הנוכחי בחנות
-    """
-
     cloned_cart = []
-    unavailable_products = []
 
     for item in order.get("cart", []):
-        item_name = item.get("name")
-        qty = int(item.get("qty", 1))
-
-        if not item_name:
-            continue
-
-        product = get_product_by_name(item_name)
-
-        if not product:
-            unavailable_products.append(item_name)
-            continue
-
-        is_active = product.get("active", 1)
-
-        if is_active in [0, "0", False, "false", "False", None]:
-            unavailable_products.append(item_name)
-            continue
-
-        stock = int(product.get("stock", 0) or 0)
-
-        if stock < qty:
-            unavailable_products.append(item_name)
-            continue
-
         cloned_cart.append({
-            "name": product.get("name", item_name),
-            "price": float(product.get("price", item.get("price", 0))),
-            "qty": qty
+            "name": item.get("name"),
+            "price": float(item.get("price", 0)),
+            "qty": int(item.get("qty", 1))
         })
 
-    return cloned_cart, unavailable_products
+    return cloned_cart
 
+
+
+
+@router.message(CommandStart())
+async def start(message: Message):
+    users[message.from_user.id] = {
+        "cart": [],
+        "step": "start"
+    }
+
+    await message.answer(
+        rtl(
+            "<b>👋 ברוכים הבאים ל־Vendora</b>\n\n"
+            "הגעתם לחנות הדיגיטלית של Vendora.\n\n"
+            "כאן תוכלו לבצע הזמנה בצורה נוחה ומהירה:\n"
+            "🛒 לבחור מוצרים מהחנות\n"
+            "🧺 להוסיף מוצרים לסל\n"
+            "🚚 לבחור משלוח עד הבית או איסוף עצמי\n"
+            "👤 לשמור פרטים להזמנות הבאות\n"
+            "📞 לפנות לשירות לקוחות במקרה הצורך\n\n"
+            "<b>איך מתחילים?</b>\n"
+            "לחצו על 🛒 חנות בתפריט למטה ובחרו מוצרים.\n\n"
+            "<b>צריכים עזרה?</b>\n"
+            "לחצו על 📞 שירות לקוחות."
+        ),
+        reply_markup=main_keyboard(),
+        parse_mode="HTML"
+    )
+
+users = {}
+
+RTL = "\u200F"
+
+# ================== PICKUP SETTINGS ==================
+# כאן מגדירים את כל פרטי האיסוף העצמי.
+# אם בעתיד תרצה לשנות כתובת / שעות / ניווט — משנים רק כאן.
+PICKUP_POINT_NAME = "Vendora"
+PICKUP_POINT_ADDRESS = "אשדוד - הבנאים 2"
+PICKUP_PREP_TIME = "כ־30 דקות"
+PICKUP_HOURS = "א׳-ה׳ 10:00-19:00, ו׳ 09:00-13:00"
+PICKUP_NAVIGATION_URL = "https://waze.com/ul/hsv8su3vur"
+
+PICKUP_CITY = "איסוף עצמי"
+PICKUP_BASE_CITY = "איסוף עצמי"
+#קעקרערעק
 
 def h(text):
     return escape(str(text))
@@ -1178,11 +1190,14 @@ async def handle_shop(message: Message):
             )
             return
 
-        cloned_cart, unavailable_products = clone_cart_from_order(order)
+        cloned_cart = clone_cart_from_order(order)
 
         if not cloned_cart:
             await message.answer(
-                rtl("<b>⚠️ המוצר שבחרת אזל מהמלאי.</b>"),
+                rtl(
+                    "<b>⚠️ לא ניתן לשחזר את ההזמנה.</b>\n\n"
+                    "ההזמנה שבחרת לא כוללת מוצרים זמינים לשחזור."
+                ),
                 parse_mode="HTML"
             )
             return
@@ -1190,18 +1205,12 @@ async def handle_shop(message: Message):
         users[uid]["cart"] = cloned_cart
         users[uid]["step"] = "cart"
 
-        if unavailable_products:
-            await message.answer(
-                rtl("<b>⚠️ חלק מהמוצרים אזלו מהמלאי ולא נוספו לסל.</b>"),
-                parse_mode="HTML"
-            )
-
         await message.answer(
             rtl(
                 "<b>✅ ההזמנה שוחזרה לסל</b>\n\n"
-                f"{field('שוחזר מהזמנה', order_number)}\n\n"
-                "המוצרים הזמינים נוספו לסל הקניות שלך.\n"
-                "לאחר אישור ההזמנה ייווצר מספר הזמנה חדש."
+                f"{field('מספר הזמנה', order_number)}\n\n"
+                "המוצרים מההזמנה שבחרת נוספו לסל הקניות שלך.\n"
+                "אפשר להמשיך לסיום הזמנה או לערוך את הסל."
             ),
             reply_markup=cart_keyboard(),
             parse_mode="HTML"
