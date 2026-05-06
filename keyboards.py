@@ -1,11 +1,7 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-from config import ADMIN_ID
 
 
-def main_keyboard(user_id=None):
-    if user_id == ADMIN_ID:
-        keyboard.append([KeyboardButton(text="🔐 פאנל ניהול")])
-
+def main_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🛒 חנות")],
