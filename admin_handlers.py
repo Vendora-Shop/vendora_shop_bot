@@ -1179,6 +1179,70 @@ async def customers_search_direct_any_state(message: Message):
     await open_customer_search(message)
 
 
+
+@router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "customers_search")
+async def customers_search_query_direct(message: Message):
+    query = clean_admin_text(message.text)
+
+    if "רשימת לקוחות" in query:
+        await open_customers_list(message)
+        return
+
+    if "חפש לקוח" in query:
+        await open_customer_search(message)
+        return
+
+    if len(query) < 2:
+        await message.answer(
+            rtl(
+                "<b>⚠️ חיפוש קצר מדי</b>\n\n"
+                "רשום לפחות 2 תווים לחיפוש."
+            ),
+            parse_mode="HTML"
+        )
+        return
+
+    customers = search_customers(query, 50)
+
+    if not customers:
+        admin_states[message.from_user.id] = {"step": "customers_menu"}
+        await message.answer(
+            rtl(
+                "<b>🔎 תוצאות חיפוש</b>\n\n"
+                "לא נמצאו לקוחות לפי החיפוש הזה."
+            ),
+            reply_markup=customers_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    state = admin_states.setdefault(message.from_user.id, {})
+    state["step"] = "customers_select"
+    state["customers_last_mode"] = "search"
+    state["customers_last_query"] = query
+
+    await message.answer(
+        rtl(
+            "<b>🔎 תוצאות חיפוש</b>\n\n"
+            f"נמצאו {len(customers)} לקוחות.\n"
+            "בחר לקוח מהרשימה כדי לפתוח כרטיס."
+        ),
+        reply_markup=customer_select_keyboard(customers),
+        parse_mode="HTML"
+    )
+
+
+
+@router.message(lambda message: is_admin(message.from_user.id) and message.text and "רשימת לקוחות" in message.text)
+async def customers_list_query_direct(message: Message):
+    await open_customers_list(message)
+
+
+@router.message(lambda message: is_admin(message.from_user.id) and message.text and "חפש לקוח" in message.text)
+async def customers_search_open_direct(message: Message):
+    await open_customer_search(message)
+
+
 @router.message(is_admin_active_step)
 async def admin_flow(message: Message):
     # טיפול מהיר בכפתורי לקוחות גם אם ה-step נתקע
