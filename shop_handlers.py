@@ -4,7 +4,7 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, FSInputF
 from html import escape
 
 from config import ADMIN_ID
-from keyboards import main_keyboard
+from keyboards import main_keyboard, my_orders_keyboard
 from database import (
     get_active_products,
     get_product_by_name,
@@ -13,11 +13,56 @@ from database import (
     get_order_by_number,
     get_customer_profile,
     save_customer_profile,
+    get_orders_by_customer_telegram_id,
 )
 from delivery import get_delivery_price
 from pdf_generator import create_invoice_pdf
 
 router = Router()
+
+
+# ================== CUSTOMER ORDERS / REORDER ==================
+def customer_order_short_text(order):
+    return (
+        f"<b>🧾 {h(order.get('order_number'))}</b>\n"
+        f"{field('תאריך', order.get('created_at') or '-')}\n"
+        f"{field('סטטוס', order.get('status') or '-')}\n"
+        f"{field('סה״כ', money(order.get('final_total') or 0))}"
+    )
+
+
+def customer_orders_text(orders):
+    if not orders:
+        return rtl(
+            "<b>📦 ההזמנות שלי</b>\n\n"
+            "עדיין לא קיימות הזמנות בחשבון שלך."
+        )
+
+    text = "<b>📦 ההזמנות שלי</b>\n\n"
+    text += "אלו ההזמנות האחרונות שלך:\n\n"
+
+    for order in orders[:5]:
+        text += customer_order_short_text(order) + "\n\n"
+
+    text += "כדי לבצע הזמנה חוזרת, לחץ על 🔁 הזמן שוב."
+
+    return rtl(text)
+
+
+def clone_cart_from_order(order):
+    cloned_cart = []
+
+    for item in order.get("cart", []):
+        cloned_cart.append({
+            "name": item.get("name"),
+            "price": float(item.get("price", 0)),
+            "qty": int(item.get("qty", 1))
+        })
+
+    return cloned_cart
+
+
+
 
 @router.message(CommandStart())
 async def start(message: Message):
@@ -741,6 +786,92 @@ async def support(message: Message):
     users[uid] = {"cart": [], "step": "support"}
     await message.answer(
         rtl("<b>📞 שירות לקוחות</b>\n\nכתוב כאן את ההודעה שלך ונעביר אותה לנציג."),
+        parse_mode="HTML"
+    )
+
+
+
+@router.message(F.text == "📦 ההזמנות שלי")
+async def my_orders(message: Message):
+    uid = message.from_user.id
+
+    if uid not in users:
+        users[uid] = {"cart": []}
+
+    orders = get_orders_by_customer_telegram_id(uid, 10)
+
+    if orders:
+        users[uid]["last_order_number"] = orders[0].get("order_number")
+
+    users[uid]["step"] = "my_orders"
+
+    await message.answer(
+        customer_orders_text(orders),
+        reply_markup=my_orders_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "🔁 הזמן שוב")
+async def reorder_last_order(message: Message):
+    uid = message.from_user.id
+
+    if uid not in users:
+        users[uid] = {"cart": []}
+
+    orders = get_orders_by_customer_telegram_id(uid, 1)
+
+    if not orders:
+        await message.answer(
+            rtl(
+                "<b>⚠️ אין הזמנה קודמת לשחזור.</b>\n\n"
+                "אפשר להיכנס לחנות ולבצע הזמנה חדשה."
+            ),
+            reply_markup=main_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    last_order = orders[0]
+    cloned_cart = clone_cart_from_order(last_order)
+
+    if not cloned_cart:
+        await message.answer(
+            rtl(
+                "<b>⚠️ לא ניתן לשחזר את ההזמנה.</b>\n\n"
+                "ההזמנה הקודמת לא כוללת מוצרים זמינים לשחזור."
+            ),
+            reply_markup=main_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    users[uid]["cart"] = cloned_cart
+    users[uid]["step"] = "cart"
+
+    await message.answer(
+        rtl(
+            "<b>🔁 ההזמנה שוחזרה לסל</b>\n\n"
+            "המוצרים מההזמנה האחרונה נוספו לסל הקניות שלך.\n"
+            "אפשר להמשיך לסיום הזמנה או לערוך את הסל."
+        ),
+        reply_markup=cart_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "⬅️ חזרה לתפריט")
+async def back_to_main_menu(message: Message):
+    uid = message.from_user.id
+
+    if uid not in users:
+        users[uid] = {"cart": []}
+
+    users[uid]["step"] = "main"
+
+    await message.answer(
+        rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט למטה."),
+        reply_markup=main_keyboard(),
         parse_mode="HTML"
     )
 
