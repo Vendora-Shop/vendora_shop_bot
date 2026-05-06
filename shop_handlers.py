@@ -162,11 +162,11 @@ def reorder_orders_list_text(orders):
 
 def clone_cart_from_order(order):
     """
-    משחזר הזמנה קודמת לסל, אבל עם בדיקת היגיון עסקי:
-    - מוצר חייב עדיין להיות קיים בחנות
-    - מוצר חייב להיות פעיל
-    - חייב להיות מספיק מלאי לכמות שהלקוח הזמין בעבר
-    - המחיר נלקח מהמוצר הנוכחי בחנות, לא מההזמנה הישנה
+    משחזר הזמנה קודמת לסל בצורה בטוחה:
+    - בודק שהמוצר עדיין קיים
+    - בודק שהמוצר פעיל
+    - בודק שיש מספיק מלאי
+    - משתמש במחיר העדכני של המוצר
     """
 
     valid_cart = []
@@ -797,8 +797,7 @@ async def confirm_order(message: Message):
     delivery_price = float(data["delivery_price"])
     final_total = products_total + delivery_price
 
-    # גם בהזמנה חוזרת לא משתמשים במספר ההזמנה הישן.
-    # create_order יוצר תמיד מספר הזמנה חדש כדי למנוע כפילויות ובעיות ניהול.
+    # create_order יוצר תמיד מספר הזמנה חדש — גם כאשר ההזמנה נוצרה מתוך הזמנה חוזרת.
     order_number = create_order(
         telegram_id=uid,
         telegram_name=message.from_user.full_name,
