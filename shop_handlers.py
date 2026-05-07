@@ -25,6 +25,32 @@ from pdf_generator import create_invoice_pdf
 router = Router()
 
 
+async def cleanup_previous_messages(bot, chat_id, state):
+    data = await state.get_data()
+    old_messages = data.get("cleanup_messages", [])
+
+    for msg_id in old_messages[-8:]:
+        try:
+            await bot.delete_message(chat_id, msg_id)
+        except Exception:
+            pass
+
+    await state.update_data(cleanup_messages=[])
+
+
+async def register_cleanup_message(state, message_id):
+    data = await state.get_data()
+    old_messages = data.get("cleanup_messages", [])
+
+    old_messages.append(message_id)
+
+    if len(old_messages) > 15:
+        old_messages = old_messages[-15:]
+
+    await state.update_data(cleanup_messages=old_messages)
+
+
+
 # ================== SAVED ADDRESSES UI ==================
 def format_address(address):
     return (
@@ -2130,10 +2156,22 @@ async def handle_shop(message: Message):
             return
 
         if txt != "🛒 הוסף לסל":
-            await message.answer(
-                rtl("<b>⚠️ לבחירת כמות יש להשתמש בכפתורים מתחת להודעה.</b>"),
-                parse_mode="HTML"
-            )
+            try:
+                await message.delete()
+            except Exception:
+                pass
+
+            data = await state.get_data()
+
+            if not data.get("qty_warning_sent"):
+                warn_msg = await message.answer(
+                    rtl("<b>⚠️ לבחירת כמות יש להשתמש בכפתורים מתחת להודעה.</b>"),
+                    parse_mode="HTML"
+                )
+
+                await register_cleanup_message(state, warn_msg.message_id)
+                await state.update_data(qty_warning_sent=True)
+
             return
 
         qty = selected_qty
