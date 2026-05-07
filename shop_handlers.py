@@ -230,6 +230,13 @@ users = {}
 RTL = "\u200F"
 
 
+# ================== SMART CHAT CLEANUP ==================
+# שומר ומנקה הודעות זמניות של תהליך קנייה בלבד.
+# לא מוחק PDF, אישור הזמנה, סיכום הזמנה סופי או סטטוסים.
+SHOP_SESSION_TTL_SECONDS = 30 * 60
+SHOP_SESSION_MAX_TRACKED_MESSAGES = 300
+
+
 async def delete_customer_message(message: Message):
     try:
         await message.delete()
@@ -237,48 +244,130 @@ async def delete_customer_message(message: Message):
         pass
 
 
-SHOP_SESSION_MAX_DELETE_RANGE = 120
-SHOP_SESSION_TTL_SECONDS = 30 * 60
+def ensure_cleanup_storage(data):
+    if data is None:
+        return
+
+    data.setdefault("cleanup_message_ids", [])
+    data.setdefault("protected_message_ids", [])
+
+
+def remember_cleanup_message(data, message_or_id):
+    if not data or not message_or_id:
+        return
+
+    ensure_cleanup_storage(data)
+
+    message_id = message_or_id
+    if hasattr(message_or_id, "message_id"):
+        message_id = message_or_id.message_id
+
+    try:
+        message_id = int(message_id)
+    except Exception:
+        return
+
+    protected = set(data.get("protected_message_ids", []))
+    if message_id in protected:
+        return
+
+    ids = data.get("cleanup_message_ids", [])
+
+    if message_id not in ids:
+        ids.append(message_id)
+
+    if len(ids) > SHOP_SESSION_MAX_TRACKED_MESSAGES:
+        ids = ids[-SHOP_SESSION_MAX_TRACKED_MESSAGES:]
+
+    data["cleanup_message_ids"] = ids
+    data["last_shop_message_id"] = max(int(data.get("last_shop_message_id") or 0), message_id)
+
+
+def protect_message(data, message_or_id):
+    if not data or not message_or_id:
+        return
+
+    ensure_cleanup_storage(data)
+
+    message_id = message_or_id
+    if hasattr(message_or_id, "message_id"):
+        message_id = message_or_id.message_id
+
+    try:
+        message_id = int(message_id)
+    except Exception:
+        return
+
+    protected = data.get("protected_message_ids", [])
+    if message_id not in protected:
+        protected.append(message_id)
+
+    data["protected_message_ids"] = protected
+
+
+def start_shop_session(message: Message, data):
+    if not data:
+        return
+
+    ensure_cleanup_storage(data)
+    data["shop_session_start_message_id"] = message.message_id
+    data["last_shop_message_id"] = message.message_id
+    remember_cleanup_message(data, message)
+
+    try:
+        asyncio.create_task(
+            cleanup_shop_session_later(
+                message.bot,
+                message.chat.id,
+                data,
+                message.message_id
+            )
+        )
+    except Exception:
+        pass
+
+
+def touch_shop_session(message: Message, data, sent_message=None):
+    if not data:
+        return
+
+    ensure_cleanup_storage(data)
+
+    if message:
+        remember_cleanup_message(data, message)
+
+    if sent_message:
+        remember_cleanup_message(data, sent_message)
+
+
+def remember_customer_action_message(data, message: Message):
+    if not data or not message:
+        return
+
+    remember_cleanup_message(data, message)
 
 
 async def cleanup_shop_session_messages(bot, chat_id, data, last_message_id=None):
     if not data:
         return
 
-    start_id = data.get("shop_session_start_message_id")
+    ensure_cleanup_storage(data)
 
-    if not start_id:
-        return
+    protected = set(data.get("protected_message_ids", []))
+    message_ids = list(dict.fromkeys(data.get("cleanup_message_ids", [])))
 
-    if last_message_id is None:
-        last_message_id = data.get("last_shop_message_id") or start_id
+    for message_id in message_ids:
+        if message_id in protected:
+            continue
 
-    start_id = int(start_id)
-    last_message_id = int(last_message_id)
-
-    if last_message_id < start_id:
-        return
-
-    customer_action_ids = data.get("customer_action_message_ids", [])
-
-    for message_id in customer_action_ids:
         try:
-            await bot.delete_message(chat_id, message_id)
+            await bot.delete_message(chat_id, int(message_id))
         except Exception:
             pass
 
-    if last_message_id - start_id > SHOP_SESSION_MAX_DELETE_RANGE:
-        start_id = last_message_id - SHOP_SESSION_MAX_DELETE_RANGE
-
-    for message_id in range(start_id, last_message_id + 1):
-        try:
-            await bot.delete_message(chat_id, message_id)
-        except Exception:
-            pass
-
+    data["cleanup_message_ids"] = []
     data.pop("shop_session_start_message_id", None)
     data.pop("last_shop_message_id", None)
-    data.pop("customer_action_message_ids", None)
 
 
 async def cleanup_shop_session_later(bot, chat_id, data, session_start_id):
@@ -290,118 +379,8 @@ async def cleanup_shop_session_later(bot, chat_id, data, session_start_id):
     if data.get("shop_session_start_message_id") != session_start_id:
         return
 
-    await cleanup_shop_session_messages(
-        bot,
-        chat_id,
-        data,
-        data.get("last_shop_message_id") or session_start_id
-    )
+    await cleanup_shop_session_messages(bot, chat_id, data)
 
-
-def start_shop_session(message: Message, data):
-    if not data:
-        return
-
-    data["shop_session_start_message_id"] = message.message_id
-    data["last_shop_message_id"] = message.message_id
-
-    session_start_id = message.message_id
-
-    try:
-        asyncio.create_task(
-            cleanup_shop_session_later(
-                message.bot,
-                message.chat.id,
-                data,
-                session_start_id
-            )
-        )
-    except Exception:
-        pass
-
-
-def touch_shop_session(message: Message, data, sent_message=None):
-    if not data:
-        return
-
-    if sent_message:
-        data["last_shop_message_id"] = max(
-            int(data.get("last_shop_message_id") or 0),
-            int(sent_message.message_id)
-        )
-    else:
-        data["last_shop_message_id"] = max(
-            int(data.get("last_shop_message_id") or 0),
-            int(message.message_id)
-        )
-
-
-
-def remember_customer_action_message(data, message: Message):
-    if not data or not message:
-        return
-
-    message_ids = data.get("customer_action_message_ids", [])
-    message_ids.append(message.message_id)
-
-    if len(message_ids) > 80:
-        message_ids = message_ids[-80:]
-
-    data["customer_action_message_ids"] = message_ids
-    touch_shop_session(message, data)
-
-
-
-
-TEMP_MESSAGE_TTL_SECONDS = 30 * 60
-
-
-async def delete_temp_message_later(bot, chat_id, message_id, delay=TEMP_MESSAGE_TTL_SECONDS):
-    await asyncio.sleep(delay)
-
-    try:
-        await bot.delete_message(chat_id, message_id)
-    except Exception:
-        pass
-
-
-def remember_temp_message(data, sent_message):
-    if not data or not sent_message:
-        return
-
-    message_ids = data.get("temp_message_ids", [])
-    message_ids.append(sent_message.message_id)
-
-    if len(message_ids) > 50:
-        message_ids = message_ids[-50:]
-
-    data["temp_message_ids"] = message_ids
-
-    try:
-        asyncio.create_task(
-            delete_temp_message_later(
-                sent_message.bot,
-                sent_message.chat.id,
-                sent_message.message_id
-            )
-        )
-    except Exception:
-        pass
-
-
-async def cleanup_temp_messages(bot, chat_id, data):
-    if not data:
-        return
-
-    message_ids = data.get("temp_message_ids", [])
-
-    for message_id in message_ids:
-        try:
-            await bot.delete_message(chat_id, message_id)
-        except Exception:
-            pass
-
-    data["temp_message_ids"] = []
 
 
 # ================== PICKUP SETTINGS ==================
@@ -948,7 +927,6 @@ async def shop(message: Message):
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
     start_shop_session(message, users[uid])
-    remember_customer_action_message(users[uid], message)
 
     products = get_active_products()
 
@@ -971,7 +949,9 @@ async def shop(message: Message):
 @router.message(F.text == "⬅️ חזרה")
 async def back_main(message: Message):
     data = users.get(message.from_user.id)
-    await cleanup_temp_messages(message.bot, message.chat.id, data)
+    if data:
+        remember_customer_action_message(data, message)
+        await cleanup_shop_session_messages(message.bot, message.chat.id, data)
     users.pop(message.from_user.id, None)
     await message.answer(
         rtl("<b>↩️ חזרת לתפריט הראשי</b>"),
@@ -1011,11 +991,12 @@ async def show_cart(message: Message):
     uid = message.from_user.id
     data = users.setdefault(uid, {"cart": [], "step": None})
     remember_customer_action_message(data, message)
-    await message.answer(
+    sent_message = await message.answer(
         cart_text(data["cart"]),
         reply_markup=cart_keyboard(),
         parse_mode="HTML"
     )
+    touch_shop_session(message, data, sent_message)
 
 
 @router.message(F.text == "🧹 רוקן סל")
@@ -1025,6 +1006,7 @@ async def clear_cart(message: Message):
 
     if data:
         remember_customer_action_message(data, message)
+        await cleanup_shop_session_messages(message.bot, message.chat.id, data)
 
     if not data or not data.get("cart"):
         users[uid] = {"cart": [], "step": None}
@@ -1046,7 +1028,9 @@ async def clear_cart(message: Message):
 @router.message(F.text == "❌ בטל הזמנה")
 async def cancel_order(message: Message):
     data = users.get(message.from_user.id)
-    await cleanup_temp_messages(message.bot, message.chat.id, data)
+    if data:
+        remember_customer_action_message(data, message)
+        await cleanup_shop_session_messages(message.bot, message.chat.id, data)
     users.pop(message.from_user.id, None)
     await message.answer(
         rtl("<b>❌ ההזמנה בוטלה.</b>"),
@@ -1219,11 +1203,12 @@ async def submit_paid_order(message: Message, data):
     if saved_order:
         try:
             pdf_path = create_invoice_pdf(saved_order)
-            await message.answer_document(
+            pdf_message = await message.answer_document(
                 FSInputFile(pdf_path),
                 caption=rtl(f"📄 <b>סיכום הזמנה</b> {h(order_number)}"),
                 parse_mode="HTML"
             )
+            protect_message(data, pdf_message)
         except Exception:
             await message.answer(
                 rtl("<b>⚠️ ההזמנה נשמרה, אבל לא הצלחתי ליצור PDF כרגע.</b>"),
@@ -1232,6 +1217,7 @@ async def submit_paid_order(message: Message, data):
 
     await cleanup_temp_messages(message.bot, message.chat.id, data)
     await cleanup_shop_session_messages(message.bot, message.chat.id, data, message.message_id)
+    await cleanup_shop_session_messages(message.bot, message.chat.id, data)
     users.pop(uid, None)
 
     if is_pickup_order(data):
@@ -1251,11 +1237,12 @@ async def submit_paid_order(message: Message, data):
             f"{field('מספר הזמנה', order_number)}"
         )
 
-    await message.answer(
+    final_success_message = await message.answer(
         rtl(customer_success_text),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
+    protect_message(data, final_success_message)
 
 
 @router.message(F.text == "✅ אשר הזמנה")
