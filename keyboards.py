@@ -31,7 +31,7 @@ def admin_keyboard():
             [KeyboardButton(text="🔄 עדכן סטטוס הזמנה")],
             [KeyboardButton(text="➕ הוסף מוצר"), KeyboardButton(text="📦 רשימת מוצרים")],
             [KeyboardButton(text="✏️ שנה מחיר"), KeyboardButton(text="📝 שנה תיאור")],
-            [KeyboardButton(text="📊 עדכן מלאי"), KeyboardButton(text="➕ הוסף למלאי")],
+            [KeyboardButton(text="✏️ אפס והגדר מלאי חדש"), KeyboardButton(text="➕ הגדל מלאי קיים")],
             [KeyboardButton(text="🖼️ עדכן תמונה")],
             [KeyboardButton(text="🔴 כבה מוצר"), KeyboardButton(text="🟢 הפעל מוצר")],
             [KeyboardButton(text="🗑️ מחק מוצר")],
