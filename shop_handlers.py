@@ -320,6 +320,18 @@ def confirm_keyboard():
     )
 
 
+
+def payment_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✅ סימולציית תשלום הצליחה")],
+            [KeyboardButton(text="⬅️ חזרה לסיכום הזמנה")],
+            [KeyboardButton(text="❌ ביטול תשלום")]
+        ],
+        resize_keyboard=True
+    )
+
+
 def use_saved_details_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -747,36 +759,16 @@ async def checkout(message: Message):
         parse_mode="HTML"
     )
 
-@router.message(F.text == "✅ אשר הזמנה")
-async def confirm_order(message: Message):
+async def submit_paid_order(message: Message, data):
     uid = message.from_user.id
-    data = users.get(uid)
 
-    if data and data.get("order_submitting"):
+    if data.get("order_submitting"):
         await message.answer(
             rtl(
                 "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
-                "ההזמנה כבר נקלטה במערכת ונמצאת בטיפול.\n"
-                "אין צורך ללחוץ שוב על אישור הזמנה."
+                "ההזמנה כבר נקלטה במערכת ונמצאת בטיפול."
             ),
             reply_markup=main_keyboard(message.from_user.id),
-            parse_mode="HTML"
-        )
-        return
-
-    if not data or not data.get("cart"):
-        await message.answer(
-            rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard(message.from_user.id),
-            parse_mode="HTML"
-        )
-        return
-
-    required = ["name", "phone", "city", "street", "floor", "apartment", "delivery_price", "base_city", "fulfillment_type"]
-    if any(key not in data for key in required):
-        data["step"] = "name"
-        await message.answer(
-            rtl("<b>⚠️ חסרים פרטים להזמנה.</b>\n\nנרשום מחדש את הפרטים.\nמה השם המלא שלך?"),
             parse_mode="HTML"
         )
         return
@@ -851,7 +843,6 @@ async def confirm_order(message: Message):
             f"{field('כתובת', PICKUP_POINT_ADDRESS)}\n"
             f"{field('שעות איסוף', PICKUP_HOURS)}\n"
             f"{field('זמן הכנה משוער', PICKUP_PREP_TIME)}\n"
-            ""
         )
     else:
         address = f"{data['city']}, {data['street']}, קומה {data['floor']}, דירה {data['apartment']}"
@@ -866,10 +857,10 @@ async def confirm_order(message: Message):
         f"{field('מספר הזמנה', order_number)}\n\n"
         f"{field('שם לקוח', data['name'])}\n"
         f"{field('טלפון', data['phone'])}\n"
-        f"{fulfillment_admin_text}\n\n"
+        f"{fulfillment_admin_text}\n"
         f"{cart_text(data['cart']).replace(RTL, '')}\n\n"
         f"{field('משלוח', money(delivery_price))}\n"
-        f"{field('סה״כ לתשלום', money(final_total))}\n\n"
+        f"{field('סה״כ שולם', money(final_total))}\n\n"
         f"{field('Telegram ID', uid)}\n"
         f"{field('Telegram', message.from_user.full_name)}\n\n"
         f"<b>סטטוס:</b> 🆕 הזמנה חדשה"
@@ -904,7 +895,7 @@ async def confirm_order(message: Message):
         customer_success_text = (
             "<b>✅ ההזמנה התקבלה בהצלחה!</b>\n\n"
             "<b>🛍️ איסוף עצמי</b>\n\n"
-            "ברגע שההזמנה תהיה מוכנה, "
+            "כאשר ההזמנה תהיה מוכנה, "
             "תישלח אליך הודעה אוטומטית לאיסוף.\n\n"
             f"{field('מספר הזמנה', order_number)}"
         )
@@ -922,6 +913,62 @@ async def confirm_order(message: Message):
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
+
+
+@router.message(F.text == "✅ אשר הזמנה")
+async def confirm_order(message: Message):
+    uid = message.from_user.id
+    data = users.get(uid)
+
+    if not data or not data.get("cart"):
+        await message.answer(
+            rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
+            reply_markup=main_keyboard(message.from_user.id),
+            parse_mode="HTML"
+        )
+        return
+
+    required = ["name", "phone", "city", "street", "floor", "apartment", "delivery_price", "base_city", "fulfillment_type"]
+    if any(key not in data for key in required):
+        data["step"] = "name"
+        await message.answer(
+            rtl("<b>⚠️ חסרים פרטים להזמנה.</b>\n\nנרשום מחדש את הפרטים.\nמה השם המלא שלך?"),
+            parse_mode="HTML"
+        )
+        return
+
+    if data.get("order_submitting"):
+        await message.answer(
+            rtl(
+                "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
+                "ההזמנה כבר נקלטה במערכת ונמצאת בטיפול."
+            ),
+            reply_markup=main_keyboard(message.from_user.id),
+            parse_mode="HTML"
+        )
+        return
+
+    products_total = cart_total(data["cart"])
+    delivery_price = float(data["delivery_price"])
+    final_total = products_total + delivery_price
+
+    data["step"] = "payment_simulation"
+
+    order_type_text = "🛍️ איסוף עצמי" if is_pickup_order(data) else "🚚 משלוח עד הבית"
+
+    await message.answer(
+        rtl(
+            "<b>💳 תשלום הזמנה</b>\n\n"
+            f"{field('סוג הזמנה', order_type_text)}\n"
+            f"{field('סה״כ לתשלום', money(final_total))}\n\n"
+            "<b>מצב בדיקות:</b>\n"
+            "לחץ על ✅ סימולציית תשלום הצליחה כדי להמשיך.\n\n"
+            "בעתיד הכפתור הזה יוחלף בסליקה אמיתית."
+        ),
+        reply_markup=payment_keyboard(),
+        parse_mode="HTML"
+    )
+
 
 @router.message(F.text == "📞 שירות לקוחות")
 async def support(message: Message):
@@ -1127,6 +1174,37 @@ async def handle_shop(message: Message):
         return
 
     if not data:
+        return
+
+    if data.get("step") == "payment_simulation":
+        if txt == "✅ סימולציית תשלום הצליחה":
+            await submit_paid_order(message, data)
+            return
+
+        if txt == "⬅️ חזרה לסיכום הזמנה":
+            data["step"] = "confirm"
+            await message.answer(
+                build_order_summary(data),
+                reply_markup=order_summary_keyboard(data),
+                parse_mode="HTML",
+                disable_web_page_preview=True
+            )
+            return
+
+        if txt == "❌ ביטול תשלום":
+            data["step"] = "confirm"
+            await message.answer(
+                rtl("<b>❌ התשלום בוטל.</b>\n\nאפשר לחזור לסיכום ההזמנה או לבטל את ההזמנה."),
+                reply_markup=confirm_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        await message.answer(
+            rtl("<b>⚠️ בחר פעולה מתוך כפתורי התשלום בלבד.</b>"),
+            reply_markup=payment_keyboard(),
+            parse_mode="HTML"
+        )
         return
 
     if data.get("step") == "fulfillment_choice":
