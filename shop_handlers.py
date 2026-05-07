@@ -239,6 +239,13 @@ PICKUP_NAVIGATION_URL = "https://waze.com/ul/hsv8su3vur"
 
 PICKUP_CITY = "איסוף עצמי"
 PICKUP_BASE_CITY = "איסוף עצמי"
+# ================== STORE CONTACT SETTINGS ==================
+# פרטים שיוצגו ללקוח במקרה של הזמנה בכמות גדולה.
+# עדכן כאן את הטלפון ויוזר הטלגרם של החנות.
+STORE_CONTACT_PHONE = "054-7937503"
+STORE_CONTACT_TELEGRAM = "@Vendora"
+
+
 #קעקרערעק
 
 def h(text):
@@ -258,6 +265,16 @@ def money(value):
 
 def field(label, value):
     return f"<b>{h(label)}:</b> {h(value)}"
+
+
+
+def large_quantity_contact_text(max_qty):
+    return rtl(
+        "<b>⚠️ להזמנות בכמות גדולה יש ליצור קשר עם החנות.</b>\n\n"
+        f"{field('כמות מקסימלית להזמנה רגילה', str(max_qty) + ' יחידות')}\n"
+        f"{field('טלפון', STORE_CONTACT_PHONE)}\n"
+        f"{field('Telegram', STORE_CONTACT_TELEGRAM)}"
+    )
 
 
 
@@ -469,20 +486,17 @@ def saved_profile_text(profile):
 
 async def send_product_card(message: Message, product):
     stock = int(product.get("stock", 0))
-    configured_max_qty = int(product.get("max_qty", 100) or 100)
-    real_max_qty = min(stock, configured_max_qty)
 
     if stock <= 0:
-        stock_text = "<b>מלאי:</b> אזל מהמלאי"
+        stock_text = "<b>🔴 אזל מהמלאי</b>"
     else:
-        stock_text = f"<b>מלאי זמין:</b> {stock}"
+        stock_text = "<b>🟢 במלאי</b>"
 
     caption = rtl(
         f"<b>🛍️ {h(product['name'])}</b>\n\n"
         f"{h(product.get('description', ''))}\n\n"
         f"<b>מחיר:</b> {money(product['price'])}\n"
-        f"{stock_text}\n"
-        f"<b>כמות מקסימלית:</b> {h(real_max_qty)}"
+        f"{stock_text}"
     )
 
     image = product.get("image_file_id")
@@ -491,7 +505,6 @@ async def send_product_card(message: Message, product):
         await message.answer_photo(photo=image, caption=caption, parse_mode="HTML")
     else:
         await message.answer(caption, parse_mode="HTML")
-
 
 
 def set_pickup_details(data):
@@ -1210,8 +1223,7 @@ async def handle_shop(message: Message):
         await message.answer(
             rtl(
                 "<b>🔢 בחירת כמות</b>\n\n"
-                f"{field('כמות נבחרת', data['selected_qty'])}\n"
-                f"{field('זמין להזמנה כרגע', available_left)}\n\n"
+                f"{field('כמות נבחרת', data['selected_qty'])}\n\n"
                 "<b>המוצר יתווסף לסל רק לאחר לחיצה על 🛒 הוסף לסל.</b>"
             ),
             reply_markup=quantity_keyboard(data["selected_qty"], available_left, int(product.get("max_qty", 100))),
@@ -1673,15 +1685,18 @@ async def handle_shop(message: Message):
 
         if txt == "➕ יותר":
             if selected_qty >= max_allowed_now:
-                await message.answer(
-                    rtl(
-                        "<b>⚠️ לא ניתן להגדיל כמות מעבר למלאי הזמין.</b>\n\n"
-                        f"{field('כמות נבחרת', selected_qty)}\n"
-                        f"{field('זמין להזמנה כרגע', available_left)}"
-                    ),
-                    reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
-                    parse_mode="HTML"
-                )
+                if max_qty <= available_left and selected_qty >= max_qty:
+                    await message.answer(
+                        large_quantity_contact_text(max_qty),
+                        reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
+                        parse_mode="HTML"
+                    )
+                else:
+                    await message.answer(
+                        rtl("<b>⚠️ לא ניתן להגדיל כמות מעבר למלאי הזמין.</b>"),
+                        reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
+                        parse_mode="HTML"
+                    )
                 return
 
             selected_qty += 1
@@ -1690,8 +1705,7 @@ async def handle_shop(message: Message):
             await message.answer(
                 rtl(
                     "<b>🔢 בחירת כמות</b>\n\n"
-                    f"{field('כמות נבחרת', selected_qty)}\n"
-                    f"{field('זמין להזמנה כרגע', available_left)}\n\n"
+                    f"{field('כמות נבחרת', selected_qty)}\n\n"
                     "<b>המוצר יתווסף לסל רק לאחר לחיצה על 🛒 הוסף לסל.</b>"
                 ),
                 reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
@@ -1710,8 +1724,7 @@ async def handle_shop(message: Message):
             await message.answer(
                 rtl(
                     "<b>🔢 בחירת כמות</b>\n\n"
-                    f"{field('כמות נבחרת', selected_qty)}\n"
-                    f"{field('זמין להזמנה כרגע', available_left)}\n\n"
+                    f"{field('כמות נבחרת', selected_qty)}\n\n"
                     "<b>המוצר יתווסף לסל רק לאחר לחיצה על 🛒 הוסף לסל.</b>"
                 ),
                 reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
@@ -1723,8 +1736,7 @@ async def handle_shop(message: Message):
             await message.answer(
                 rtl(
                     "<b>🔢 בחירת כמות</b>\n\n"
-                    f"{field('כמות נבחרת', selected_qty)}\n"
-                    f"{field('זמין להזמנה כרגע', available_left)}\n\n"
+                    f"{field('כמות נבחרת', selected_qty)}\n\n"
                     "<b>המוצר יתווסף לסל רק לאחר לחיצה על 🛒 הוסף לסל.</b>"
                 ),
                 reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
@@ -1752,7 +1764,7 @@ async def handle_shop(message: Message):
 
         if qty > max_qty:
             await message.answer(
-                rtl(f"<b>⚠️ ניתן להזמין עד {max_qty} יחידות מהמוצר הזה.</b>"),
+                large_quantity_contact_text(max_qty),
                 reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
                 parse_mode="HTML"
             )
