@@ -1038,9 +1038,11 @@ async def quantity_inline_action(callback: CallbackQuery):
     uid = callback.from_user.id
     data = users.get(uid)
 
-    if not data or data.get("step") != "qty" or not data.get("selected_product"):
+    if not data or data.get("step") not in {"qty", "qty_manual"} or not data.get("selected_product"):
         await callback.answer("אין מוצר פעיל לבחירת כמות.", show_alert=True)
         return
+
+    data["step"] = "qty"
 
     action = (callback.data or "").split(":", 1)[1]
     product = data.get("selected_product")
