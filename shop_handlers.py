@@ -482,7 +482,7 @@ async def send_product_card(message: Message, product):
         f"{h(product.get('description', ''))}\n\n"
         f"<b>מחיר:</b> {money(product['price'])}\n"
         f"{stock_text}\n"
-        f"<b>מקסימום להזמנה:</b> {h(real_max_qty)}"
+        f"<b>כמות מקסימלית:</b> {h(real_max_qty)}"
     )
 
     image = product.get("image_file_id")
