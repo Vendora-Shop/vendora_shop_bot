@@ -579,6 +579,101 @@ def order_summary_keyboard(data):
     return confirm_keyboard()
 
 
+
+def is_free_text_allowed_step(step):
+    return step in {
+        "name",
+        "phone",
+        "city",
+        "street",
+        "floor",
+        "apartment",
+        "qty_manual",
+        "support",
+        "add_address_label",
+        "add_address_city",
+        "add_address_street",
+        "add_address_floor",
+        "add_address_apartment",
+    }
+
+
+def expected_keyboard_for_step(data):
+    step = data.get("step") if data else None
+
+    if step == "browse_products":
+        return categories_keyboard()
+
+    if step == "qty":
+        selected_qty = int(data.get("selected_qty", 1))
+        return quantity_inline_keyboard(selected_qty)
+
+    if step == "cart":
+        return cart_keyboard()
+
+    if step == "payment_simulation":
+        return payment_keyboard()
+
+    if step == "fulfillment_choice":
+        return fulfillment_keyboard()
+
+    if step == "saved_profile_choice":
+        return use_saved_details_keyboard()
+
+    if step == "confirm":
+        return confirm_keyboard()
+
+    if step == "my_orders":
+        return my_orders_keyboard()
+
+    if step == "addresses_menu":
+        return addresses_menu_keyboard()
+
+    if step == "address_profile":
+        return address_actions_keyboard()
+
+    return main_keyboard()
+
+
+def is_system_button(text):
+    text = str(text or "").strip()
+
+    system_buttons = {
+        "🛒 חנות",
+        "🛒 הסל שלי",
+        "📦 ההזמנות שלי",
+        "🏠 הכתובות שלי",
+        "👤 הפרטים שלי",
+        "📞 שירות לקוחות",
+        "⬅️ חזרה",
+        "⬅️ חזרה לקטגוריות",
+        "⬅️ חזרה לתפריט",
+        "➕ הוסף עוד מוצר",
+        "✅ המשך להזמנה",
+        "🧹 רוקן סל",
+        "❌ בטל הזמנה",
+        "✅ אשר הזמנה",
+        "✏️ שנה פרטים",
+        "🚚 משלוח עד הבית",
+        "🛍️ איסוף עצמי מהחנות",
+        "✅ השתמש בפרטים השמורים",
+        "✏️ הזן פרטים חדשים",
+        "✅ סימולציית תשלום הצליחה",
+        "⬅️ חזרה לסיכום הזמנה",
+        "❌ ביטול תשלום",
+        "🔁 הזמן שוב",
+        "⬅️ חזרה להזמנות שלי",
+        "📋 הצג כתובות",
+        "➕ הוסף כתובת",
+        "🗑️ מחק כתובת",
+        "⬅️ חזרה לכתובות",
+        "⬅️ חזרה לרשימת כתובות",
+    }
+
+    return text in system_buttons
+
+
+
 async def send_pickup_navigation_if_needed(message, data):
     # הניווט מוצג בתוך סיכום ההזמנה עצמו,
     # לכן לא שולחים הודעה נפרדת כדי לא לבלבל את הלקוח.
@@ -1332,6 +1427,28 @@ async def handle_shop(message: Message):
     data = users.get(uid)
 
     products = get_active_products()
+
+    if data and not is_free_text_allowed_step(data.get("step")) and not is_system_button(txt):
+        product_names = set()
+        for items in products.values():
+            for product_item in items:
+                product_names.add(product_item.get("name"))
+
+        if txt not in products and txt not in product_names:
+            await message.answer(
+                rtl("<b>⚠️ בחר פעולה מתוך הכפתורים בלבד.</b>"),
+                reply_markup=expected_keyboard_for_step(data),
+                parse_mode="HTML"
+            )
+            return
+
+    if not data and not is_system_button(txt) and txt not in products:
+        await message.answer(
+            rtl("<b>⚠️ בחר פעולה מתוך הכפתורים בלבד.</b>"),
+            reply_markup=main_keyboard(message.from_user.id),
+            parse_mode="HTML"
+        )
+        return
 
     if txt in products:
         users.setdefault(uid, {"cart": [], "step": None})
