@@ -328,16 +328,14 @@ def cart_keyboard():
 
 
 def quantity_keyboard(selected_qty, available_left, max_qty):
+    selected_qty = int(selected_qty)
+
     keyboard = [
         [
-            KeyboardButton(text="➖ פחות"),
-            KeyboardButton(text="➕ יותר")
+            KeyboardButton(text="➖"),
+            KeyboardButton(text=f"כמות: {selected_qty}"),
+            KeyboardButton(text="➕")
         ],
-        [
-            KeyboardButton(text="➕ 5"),
-            KeyboardButton(text="➕ 10")
-        ],
-        [KeyboardButton(text="✏️ הזן כמות מדויקת")],
         [KeyboardButton(text="🛒 הוסף לסל")],
         [KeyboardButton(text="🛒 הסל שלי")],
         [KeyboardButton(text="⬅️ חזרה לקטגוריות")]
@@ -493,9 +491,9 @@ async def send_product_card(message: Message, product):
     stock = int(product.get("stock", 0))
 
     if stock <= 0:
-        stock_text = "<b>אזל מהמלאי 🔴</b>"
+        stock_text = "<b>🔴 אזל מהמלאי</b>"
     else:
-        stock_text = "<b>במלאי 🟢</b>"
+        stock_text = "<b>🟢 במלאי</b>"
 
     caption = rtl(
         f"<b>🛍️ {h(product['name'])}</b>\n\n"
@@ -1769,14 +1767,8 @@ async def handle_shop(message: Message):
             selected_qty = max_allowed_now
             data["selected_qty"] = selected_qty
 
-        if txt in {"➕ יותר", "➕ 5", "➕ 10"}:
-            step_qty = 1
-            if txt == "➕ 5":
-                step_qty = 5
-            elif txt == "➕ 10":
-                step_qty = 10
-
-            requested_qty = selected_qty + step_qty
+        if txt == "➕":
+            requested_qty = selected_qty + 1
 
             if requested_qty > max_allowed_now:
                 if max_qty <= available_left and selected_qty >= max_qty:
@@ -1810,7 +1802,7 @@ async def handle_shop(message: Message):
             )
             return
 
-        if txt == "✏️ הזן כמות מדויקת":
+        if txt.startswith("כמות:"):
             data["step"] = "qty_manual"
             await message.answer(
                 rtl(
@@ -1821,7 +1813,7 @@ async def handle_shop(message: Message):
             )
             return
 
-        if txt == "➖ פחות":
+        if txt == "➖":
             if selected_qty <= 1:
                 selected_qty = 1
             else:
