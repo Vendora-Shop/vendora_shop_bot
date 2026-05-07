@@ -25,32 +25,6 @@ from pdf_generator import create_invoice_pdf
 router = Router()
 
 
-async def cleanup_previous_messages(bot, chat_id, state):
-    data = await state.get_data()
-    old_messages = data.get("cleanup_messages", [])
-
-    for msg_id in old_messages[-8:]:
-        try:
-            await bot.delete_message(chat_id, msg_id)
-        except Exception:
-            pass
-
-    await state.update_data(cleanup_messages=[])
-
-
-async def register_cleanup_message(state, message_id):
-    data = await state.get_data()
-    old_messages = data.get("cleanup_messages", [])
-
-    old_messages.append(message_id)
-
-    if len(old_messages) > 15:
-        old_messages = old_messages[-15:]
-
-    await state.update_data(cleanup_messages=old_messages)
-
-
-
 # ================== SAVED ADDRESSES UI ==================
 def format_address(address):
     return (
@@ -253,6 +227,31 @@ async def start(message: Message):
 users = {}
 
 RTL = "\u200F"
+
+
+async def delete_customer_message(message: Message):
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+
+async def send_limited_warning(message: Message, data, text):
+    last_warning_id = data.get("last_warning_message_id")
+
+    if last_warning_id:
+        try:
+            await message.bot.delete_message(message.chat.id, last_warning_id)
+        except Exception:
+            pass
+
+    warning = await message.answer(
+        rtl(text),
+        parse_mode="HTML"
+    )
+
+    data["last_warning_message_id"] = warning.message_id
+
 
 # ================== PICKUP SETTINGS ==================
 # כאן מגדירים את כל פרטי האיסוף העצמי.
@@ -931,6 +930,8 @@ async def checkout(message: Message):
         return
 
     data["step"] = "fulfillment_choice"
+    data.pop("last_warning_message_id", None)
+    data.pop("qty_warning_sent", None)
     data["saved_profile"] = get_customer_profile(uid)
 
     await message.answer(
@@ -1543,6 +1544,8 @@ async def handle_shop(message: Message):
         data["step"] = "qty"
 
         data["selected_qty"] = 1
+        data["qty_warning_sent"] = False
+        data.pop("last_warning_message_id", None)
 
         await message.answer(
             rtl(
@@ -2161,7 +2164,7 @@ async def handle_shop(message: Message):
             except Exception:
                 pass
 
-            data = await state.get_data()
+            data = data
 
             if not data.get("qty_warning_sent"):
                 warn_msg = await message.answer(
@@ -2169,8 +2172,8 @@ async def handle_shop(message: Message):
                     parse_mode="HTML"
                 )
 
-                await register_cleanup_message(state, warn_msg.message_id)
-                await state.update_data(qty_warning_sent=True)
+                data["last_warning_message_id"] = warn_msg.message_id
+                data["qty_warning_sent"] = True
 
             return
 
