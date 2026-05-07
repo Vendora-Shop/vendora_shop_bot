@@ -2,6 +2,7 @@ from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from html import escape
+import asyncio
 
 from config import ADMIN_ID
 from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard
@@ -234,6 +235,58 @@ async def delete_customer_message(message: Message):
         await message.delete()
     except Exception:
         pass
+
+
+
+TEMP_MESSAGE_TTL_SECONDS = 30 * 60
+
+
+async def delete_temp_message_later(bot, chat_id, message_id, delay=TEMP_MESSAGE_TTL_SECONDS):
+    await asyncio.sleep(delay)
+
+    try:
+        await bot.delete_message(chat_id, message_id)
+    except Exception:
+        pass
+
+
+def remember_temp_message(data, sent_message):
+    if not data or not sent_message:
+        return
+
+    message_ids = data.get("temp_message_ids", [])
+    message_ids.append(sent_message.message_id)
+
+    if len(message_ids) > 50:
+        message_ids = message_ids[-50:]
+
+    data["temp_message_ids"] = message_ids
+
+    try:
+        asyncio.create_task(
+            delete_temp_message_later(
+                sent_message.bot,
+                sent_message.chat.id,
+                sent_message.message_id
+            )
+        )
+    except Exception:
+        pass
+
+
+async def cleanup_temp_messages(bot, chat_id, data):
+    if not data:
+        return
+
+    message_ids = data.get("temp_message_ids", [])
+
+    for message_id in message_ids:
+        try:
+            await bot.delete_message(chat_id, message_id)
+        except Exception:
+            pass
+
+    data["temp_message_ids"] = []
 
 
 # ================== PICKUP SETTINGS ==================
@@ -531,9 +584,11 @@ async def send_product_card(message: Message, product):
     image = product.get("image_file_id")
 
     if image:
-        await message.answer_photo(photo=image, caption=caption, parse_mode="HTML")
+        sent_message = await message.answer_photo(photo=image, caption=caption, parse_mode="HTML")
     else:
-        await message.answer(caption, parse_mode="HTML")
+        sent_message = await message.answer(caption, parse_mode="HTML")
+
+    return sent_message
 
 
 def set_pickup_details(data):
@@ -796,6 +851,8 @@ async def shop(message: Message):
 
 @router.message(F.text == "⬅️ חזרה")
 async def back_main(message: Message):
+    data = users.get(message.from_user.id)
+    await cleanup_temp_messages(message.bot, message.chat.id, data)
     users.pop(message.from_user.id, None)
     await message.answer(
         rtl("<b>↩️ חזרת לתפריט הראשי</b>"),
@@ -863,6 +920,8 @@ async def clear_cart(message: Message):
 
 @router.message(F.text == "❌ בטל הזמנה")
 async def cancel_order(message: Message):
+    data = users.get(message.from_user.id)
+    await cleanup_temp_messages(message.bot, message.chat.id, data)
     users.pop(message.from_user.id, None)
     await message.answer(
         rtl("<b>❌ ההזמנה בוטלה.</b>"),
@@ -1045,6 +1104,7 @@ async def submit_paid_order(message: Message, data):
                 parse_mode="HTML"
             )
 
+    await cleanup_temp_messages(message.bot, message.chat.id, data)
     users.pop(uid, None)
 
     if is_pickup_order(data):
@@ -1267,11 +1327,12 @@ async def quantity_inline_action(callback: CallbackQuery):
         data.pop("selected_product", None)
         data.pop("selected_qty", None)
 
-        await callback.message.answer(
+        cart_message = await callback.message.answer(
             cart_text(data["cart"], title="✅ נוסף לסל"),
             reply_markup=cart_keyboard(),
             parse_mode="HTML"
         )
+        remember_temp_message(data, cart_message)
         await callback.answer("המוצר נוסף לסל.")
         return
 
@@ -1491,14 +1552,15 @@ async def handle_shop(message: Message):
             )
             return
 
-        await send_product_card(message, product)
+        product_card_message = await send_product_card(message, product)
+        remember_temp_message(data, product_card_message)
 
         data["selected_product"] = product
         data["step"] = "qty"
 
         data["selected_qty"] = 1
 
-        await message.answer(
+        quantity_message = await message.answer(
             rtl(
                 "<b>🔢 בחירת כמות</b>\n\n"
                 f"{field('כמות נבחרת', data['selected_qty'])}\n\n"
@@ -1510,6 +1572,7 @@ async def handle_shop(message: Message):
             reply_markup=quantity_inline_keyboard(data["selected_qty"]),
             parse_mode="HTML"
         )
+        remember_temp_message(data, quantity_message)
         return
 
     if not data:
