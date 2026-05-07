@@ -335,180 +335,6 @@ async def cleanup_shop_session_later(bot, chat_id, data, session_message_id):
 
 
 
-async def delete_customer_message(message: Message):
-    try:
-        await message.delete()
-    except Exception:
-        pass
-
-
-SHOP_SESSION_MAX_DELETE_RANGE = 120
-SHOP_SESSION_TTL_SECONDS = 30 * 60
-
-
-async def cleanup_shop_session_messages(bot, chat_id, data, last_message_id=None):
-    if not data:
-        return
-
-    start_id = data.get("shop_session_start_message_id")
-
-    if not start_id:
-        return
-
-    if last_message_id is None:
-        last_message_id = data.get("last_shop_message_id") or start_id
-
-    start_id = int(start_id)
-    last_message_id = int(last_message_id)
-
-    if last_message_id < start_id:
-        return
-
-    customer_action_ids = data.get("customer_action_message_ids", [])
-
-    for message_id in customer_action_ids:
-        try:
-            await bot.delete_message(chat_id, message_id)
-        except Exception:
-            pass
-
-    if last_message_id - start_id > SHOP_SESSION_MAX_DELETE_RANGE:
-        start_id = last_message_id - SHOP_SESSION_MAX_DELETE_RANGE
-
-    for message_id in range(start_id, last_message_id + 1):
-        try:
-            await bot.delete_message(chat_id, message_id)
-        except Exception:
-            pass
-
-    data.pop("shop_session_start_message_id", None)
-    data.pop("last_shop_message_id", None)
-    data.pop("customer_action_message_ids", None)
-
-
-async def cleanup_shop_session_later(bot, chat_id, data, session_start_id):
-    await asyncio.sleep(SHOP_SESSION_TTL_SECONDS)
-
-    if not data:
-        return
-
-    if data.get("shop_session_start_message_id") != session_start_id:
-        return
-
-    await cleanup_shop_session_messages(
-        bot,
-        chat_id,
-        data,
-        data.get("last_shop_message_id") or session_start_id
-    )
-
-
-def start_shop_session(message: Message, data):
-    if not data:
-        return
-
-    data["shop_session_start_message_id"] = message.message_id
-    data["last_shop_message_id"] = message.message_id
-
-    session_start_id = message.message_id
-
-    try:
-        asyncio.create_task(
-            cleanup_shop_session_later(
-                message.bot,
-                message.chat.id,
-                data,
-                session_start_id
-            )
-        )
-    except Exception:
-        pass
-
-
-def touch_shop_session(message: Message, data, sent_message=None):
-    if not data:
-        return
-
-    if sent_message:
-        data["last_shop_message_id"] = max(
-            int(data.get("last_shop_message_id") or 0),
-            int(sent_message.message_id)
-        )
-    else:
-        data["last_shop_message_id"] = max(
-            int(data.get("last_shop_message_id") or 0),
-            int(message.message_id)
-        )
-
-
-
-def remember_customer_action_message(data, message: Message):
-    if not data or not message:
-        return
-
-    message_ids = data.get("customer_action_message_ids", [])
-    message_ids.append(message.message_id)
-
-    if len(message_ids) > 80:
-        message_ids = message_ids[-80:]
-
-    data["customer_action_message_ids"] = message_ids
-    touch_shop_session(message, data)
-
-
-
-
-TEMP_MESSAGE_TTL_SECONDS = 30 * 60
-
-
-async def delete_temp_message_later(bot, chat_id, message_id, delay=TEMP_MESSAGE_TTL_SECONDS):
-    await asyncio.sleep(delay)
-
-    try:
-        await bot.delete_message(chat_id, message_id)
-    except Exception:
-        pass
-
-
-def remember_temp_message(data, sent_message):
-    if not data or not sent_message:
-        return
-
-    message_ids = data.get("temp_message_ids", [])
-    message_ids.append(sent_message.message_id)
-
-    if len(message_ids) > 50:
-        message_ids = message_ids[-50:]
-
-    data["temp_message_ids"] = message_ids
-
-    try:
-        asyncio.create_task(
-            delete_temp_message_later(
-                sent_message.bot,
-                sent_message.chat.id,
-                sent_message.message_id
-            )
-        )
-    except Exception:
-        pass
-
-
-async def cleanup_temp_messages(bot, chat_id, data):
-    if not data:
-        return
-
-    message_ids = data.get("temp_message_ids", [])
-
-    for message_id in message_ids:
-        try:
-            await bot.delete_message(chat_id, message_id)
-        except Exception:
-            pass
-
-    data["temp_message_ids"] = []
-
-
 # ================== PICKUP SETTINGS ==================
 # כאן מגדירים את כל פרטי האיסוף העצמי.
 # אם בעתיד תרצה לשנות כתובת / שעות / ניווט — משנים רק כאן.
@@ -1088,27 +914,37 @@ async def back_main(message: Message):
 async def back_categories(message: Message):
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
-    remember_customer_action_message(users[uid], message)
-    users[uid]["step"] = None
-    await message.answer(
+    data = users[uid]
+
+    remember_customer_action_message(data, message)
+    await cleanup_shop_session_messages(message.bot, message.chat.id, data)
+    start_shop_session(message, data)
+
+    data["step"] = None
+    sent_message = await message.answer(
         rtl("<b>📂 קטגוריות</b>\n\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
-
+    touch_shop_session(message, data, sent_message)
 
 @router.message(F.text == "➕ הוסף עוד מוצר")
 async def add_more(message: Message):
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
-    remember_customer_action_message(users[uid], message)
-    users[uid]["step"] = None
-    await message.answer(
+    data = users[uid]
+
+    remember_customer_action_message(data, message)
+    await cleanup_shop_session_messages(message.bot, message.chat.id, data)
+    start_shop_session(message, data)
+
+    data["step"] = None
+    sent_message = await message.answer(
         rtl("<b>➕ הוספת מוצר</b>\n\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
-
+    touch_shop_session(message, data, sent_message)
 
 @router.message(F.text == "🛒 הסל שלי")
 async def show_cart(message: Message):
@@ -1566,12 +1402,15 @@ async def quantity_inline_action(callback: CallbackQuery):
         data.pop("selected_product", None)
         data.pop("selected_qty", None)
 
+        await cleanup_shop_session_messages(callback.message.bot, callback.message.chat.id, data)
+        start_shop_session(callback.message, data)
+
         cart_message = await callback.message.answer(
             cart_text(data["cart"], title="✅ נוסף לסל"),
             reply_markup=cart_keyboard(),
             parse_mode="HTML"
         )
-        remember_temp_message(data, cart_message)
+        touch_shop_session(callback.message, data, cart_message)
         await callback.answer("המוצר נוסף לסל.")
         return
 
@@ -1743,6 +1582,9 @@ async def handle_shop(message: Message):
 
     if txt in products:
         users.setdefault(uid, {"cart": [], "step": None})
+        await cleanup_shop_session_messages(message.bot, message.chat.id, users[uid])
+        start_shop_session(message, users[uid])
+
         users[uid]["step"] = None
         sent_message = await message.answer(
             rtl(f"<b>📂 {h(txt)}</b>\n\nבחר מוצר:"),
@@ -1795,8 +1637,11 @@ async def handle_shop(message: Message):
             )
             return
 
+        await cleanup_shop_session_messages(message.bot, message.chat.id, data)
+        start_shop_session(message, data)
+
         product_card_message = await send_product_card(message, product)
-        remember_temp_message(data, product_card_message)
+        touch_shop_session(message, data, product_card_message)
 
         data["selected_product"] = product
         data["step"] = "qty"
@@ -1815,7 +1660,7 @@ async def handle_shop(message: Message):
             reply_markup=quantity_inline_keyboard(data["selected_qty"]),
             parse_mode="HTML"
         )
-        remember_temp_message(data, quantity_message)
+        touch_shop_session(message, data, quantity_message)
         return
 
     if not data:
