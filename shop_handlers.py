@@ -895,7 +895,7 @@ async def submit_paid_order(message: Message, data):
         customer_success_text = (
             "<b>✅ ההזמנה התקבלה בהצלחה!</b>\n\n"
             "<b>🛍️ איסוף עצמי</b>\n\n"
-            "כאשר ההזמנה תהיה מוכנה, "
+            "ברגע שההזמנה תהיה מוכנה, "
             "תישלח אליך הודעה אוטומטית לאיסוף.\n\n"
             f"{field('מספר הזמנה', order_number)}"
         )
@@ -903,7 +903,7 @@ async def submit_paid_order(message: Message, data):
         customer_success_text = (
             "<b>✅ ההזמנה התקבלה בהצלחה!</b>\n\n"
             "<b>🚚 משלוח</b>\n\n"
-            "כאשר ההזמנה תאושר ותצא למשלוח, "
+            "ברגע שההזמנה תאושר ותצא למשלוח, "
             "תישלח אליך הודעה אוטומטית.\n\n"
             f"{field('מספר הזמנה', order_number)}"
         )
