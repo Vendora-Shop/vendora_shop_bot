@@ -199,8 +199,810 @@ def clone_cart_from_order(order):
     return cloned_cart, unavailable_products
 
 
+users = {}
+
+RTL = "\u200F"
 
 
+# ================== SMART CLEANUP ==================
+# ניקוי הודעות זמניות בלבד. לא מיועד למחוק PDF / אישור הזמנה / הודעות סטטוס.
+SHOP_CLEANUP_TTL_SECONDS = 30 * 60
+SHOP_CLEANUP_MAX_MESSAGES = 250
+
+
+async def delete_customer_message(message: Message):
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+
+def remember_cleanup_message(data, message_or_id):
+    if not data or not message_or_id:
+        return
+
+    message_id = message_or_id
+    if hasattr(message_or_id, "message_id"):
+        message_id = message_or_id.message_id
+
+    try:
+        message_id = int(message_id)
+    except Exception:
+        return
+
+    protected = set(data.get("protected_message_ids", []))
+    if message_id in protected:
+        return
+
+    ids = data.get("cleanup_message_ids", [])
+    if message_id not in ids:
+        ids.append(message_id)
+
+    if len(ids) > SHOP_CLEANUP_MAX_MESSAGES:
+        ids = ids[-SHOP_CLEANUP_MAX_MESSAGES:]
+
+    data["cleanup_message_ids"] = ids
+
+
+def protect_message(data, message_or_id):
+    if not data or not message_or_id:
+        return
+
+    message_id = message_or_id
+    if hasattr(message_or_id, "message_id"):
+        message_id = message_or_id.message_id
+
+    try:
+        message_id = int(message_id)
+    except Exception:
+        return
+
+    protected = data.get("protected_message_ids", [])
+    if message_id not in protected:
+        protected.append(message_id)
+
+    data["protected_message_ids"] = protected
+
+
+def start_shop_session(message: Message, data):
+    if not data:
+        return
+
+    data["shop_session_active"] = True
+    remember_cleanup_message(data, message)
+
+    try:
+        asyncio.create_task(
+            cleanup_shop_session_later(
+                message.bot,
+                message.chat.id,
+                data,
+                message.message_id
+            )
+        )
+    except Exception:
+        pass
+
+
+def touch_shop_session(message: Message, data, sent_message=None):
+    if not data:
+        return
+
+    if message:
+        remember_cleanup_message(data, message)
+
+    if sent_message:
+        remember_cleanup_message(data, sent_message)
+
+
+def remember_customer_action_message(data, message: Message):
+    touch_shop_session(message, data)
+
+
+async def cleanup_shop_session_messages(bot, chat_id, data, last_message_id=None):
+    if not data:
+        return
+
+    protected = set(data.get("protected_message_ids", []))
+    ids = list(dict.fromkeys(data.get("cleanup_message_ids", [])))
+
+    for message_id in ids:
+        if message_id in protected:
+            continue
+
+        try:
+            await bot.delete_message(chat_id, int(message_id))
+        except Exception:
+            pass
+
+    data["cleanup_message_ids"] = []
+    data["shop_session_active"] = False
+
+
+async def cleanup_shop_session_later(bot, chat_id, data, session_message_id):
+    await asyncio.sleep(SHOP_CLEANUP_TTL_SECONDS)
+
+    if not data:
+        return
+
+    if not data.get("shop_session_active"):
+        return
+
+    if session_message_id not in data.get("cleanup_message_ids", []):
+        return
+
+    await cleanup_shop_session_messages(bot, chat_id, data)
+
+
+
+async def delete_customer_message(message: Message):
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+
+SHOP_SESSION_MAX_DELETE_RANGE = 120
+SHOP_SESSION_TTL_SECONDS = 30 * 60
+
+
+async def cleanup_shop_session_messages(bot, chat_id, data, last_message_id=None):
+    if not data:
+        return
+
+    start_id = data.get("shop_session_start_message_id")
+
+    if not start_id:
+        return
+
+    if last_message_id is None:
+        last_message_id = data.get("last_shop_message_id") or start_id
+
+    start_id = int(start_id)
+    last_message_id = int(last_message_id)
+
+    if last_message_id < start_id:
+        return
+
+    customer_action_ids = data.get("customer_action_message_ids", [])
+
+    for message_id in customer_action_ids:
+        try:
+            await bot.delete_message(chat_id, message_id)
+        except Exception:
+            pass
+
+    if last_message_id - start_id > SHOP_SESSION_MAX_DELETE_RANGE:
+        start_id = last_message_id - SHOP_SESSION_MAX_DELETE_RANGE
+
+    for message_id in range(start_id, last_message_id + 1):
+        try:
+            await bot.delete_message(chat_id, message_id)
+        except Exception:
+            pass
+
+    data.pop("shop_session_start_message_id", None)
+    data.pop("last_shop_message_id", None)
+    data.pop("customer_action_message_ids", None)
+
+
+async def cleanup_shop_session_later(bot, chat_id, data, session_start_id):
+    await asyncio.sleep(SHOP_SESSION_TTL_SECONDS)
+
+    if not data:
+        return
+
+    if data.get("shop_session_start_message_id") != session_start_id:
+        return
+
+    await cleanup_shop_session_messages(
+        bot,
+        chat_id,
+        data,
+        data.get("last_shop_message_id") or session_start_id
+    )
+
+
+def start_shop_session(message: Message, data):
+    if not data:
+        return
+
+    data["shop_session_start_message_id"] = message.message_id
+    data["last_shop_message_id"] = message.message_id
+
+    session_start_id = message.message_id
+
+    try:
+        asyncio.create_task(
+            cleanup_shop_session_later(
+                message.bot,
+                message.chat.id,
+                data,
+                session_start_id
+            )
+        )
+    except Exception:
+        pass
+
+
+def touch_shop_session(message: Message, data, sent_message=None):
+    if not data:
+        return
+
+    if sent_message:
+        data["last_shop_message_id"] = max(
+            int(data.get("last_shop_message_id") or 0),
+            int(sent_message.message_id)
+        )
+    else:
+        data["last_shop_message_id"] = max(
+            int(data.get("last_shop_message_id") or 0),
+            int(message.message_id)
+        )
+
+
+
+def remember_customer_action_message(data, message: Message):
+    if not data or not message:
+        return
+
+    message_ids = data.get("customer_action_message_ids", [])
+    message_ids.append(message.message_id)
+
+    if len(message_ids) > 80:
+        message_ids = message_ids[-80:]
+
+    data["customer_action_message_ids"] = message_ids
+    touch_shop_session(message, data)
+
+
+
+
+TEMP_MESSAGE_TTL_SECONDS = 30 * 60
+
+
+async def delete_temp_message_later(bot, chat_id, message_id, delay=TEMP_MESSAGE_TTL_SECONDS):
+    await asyncio.sleep(delay)
+
+    try:
+        await bot.delete_message(chat_id, message_id)
+    except Exception:
+        pass
+
+
+def remember_temp_message(data, sent_message):
+    if not data or not sent_message:
+        return
+
+    message_ids = data.get("temp_message_ids", [])
+    message_ids.append(sent_message.message_id)
+
+    if len(message_ids) > 50:
+        message_ids = message_ids[-50:]
+
+    data["temp_message_ids"] = message_ids
+
+    try:
+        asyncio.create_task(
+            delete_temp_message_later(
+                sent_message.bot,
+                sent_message.chat.id,
+                sent_message.message_id
+            )
+        )
+    except Exception:
+        pass
+
+
+async def cleanup_temp_messages(bot, chat_id, data):
+    if not data:
+        return
+
+    message_ids = data.get("temp_message_ids", [])
+
+    for message_id in message_ids:
+        try:
+            await bot.delete_message(chat_id, message_id)
+        except Exception:
+            pass
+
+    data["temp_message_ids"] = []
+
+
+# ================== PICKUP SETTINGS ==================
+# כאן מגדירים את כל פרטי האיסוף העצמי.
+# אם בעתיד תרצה לשנות כתובת / שעות / ניווט — משנים רק כאן.
+PICKUP_POINT_NAME = "Vendora"
+PICKUP_POINT_ADDRESS = "אשדוד - הבנאים 2"
+PICKUP_PREP_TIME = "כ־30 דקות"
+PICKUP_HOURS = "א׳-ה׳ 10:00-19:00, ו׳ 09:00-13:00"
+PICKUP_NAVIGATION_URL = "https://waze.com/ul/hsv8su3vur"
+
+PICKUP_CITY = "איסוף עצמי"
+PICKUP_BASE_CITY = "איסוף עצמי"
+# ================== STORE CONTACT SETTINGS ==================
+# פרטים שיוצגו ללקוח במקרה של הזמנה בכמות גדולה.
+# עדכן כאן את הטלפון ויוזר הטלגרם של החנות.
+STORE_CONTACT_PHONE = "054-7937503"
+STORE_CONTACT_TELEGRAM = "@Vendora"
+
+
+#קעקרערעק
+
+def h(text):
+    return escape(str(text))
+
+
+def rtl(text):
+    return RTL + str(text)
+
+
+def money(value):
+    value = float(value)
+    if value.is_integer():
+        return f"{int(value)}₪"
+    return f"{value:g}₪"
+
+
+def field(label, value):
+    return f"<b>{h(label)}:</b> {h(value)}"
+
+
+
+def large_quantity_contact_text(max_qty):
+    return rtl(
+        "<b>⚠️ להזמנות בכמות גדולה יש ליצור קשר עם החנות.</b>\n\n"
+        f"{field('כמות מקסימלית להזמנה רגילה', str(max_qty) + ' יחידות')}\n"
+        f"{field('טלפון', STORE_CONTACT_PHONE)}\n"
+        f"{field('Telegram', STORE_CONTACT_TELEGRAM)}"
+    )
+
+
+
+
+def admin_new_order_keyboard(order_number):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ אשר הזמנה", callback_data=f"order_action:approve:{order_number}"),
+                InlineKeyboardButton(text="❌ בטל", callback_data=f"order_action:cancel:{order_number}")
+            ]
+        ]
+    )
+
+
+def categories_keyboard():
+    products = get_active_products()
+    keyboard = [[KeyboardButton(text=cat)] for cat in products.keys()]
+    keyboard.append([KeyboardButton(text="🛒 הסל שלי")])
+    keyboard.append([KeyboardButton(text="⬅️ חזרה")])
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+
+def products_keyboard(category):
+    products = get_active_products()
+    keyboard = []
+
+    for product in products.get(category, []):
+        stock = int(product.get("stock", 0))
+        if stock <= 0:
+            keyboard.append([KeyboardButton(text=f"❌ {product['name']} - אזל מהמלאי")])
+        else:
+            keyboard.append([KeyboardButton(text=product["name"])])
+
+    keyboard.append([KeyboardButton(text="🛒 הסל שלי")])
+    keyboard.append([KeyboardButton(text="⬅️ חזרה לקטגוריות")])
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+
+def cart_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="➕ הוסף עוד מוצר")],
+            [KeyboardButton(text="✅ המשך להזמנה")],
+            [KeyboardButton(text="🧹 רוקן סל")],
+            [KeyboardButton(text="❌ בטל הזמנה")]
+        ],
+        resize_keyboard=True
+    )
+
+
+
+def quantity_keyboard(selected_qty, available_left, max_qty):
+    selected_qty = int(selected_qty)
+
+    keyboard = [
+        [
+            KeyboardButton(text="➖ פחות"),
+            KeyboardButton(text=f"כמות: {selected_qty}"),
+            KeyboardButton(text="➕ יותר")
+        ],
+        [KeyboardButton(text="🛒 הוסף לסל")],
+        [KeyboardButton(text="🛒 הסל שלי")],
+        [KeyboardButton(text="⬅️ חזרה לקטגוריות")]
+    ]
+
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+
+def quantity_inline_keyboard(selected_qty):
+    selected_qty = int(selected_qty)
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="➖ פחות", callback_data="qty_action:minus"),
+                InlineKeyboardButton(text=f"כמות: {selected_qty}", callback_data="qty_action:manual"),
+                InlineKeyboardButton(text="➕ יותר", callback_data="qty_action:plus"),
+            ],
+            [
+                InlineKeyboardButton(text="🛒 הוסף לסל", callback_data="qty_action:add")
+            ]
+        ]
+    )
+
+
+def confirm_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✅ אשר הזמנה")],
+            [KeyboardButton(text="✏️ שנה פרטים")],
+            [KeyboardButton(text="❌ בטל הזמנה")]
+        ],
+        resize_keyboard=True
+    )
+
+
+
+def payment_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✅ סימולציית תשלום הצליחה")],
+            [KeyboardButton(text="⬅️ חזרה לסיכום הזמנה")],
+            [KeyboardButton(text="❌ ביטול תשלום")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def use_saved_details_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✅ השתמש בפרטים השמורים")],
+            [KeyboardButton(text="✏️ הזן פרטים חדשים")],
+            [KeyboardButton(text="❌ בטל הזמנה")]
+        ],
+        resize_keyboard=True
+    )
+
+
+
+def fulfillment_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🚚 משלוח עד הבית")],
+            [KeyboardButton(text="🛍️ איסוף עצמי מהחנות")],
+            [KeyboardButton(text="❌ בטל הזמנה")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def clean_product_name(text):
+    return text.replace("❌ ", "").replace(" - אזל מהמלאי", "").strip()
+
+
+def find_product(name):
+    name = clean_product_name(name)
+    products = get_active_products()
+
+    for category, items in products.items():
+        for item in items:
+            if item["name"] == name:
+                return item
+
+    return None
+
+
+def cart_total(cart):
+    return sum(float(item["price"]) * int(item["qty"]) for item in cart)
+
+
+def product_qty_in_cart(cart, product_name):
+    return sum(int(item["qty"]) for item in cart if item["name"] == product_name)
+
+
+def clean_phone(phone):
+    return phone.strip().replace(" ", "").replace("-", "").replace("+972", "0")
+
+
+def valid_phone(phone):
+    phone = clean_phone(phone)
+    return phone.isdigit() and phone.startswith("05") and len(phone) == 10
+
+
+def has_digit(text):
+    return any(ch.isdigit() for ch in text)
+
+
+def grouped_cart(cart):
+    grouped = {}
+
+    for item in cart:
+        name = item["name"]
+        if name not in grouped:
+            grouped[name] = {
+                "name": item["name"],
+                "price": float(item["price"]),
+                "qty": 0
+            }
+
+        grouped[name]["qty"] += int(item["qty"])
+
+    return list(grouped.values())
+
+
+def cart_text(cart, title="🛒 הסל שלך"):
+    if not cart:
+        return rtl(f"<b>{title}</b>\n\nהסל שלך ריק כרגע.")
+
+    items = grouped_cart(cart)
+
+    total_units = sum(int(item["qty"]) for item in items)
+    total_price = sum(float(item["price"]) * int(item["qty"]) for item in items)
+
+    text = f"<b>{title}</b>\n\n"
+
+    for index, item in enumerate(items, start=1):
+        item_total = float(item["price"]) * int(item["qty"])
+
+        text += (
+            f"<b>{index}. {h(item['name'])}</b>\n"
+            f"<b>כמות:</b> {int(item['qty'])}\n"
+            f"<b>סה״כ מוצר:</b> {money(item_total)}\n\n"
+        )
+
+    text += (
+        f"<b>📦 כמות מוצרים בסל:</b> {total_units}\n"
+        f"<b>💰 סה״כ לפני משלוח:</b> {money(total_price)}"
+    )
+
+    return rtl(text)
+
+
+def saved_profile_text(profile):
+    address = f"{profile['city']}, {profile['street']}, קומה {profile['floor']}, דירה {profile['apartment']}"
+
+    text = (
+        "<b>👤 הפרטים השמורים שלך</b>\n\n"
+        f"{field('שם', profile['customer_name'])}\n"
+        f"{field('טלפון', profile['phone'])}\n"
+        f"{field('כתובת', address)}\n\n"
+        f"{field('הזמנות קודמות', profile['total_orders'])}\n"
+        f"{field('סה״כ קניות', money(profile['total_spent']))}"
+    )
+
+    return rtl(text)
+
+
+async def send_product_card(message: Message, product):
+    stock = int(product.get("stock", 0))
+
+    if stock <= 0:
+        stock_text = "<b>🔴 אזל מהמלאי</b>"
+    else:
+        stock_text = "<b>🟢 במלאי</b>"
+
+    caption = rtl(
+        f"<b>🛍️ {h(product['name'])}</b>\n\n"
+        f"{h(product.get('description', ''))}\n\n"
+        f"<b>מחיר:</b> {money(product['price'])}\n\n"
+        f"{stock_text}"
+    )
+
+    image = product.get("image_file_id")
+
+    if image:
+        sent_message = await message.answer_photo(photo=image, caption=caption, parse_mode="HTML")
+    else:
+        sent_message = await message.answer(caption, parse_mode="HTML")
+
+    return sent_message
+
+
+def set_pickup_details(data):
+    data["fulfillment_type"] = "pickup"
+    data["city"] = PICKUP_CITY
+    data["street"] = PICKUP_POINT_ADDRESS
+    data["floor"] = "0"
+    data["apartment"] = "0"
+    data["delivery_price"] = 0
+    data["base_city"] = PICKUP_BASE_CITY
+    data["delivery_pending"] = False
+
+
+def is_pickup_order(data):
+    return data.get("fulfillment_type") == "pickup"
+
+
+def pickup_navigation_keyboard():
+    if not PICKUP_NAVIGATION_URL:
+        return None
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📍 נווט עם Waze",
+                    url=PICKUP_NAVIGATION_URL
+                )
+            ]
+        ]
+    )
+
+
+def pickup_text():
+    navigation_line = ""
+
+    if PICKUP_NAVIGATION_URL:
+        navigation_line = f'\n📍 <a href="{h(PICKUP_NAVIGATION_URL)}">פתח ניווט עם Waze</a>'
+
+    return (
+        "<b>🛍️ איסוף עצמי מהחנות</b>\n\n"
+        f"{field('נקודת איסוף', PICKUP_POINT_NAME)}\n"
+        f"{field('כתובת', PICKUP_POINT_ADDRESS)}\n"
+        f"{field('שעות איסוף', PICKUP_HOURS)}\n"
+        f"{field('זמן הכנה משוער', PICKUP_PREP_TIME)}"
+        f"{navigation_line}"
+    )
+
+
+def order_summary_keyboard(data):
+    return confirm_keyboard()
+
+
+
+def is_free_text_allowed_step(step):
+    return step in {
+        "name",
+        "phone",
+        "city",
+        "street",
+        "floor",
+        "apartment",
+        "qty_manual",
+        "support",
+        "add_address_label",
+        "add_address_city",
+        "add_address_street",
+        "add_address_floor",
+        "add_address_apartment",
+    }
+
+
+def is_button_only_step(step):
+    return step in {
+        None,
+        "browse_products",
+        "qty",
+        "cart",
+        "fulfillment_choice",
+        "saved_profile_choice",
+        "payment_simulation",
+        "confirm",
+        "my_orders",
+        "reorder_select",
+        "addresses_menu",
+        "address_select",
+        "address_profile",
+    }
+
+
+def is_system_button(text):
+    text = str(text or "").strip()
+
+    return text in {
+        "🛒 חנות",
+        "🛒 הסל שלי",
+        "📦 ההזמנות שלי",
+        "🏠 הכתובות שלי",
+        "👤 הפרטים שלי",
+        "📞 שירות לקוחות",
+        "⬅️ חזרה",
+        "⬅️ חזרה לקטגוריות",
+        "⬅️ חזרה לתפריט",
+        "➕ הוסף עוד מוצר",
+        "✅ המשך להזמנה",
+        "🧹 רוקן סל",
+        "❌ בטל הזמנה",
+        "✅ אשר הזמנה",
+        "✏️ שנה פרטים",
+        "🚚 משלוח עד הבית",
+        "🛍️ איסוף עצמי מהחנות",
+        "✅ השתמש בפרטים השמורים",
+        "✏️ הזן פרטים חדשים",
+        "✅ סימולציית תשלום הצליחה",
+        "⬅️ חזרה לסיכום הזמנה",
+        "❌ ביטול תשלום",
+        "🔁 הזמן שוב",
+        "⬅️ חזרה להזמנות שלי",
+        "📋 הצג כתובות",
+        "➕ הוסף כתובת",
+        "🗑️ מחק כתובת",
+        "⬅️ חזרה לכתובות",
+        "⬅️ חזרה לרשימת כתובות",
+    }
+
+
+def is_valid_product_or_category_text(text, products):
+    if text in products:
+        return True
+
+    for items in products.values():
+        for product_item in items:
+            if text == product_item.get("name"):
+                return True
+
+    return False
+
+
+
+async def send_pickup_navigation_if_needed(message, data):
+    # הניווט מוצג בתוך סיכום ההזמנה עצמו,
+    # לכן לא שולחים הודעה נפרדת כדי לא לבלבל את הלקוח.
+    return
+
+
+
+
+def build_order_summary(data):
+    products_total = cart_total(data["cart"])
+    delivery_price = float(data["delivery_price"])
+    final_total = products_total + delivery_price
+
+    if is_pickup_order(data):
+        delivery_block = (
+            f"{pickup_text()}\n\n"
+            f"{field('דמי משלוח', money(0))}\n"
+            f"{field('סה״כ לתשלום', money(products_total))}"
+        )
+    else:
+        address = f"{data['city']}, {data['street']}, קומה {data['floor']}, דירה {data['apartment']}"
+        delivery_block = (
+            "<b>🚚 משלוח עד הבית</b>\n\n"
+            f"{field('כתובת', address)}\n"
+            f"{field('אזור משלוח', data['base_city'])}\n\n"
+            f"{field('דמי משלוח', money(delivery_price))}\n"
+            f"{field('סה״כ לתשלום', money(final_total))}"
+        )
+
+    text = (
+        "<b>📦 סיכום הזמנה</b>\n\n"
+        f"{field('שם לקוח', data['name'])}\n"
+        f"{field('טלפון', data['phone'])}\n\n"
+        f"{cart_text(data['cart']).replace(RTL, '')}\n\n"
+        f"{delivery_block}\n\n"
+        "<b>✅ אם הכול נכון לחץ על אשר הזמנה.</b>"
+    )
+
+    return rtl(text)
+
+def fill_saved_profile_into_data(data, profile):
+    data["name"] = profile["customer_name"]
+    data["phone"] = profile["phone"]
+    data["city"] = profile["city"]
+    data["street"] = profile["street"]
+    data["floor"] = profile["floor"]
+    data["apartment"] = profile["apartment"]
+
+    delivery_price, base_city, status = get_delivery_price(profile["city"])
+
+    if status == "city_not_found" or status == "no_delivery_price":
+        return False
+
+    data["delivery_price"] = float(delivery_price)
+    data["base_city"] = base_city
+    return True
 
 
 @router.message(CommandStart())
@@ -216,7 +1018,6 @@ async def start(message: Message):
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
-
 
 @router.message(F.text == "👤 הפרטים שלי")
 async def my_details(message: Message):
