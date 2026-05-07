@@ -309,6 +309,31 @@ def cart_keyboard():
     )
 
 
+
+def quantity_keyboard(available_left, max_qty):
+    limit = min(int(available_left), int(max_qty), 6)
+    keyboard = []
+
+    row = []
+    for qty in range(1, limit + 1):
+        row.append(KeyboardButton(text=str(qty)))
+
+        if len(row) == 3:
+            keyboard.append(row)
+            row = []
+
+    if row:
+        keyboard.append(row)
+
+    if int(available_left) > 6 and int(max_qty) > 6:
+        keyboard.append([KeyboardButton(text="✏️ הזן כמות אחרת")])
+
+    keyboard.append([KeyboardButton(text="🛒 הסל שלי")])
+    keyboard.append([KeyboardButton(text="⬅️ חזרה לקטגוריות")])
+
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+
 def confirm_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -1180,9 +1205,10 @@ async def handle_shop(message: Message):
         await message.answer(
             rtl(
                 "<b>🔢 בחירת כמות</b>\n\n"
-                "כמה יחידות תרצה?\n"
+                "בחר כמות מהירה או לחץ על ✏️ הזן כמות אחרת.\n"
                 f"<b>זמין להזמנה כרגע:</b> {available_left}"
             ),
+            reply_markup=quantity_keyboard(available_left, int(product.get("max_qty", 100))),
             parse_mode="HTML"
         )
         return
@@ -1591,10 +1617,35 @@ async def handle_shop(message: Message):
         )
         return
 
-    if data.get("step") == "qty":
+    if data.get("step") == "qty_manual":
         if not txt.isdigit():
             await message.answer(
                 rtl("<b>⚠️ נא לרשום כמות במספרים בלבד.</b>"),
+                parse_mode="HTML"
+            )
+            return
+
+        data["step"] = "qty"
+
+    if data.get("step") == "qty":
+        if txt == "✏️ הזן כמות אחרת":
+            data["step"] = "qty_manual"
+            await message.answer(
+                rtl(
+                    "<b>✏️ הזנת כמות</b>\n\n"
+                    "רשום את הכמות הרצויה במספרים בלבד."
+                ),
+                parse_mode="HTML"
+            )
+            return
+
+        if not txt.isdigit():
+            await message.answer(
+                rtl("<b>⚠️ בחר כמות מהכפתורים או לחץ על ✏️ הזן כמות אחרת.</b>"),
+                reply_markup=quantity_keyboard(
+                    int((data.get("selected_product") or {}).get("stock", 0)) - product_qty_in_cart(data.get("cart", []), (data.get("selected_product") or {}).get("name", "")),
+                    int((data.get("selected_product") or {}).get("max_qty", 100))
+                ),
                 parse_mode="HTML"
             )
             return
