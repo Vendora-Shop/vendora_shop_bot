@@ -469,6 +469,8 @@ def saved_profile_text(profile):
 
 async def send_product_card(message: Message, product):
     stock = int(product.get("stock", 0))
+    configured_max_qty = int(product.get("max_qty", 100) or 100)
+    real_max_qty = min(stock, configured_max_qty)
 
     if stock <= 0:
         stock_text = "<b>מלאי:</b> אזל מהמלאי"
@@ -480,7 +482,7 @@ async def send_product_card(message: Message, product):
         f"{h(product.get('description', ''))}\n\n"
         f"<b>מחיר:</b> {money(product['price'])}\n"
         f"{stock_text}\n"
-        f"<b>מקסימום להזמנה:</b> {h(product.get('max_qty', 100))}"
+        f"<b>מקסימום להזמנה:</b> {h(real_max_qty)}"
     )
 
     image = product.get("image_file_id")
