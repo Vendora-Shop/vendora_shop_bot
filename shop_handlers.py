@@ -709,6 +709,17 @@ async def show_cart(message: Message):
 @router.message(F.text == "🧹 רוקן סל")
 async def clear_cart(message: Message):
     uid = message.from_user.id
+    data = users.get(uid)
+
+    if not data or not data.get("cart"):
+        users[uid] = {"cart": [], "step": None}
+        await message.answer(
+            rtl("<b>🛒 הסל שלך ריק.</b>"),
+            reply_markup=categories_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
     users[uid] = {"cart": [], "step": None}
     await message.answer(
         rtl("<b>🧹 הסל התרוקן בהצלחה.</b>"),
