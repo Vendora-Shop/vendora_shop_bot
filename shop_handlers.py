@@ -236,23 +236,6 @@ async def delete_customer_message(message: Message):
         pass
 
 
-async def send_limited_warning(message: Message, data, text):
-    last_warning_id = data.get("last_warning_message_id")
-
-    if last_warning_id:
-        try:
-            await message.bot.delete_message(message.chat.id, last_warning_id)
-        except Exception:
-            pass
-
-    warning = await message.answer(
-        rtl(text),
-        parse_mode="HTML"
-    )
-
-    data["last_warning_message_id"] = warning.message_id
-
-
 # ================== PICKUP SETTINGS ==================
 # כאן מגדירים את כל פרטי האיסוף העצמי.
 # אם בעתיד תרצה לשנות כתובת / שעות / ניווט — משנים רק כאן.
@@ -623,47 +606,28 @@ def is_free_text_allowed_step(step):
     }
 
 
-def expected_keyboard_for_step(data):
-    step = data.get("step") if data else None
-
-    if step == "browse_products":
-        return categories_keyboard()
-
-    if step == "qty":
-        selected_qty = int(data.get("selected_qty", 1))
-        return quantity_inline_keyboard(selected_qty)
-
-    if step == "cart":
-        return cart_keyboard()
-
-    if step == "payment_simulation":
-        return payment_keyboard()
-
-    if step == "fulfillment_choice":
-        return fulfillment_keyboard()
-
-    if step == "saved_profile_choice":
-        return use_saved_details_keyboard()
-
-    if step == "confirm":
-        return confirm_keyboard()
-
-    if step == "my_orders":
-        return my_orders_keyboard()
-
-    if step == "addresses_menu":
-        return addresses_menu_keyboard()
-
-    if step == "address_profile":
-        return address_actions_keyboard()
-
-    return main_keyboard()
+def is_button_only_step(step):
+    return step in {
+        None,
+        "browse_products",
+        "qty",
+        "cart",
+        "fulfillment_choice",
+        "saved_profile_choice",
+        "payment_simulation",
+        "confirm",
+        "my_orders",
+        "reorder_select",
+        "addresses_menu",
+        "address_select",
+        "address_profile",
+    }
 
 
 def is_system_button(text):
     text = str(text or "").strip()
 
-    system_buttons = {
+    return text in {
         "🛒 חנות",
         "🛒 הסל שלי",
         "📦 ההזמנות שלי",
@@ -695,7 +659,17 @@ def is_system_button(text):
         "⬅️ חזרה לרשימת כתובות",
     }
 
-    return text in system_buttons
+
+def is_valid_product_or_category_text(text, products):
+    if text in products:
+        return True
+
+    for items in products.values():
+        for product_item in items:
+            if text == product_item.get("name"):
+                return True
+
+    return False
 
 
 
@@ -930,8 +904,6 @@ async def checkout(message: Message):
         return
 
     data["step"] = "fulfillment_choice"
-    data.pop("last_warning_message_id", None)
-    data.pop("qty_warning_sent", None)
     data["saved_profile"] = get_customer_profile(uid)
 
     await message.answer(
@@ -1219,22 +1191,18 @@ async def quantity_inline_action(callback: CallbackQuery):
         selected_qty = requested_qty
         data["selected_qty"] = selected_qty
 
-        try:
-            await callback.message.edit_text(
-                rtl(
-                    "<b>🔢 בחירת כמות</b>\n\n"
-                    f"{field('כמות נבחרת', selected_qty)}\n\n"
-                    "בחר את הכמות הרצויה להזמנה.\n"
-                    "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
-                    "רק לאחר בחירת הכמות ולחיצה על 🛒 הוסף לסל,\n"
-                    "המוצרים יתווספו לסל ותוכל להמשיך."
-                ),
-                reply_markup=quantity_inline_keyboard(selected_qty),
-                parse_mode="HTML"
-            )
-        except Exception:
-            pass
-
+        await callback.message.edit_text(
+            rtl(
+                "<b>🔢 בחירת כמות</b>\n\n"
+                f"{field('כמות נבחרת', selected_qty)}\n\n"
+                "בחר את הכמות הרצויה להזמנה.\n"
+                "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
+                "רק לאחר בחירת הכמות ולחיצה על 🛒 הוסף לסל,\n"
+                "המוצרים יתווספו לסל ותוכל להמשיך."
+            ),
+            reply_markup=quantity_inline_keyboard(selected_qty),
+            parse_mode="HTML"
+        )
         await callback.answer()
         return
 
@@ -1244,22 +1212,18 @@ async def quantity_inline_action(callback: CallbackQuery):
 
         data["selected_qty"] = selected_qty
 
-        try:
-            await callback.message.edit_text(
-                rtl(
-                    "<b>🔢 בחירת כמות</b>\n\n"
-                    f"{field('כמות נבחרת', selected_qty)}\n\n"
-                    "בחר את הכמות הרצויה להזמנה.\n"
-                    "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
-                    "רק לאחר בחירת הכמות ולחיצה על 🛒 הוסף לסל,\n"
-                    "המוצרים יתווספו לסל ותוכל להמשיך למשלוח או לאיסוף."
-                ),
-                reply_markup=quantity_inline_keyboard(selected_qty),
-                parse_mode="HTML"
-            )
-        except Exception:
-            pass
-
+        await callback.message.edit_text(
+            rtl(
+                "<b>🔢 בחירת כמות</b>\n\n"
+                f"{field('כמות נבחרת', selected_qty)}\n\n"
+                "בחר את הכמות הרצויה להזמנה.\n"
+                "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
+                "רק לאחר בחירת הכמות ולחיצה על 🛒 הוסף לסל,\n"
+                "המוצרים יתווספו לסל ותוכל להמשיך למשלוח או לאיסוף."
+            ),
+            reply_markup=quantity_inline_keyboard(selected_qty),
+            parse_mode="HTML"
+        )
         await callback.answer()
         return
 
@@ -1463,26 +1427,15 @@ async def handle_shop(message: Message):
 
     products = get_active_products()
 
-    if data and data.get("step") != "qty" and not is_free_text_allowed_step(data.get("step")) and not is_system_button(txt):
-        product_names = set()
-        for items in products.values():
-            for product_item in items:
-                product_names.add(product_item.get("name"))
-
-        if txt not in products and txt not in product_names:
-            await message.answer(
-                rtl("<b>⚠️ בחר פעולה מתוך הכפתורים בלבד.</b>"),
-                reply_markup=expected_keyboard_for_step(data),
-                parse_mode="HTML"
-            )
+    if data and is_button_only_step(data.get("step")) and not is_system_button(txt):
+        if data.get("step") in {None, "browse_products"} and is_valid_product_or_category_text(txt, products):
+            pass
+        else:
+            await delete_customer_message(message)
             return
 
-    if not data and not is_system_button(txt) and txt not in products:
-        await message.answer(
-            rtl("<b>⚠️ בחר פעולה מתוך הכפתורים בלבד.</b>"),
-            reply_markup=main_keyboard(message.from_user.id),
-            parse_mode="HTML"
-        )
+    if not data and not is_system_button(txt) and not is_valid_product_or_category_text(txt, products):
+        await delete_customer_message(message)
         return
 
     if txt in products:
@@ -1544,8 +1497,6 @@ async def handle_shop(message: Message):
         data["step"] = "qty"
 
         data["selected_qty"] = 1
-        data["qty_warning_sent"] = False
-        data.pop("last_warning_message_id", None)
 
         await message.answer(
             rtl(
@@ -1588,11 +1539,7 @@ async def handle_shop(message: Message):
             )
             return
 
-        await message.answer(
-            rtl("<b>⚠️ בחר פעולה מתוך כפתורי התשלום בלבד.</b>"),
-            reply_markup=payment_keyboard(),
-            parse_mode="HTML"
-        )
+        await delete_customer_message(message)
         return
 
     if data.get("step") == "fulfillment_choice":
@@ -1649,11 +1596,7 @@ async def handle_shop(message: Message):
             )
             return
 
-        await message.answer(
-            rtl("<b>⚠️ בחר אפשרות מתוך הכפתורים בלבד.</b>"),
-            reply_markup=fulfillment_keyboard(),
-            parse_mode="HTML"
-        )
+        await delete_customer_message(message)
         return
 
 
@@ -1673,10 +1616,7 @@ async def handle_shop(message: Message):
         order_number = extract_order_number_from_reorder_button(txt)
 
         if not order_number:
-            await message.answer(
-                rtl("<b>⚠️ בחר הזמנה מתוך הרשימה בלבד.</b>"),
-                parse_mode="HTML"
-            )
+            await delete_customer_message(message)
             return
 
         order = get_order_by_number(order_number)
@@ -1731,10 +1671,7 @@ async def handle_shop(message: Message):
         address_id = extract_address_id_from_button(txt)
 
         if not address_id:
-            await message.answer(
-                rtl("<b>⚠️ בחר כתובת מתוך הרשימה בלבד.</b>"),
-                parse_mode="HTML"
-            )
+            await delete_customer_message(message)
             return
 
         address = get_customer_address_by_id(uid, address_id)
@@ -1787,11 +1724,7 @@ async def handle_shop(message: Message):
             )
             return
 
-        await message.answer(
-            rtl("<b>⚠️ בחר פעולה מתוך הכפתורים בלבד.</b>"),
-            reply_markup=address_actions_keyboard(),
-            parse_mode="HTML"
-        )
+        await delete_customer_message(message)
         return
 
     if data.get("step") == "add_address_label":
@@ -1931,11 +1864,7 @@ async def handle_shop(message: Message):
             )
             return
 
-        await message.answer(
-            rtl("<b>⚠️ בחר פעולה מהכפתורים.</b>"),
-            reply_markup=use_saved_details_keyboard(),
-            parse_mode="HTML"
-        )
+        await delete_customer_message(message)
         return
 
     if data.get("step") == "support":
@@ -2159,22 +2088,7 @@ async def handle_shop(message: Message):
             return
 
         if txt != "🛒 הוסף לסל":
-            try:
-                await message.delete()
-            except Exception:
-                pass
-
-            data = data
-
-            if not data.get("qty_warning_sent"):
-                warn_msg = await message.answer(
-                    rtl("<b>⚠️ לבחירת כמות יש להשתמש בכפתורים מתחת להודעה.</b>"),
-                    parse_mode="HTML"
-                )
-
-                data["last_warning_message_id"] = warn_msg.message_id
-                data["qty_warning_sent"] = True
-
+            await delete_customer_message(message)
             return
 
         qty = selected_qty
