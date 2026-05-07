@@ -1139,26 +1139,40 @@ async def handle_shop(message: Message):
         if fresh_product:
             product.update(fresh_product)
 
-        await send_product_card(message, product)
-
         stock = int(product.get("stock", 0))
+
         if stock <= 0:
+            data["step"] = None
+            data.pop("selected_product", None)
+
             await message.answer(
-                rtl("<b>❌ המוצר אזל מהמלאי כרגע.</b>"),
+                rtl(
+                    "<b>❌ המוצר אזל מהמלאי כרגע.</b>\n\n"
+                    "בחר מוצר אחר מהקטגוריות."
+                ),
+                reply_markup=categories_keyboard(),
                 parse_mode="HTML"
             )
-            data["step"] = None
             return
 
         already_in_cart = product_qty_in_cart(data["cart"], product["name"])
         available_left = stock - already_in_cart
 
         if available_left <= 0:
+            data["step"] = None
+            data.pop("selected_product", None)
+
             await message.answer(
-                rtl("<b>📦 כל המלאי הזמין של המוצר כבר נמצא אצלך בסל.</b>"),
+                rtl(
+                    "<b>📦 כל המלאי הזמין של המוצר כבר נמצא אצלך בסל.</b>\n\n"
+                    "אפשר להמשיך להזמנה או לבחור מוצר אחר."
+                ),
+                reply_markup=cart_keyboard(),
                 parse_mode="HTML"
             )
             return
+
+        await send_product_card(message, product)
 
         data["selected_product"] = product
         data["step"] = "qty"
