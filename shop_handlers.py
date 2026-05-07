@@ -333,6 +333,11 @@ def quantity_keyboard(selected_qty, available_left, max_qty):
             KeyboardButton(text="➖ פחות"),
             KeyboardButton(text="➕ יותר")
         ],
+        [
+            KeyboardButton(text="➕ 5"),
+            KeyboardButton(text="➕ 10")
+        ],
+        [KeyboardButton(text="✏️ הזן כמות מדויקת")],
         [KeyboardButton(text="🛒 הוסף לסל")],
         [KeyboardButton(text="🛒 הסל שלי")],
         [KeyboardButton(text="⬅️ חזרה לקטגוריות")]
@@ -488,14 +493,14 @@ async def send_product_card(message: Message, product):
     stock = int(product.get("stock", 0))
 
     if stock <= 0:
-        stock_text = "<b>🔴 אזל מהמלאי</b>"
+        stock_text = "<b>אזל מהמלאי 🔴</b>"
     else:
-        stock_text = "<b>🟢 במלאי</b>"
+        stock_text = "<b>במלאי 🟢</b>"
 
     caption = rtl(
         f"<b>🛍️ {h(product['name'])}</b>\n\n"
         f"{h(product.get('description', ''))}\n\n"
-        f"<b>מחיר:</b> {money(product['price'])}\n"
+        f"<b>מחיר:</b> {money(product['price'])}\n\n"
         f"{stock_text}"
     )
 
@@ -1635,6 +1640,87 @@ async def handle_shop(message: Message):
         )
         return
 
+    if data.get("step") == "qty_manual":
+        product = data.get("selected_product")
+
+        if not product:
+            await message.answer(
+                rtl("<b>⚠️ בחר מוצר מחדש.</b>"),
+                reply_markup=categories_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        fresh_product = get_product_by_name(product["name"])
+        if not fresh_product or int(fresh_product.get("active", 0)) != 1:
+            data["step"] = None
+            data.pop("selected_product", None)
+            data.pop("selected_qty", None)
+            await message.answer(
+                rtl("<b>❌ המוצר לא זמין כרגע.</b>"),
+                parse_mode="HTML"
+            )
+            return
+
+        product.update(fresh_product)
+
+        max_qty = int(fresh_product.get("max_qty", 100))
+        stock = int(fresh_product.get("stock", 0))
+        already_in_cart = product_qty_in_cart(data["cart"], product["name"])
+        available_left = stock - already_in_cart
+        max_allowed_now = min(available_left, max_qty)
+
+        if not txt.isdigit():
+            await message.answer(
+                rtl("<b>⚠️ נא לרשום כמות במספרים בלבד.</b>"),
+                parse_mode="HTML"
+            )
+            return
+
+        selected_qty = int(txt)
+
+        if selected_qty <= 0:
+            await message.answer(
+                rtl("<b>⚠️ הכמות חייבת להיות גדולה מ־0.</b>"),
+                parse_mode="HTML"
+            )
+            return
+
+        if selected_qty > max_qty:
+            await message.answer(
+                large_quantity_contact_text(max_qty),
+                reply_markup=quantity_keyboard(int(data.get("selected_qty", 1)), available_left, max_qty),
+                parse_mode="HTML"
+            )
+            data["step"] = "qty"
+            return
+
+        if selected_qty > available_left:
+            await message.answer(
+                rtl("<b>⚠️ לא ניתן לבחור כמות מעבר למלאי הזמין.</b>"),
+                reply_markup=quantity_keyboard(int(data.get("selected_qty", 1)), available_left, max_qty),
+                parse_mode="HTML"
+            )
+            data["step"] = "qty"
+            return
+
+        if selected_qty > max_allowed_now:
+            selected_qty = max_allowed_now
+
+        data["selected_qty"] = selected_qty
+        data["step"] = "qty"
+
+        await message.answer(
+            rtl(
+                "<b>🔢 בחירת כמות</b>\n\n"
+                f"{field('כמות נבחרת', selected_qty)}\n\n"
+                "<b>המוצר יתווסף לסל רק לאחר לחיצה על 🛒 הוסף לסל.</b>"
+            ),
+            reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
+            parse_mode="HTML"
+        )
+        return
+
     if data.get("step") == "qty":
         product = data.get("selected_product")
 
@@ -1683,32 +1769,54 @@ async def handle_shop(message: Message):
             selected_qty = max_allowed_now
             data["selected_qty"] = selected_qty
 
-        if txt == "➕ יותר":
-            if selected_qty >= max_allowed_now:
+        if txt in {"➕ יותר", "➕ 5", "➕ 10"}:
+            step_qty = 1
+            if txt == "➕ 5":
+                step_qty = 5
+            elif txt == "➕ 10":
+                step_qty = 10
+
+            requested_qty = selected_qty + step_qty
+
+            if requested_qty > max_allowed_now:
                 if max_qty <= available_left and selected_qty >= max_qty:
                     await message.answer(
                         large_quantity_contact_text(max_qty),
                         reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
                         parse_mode="HTML"
                     )
-                else:
-                    await message.answer(
-                        rtl("<b>⚠️ לא ניתן להגדיל כמות מעבר למלאי הזמין.</b>"),
-                        reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
-                        parse_mode="HTML"
-                    )
+                    return
+
+                requested_qty = max_allowed_now
+
+            if requested_qty == selected_qty:
+                await message.answer(
+                    rtl("<b>⚠️ לא ניתן להגדיל כמות מעבר למלאי הזמין.</b>"),
+                    reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
+                    parse_mode="HTML"
+                )
                 return
 
-            selected_qty += 1
-            data["selected_qty"] = selected_qty
+            data["selected_qty"] = requested_qty
 
             await message.answer(
                 rtl(
                     "<b>🔢 בחירת כמות</b>\n\n"
-                    f"{field('כמות נבחרת', selected_qty)}\n\n"
+                    f"{field('כמות נבחרת', requested_qty)}\n\n"
                     "<b>המוצר יתווסף לסל רק לאחר לחיצה על 🛒 הוסף לסל.</b>"
                 ),
-                reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
+                reply_markup=quantity_keyboard(requested_qty, available_left, max_qty),
+                parse_mode="HTML"
+            )
+            return
+
+        if txt == "✏️ הזן כמות מדויקת":
+            data["step"] = "qty_manual"
+            await message.answer(
+                rtl(
+                    "<b>✏️ הזנת כמות מדויקת</b>\n\n"
+                    "רשום את הכמות הרצויה במספרים בלבד."
+                ),
                 parse_mode="HTML"
             )
             return
