@@ -1468,7 +1468,7 @@ async def description_start(message: Message):
     )
 
 
-@router.message(F.text == "📊 עדכן מלאי")
+@router.message(F.text.in_({"📊 עדכן מלאי", "✏️ אפס והגדר מלאי חדש"}))
 async def stock_start(message: Message):
     if not is_admin(message.from_user.id):
         return
@@ -1476,13 +1476,13 @@ async def stock_start(message: Message):
     admin_states[message.from_user.id] = {"step": "stock_name"}
 
     await message.answer(
-        rtl("<b>📊 עדכון מלאי</b>\n\nבחר מוצר לעדכון מלאי:"),
+        rtl("<b>✏️ אפס והגדר מלאי חדש</b>\n\nבחר מוצר לקביעת מלאי סופי:"),
         reply_markup=product_names_keyboard(),
         parse_mode="HTML"
     )
 
 
-@router.message(F.text == "➕ הוסף למלאי")
+@router.message(F.text.in_({"➕ הוסף למלאי", "➕ הגדל מלאי קיים"}))
 async def add_stock_start(message: Message):
     if not is_admin(message.from_user.id):
         return
@@ -1490,7 +1490,7 @@ async def add_stock_start(message: Message):
     admin_states[message.from_user.id] = {"step": "add_stock_name"}
 
     await message.answer(
-        rtl("<b>➕ הוספה למלאי</b>\n\nבחר מוצר להוספת מלאי:"),
+        rtl("<b>➕ הגדל מלאי קיים</b>\n\nבחר מוצר להוספת יחידות למלאי:"),
         reply_markup=product_names_keyboard(),
         parse_mode="HTML"
     )
