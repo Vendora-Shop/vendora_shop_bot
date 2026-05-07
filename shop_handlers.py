@@ -259,6 +259,14 @@ async def cleanup_shop_session_messages(bot, chat_id, data, last_message_id=None
     if last_message_id < start_id:
         return
 
+    customer_action_ids = data.get("customer_action_message_ids", [])
+
+    for message_id in customer_action_ids:
+        try:
+            await bot.delete_message(chat_id, message_id)
+        except Exception:
+            pass
+
     if last_message_id - start_id > SHOP_SESSION_MAX_DELETE_RANGE:
         start_id = last_message_id - SHOP_SESSION_MAX_DELETE_RANGE
 
@@ -270,6 +278,7 @@ async def cleanup_shop_session_messages(bot, chat_id, data, last_message_id=None
 
     data.pop("shop_session_start_message_id", None)
     data.pop("last_shop_message_id", None)
+    data.pop("customer_action_message_ids", None)
 
 
 async def cleanup_shop_session_later(bot, chat_id, data, session_start_id):
@@ -325,6 +334,22 @@ def touch_shop_session(message: Message, data, sent_message=None):
             int(data.get("last_shop_message_id") or 0),
             int(message.message_id)
         )
+
+
+
+def remember_customer_action_message(data, message: Message):
+    if not data or not message:
+        return
+
+    message_ids = data.get("customer_action_message_ids", [])
+    message_ids.append(message.message_id)
+
+    if len(message_ids) > 80:
+        message_ids = message_ids[-80:]
+
+    data["customer_action_message_ids"] = message_ids
+    touch_shop_session(message, data)
+
 
 
 
@@ -923,6 +948,7 @@ async def shop(message: Message):
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
     start_shop_session(message, users[uid])
+    remember_customer_action_message(users[uid], message)
 
     products = get_active_products()
 
@@ -958,6 +984,7 @@ async def back_main(message: Message):
 async def back_categories(message: Message):
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
+    remember_customer_action_message(users[uid], message)
     users[uid]["step"] = None
     await message.answer(
         rtl("<b>📂 קטגוריות</b>\n\nבחר קטגוריה:"),
@@ -970,6 +997,7 @@ async def back_categories(message: Message):
 async def add_more(message: Message):
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
+    remember_customer_action_message(users[uid], message)
     users[uid]["step"] = None
     await message.answer(
         rtl("<b>➕ הוספת מוצר</b>\n\nבחר קטגוריה:"),
@@ -982,6 +1010,7 @@ async def add_more(message: Message):
 async def show_cart(message: Message):
     uid = message.from_user.id
     data = users.setdefault(uid, {"cart": [], "step": None})
+    remember_customer_action_message(data, message)
     await message.answer(
         cart_text(data["cart"]),
         reply_markup=cart_keyboard(),
@@ -993,6 +1022,9 @@ async def show_cart(message: Message):
 async def clear_cart(message: Message):
     uid = message.from_user.id
     data = users.get(uid)
+
+    if data:
+        remember_customer_action_message(data, message)
 
     if not data or not data.get("cart"):
         users[uid] = {"cart": [], "step": None}
@@ -1581,6 +1613,9 @@ async def handle_shop(message: Message):
     uid = message.from_user.id
     txt = (message.text or "").strip()
     data = users.get(uid)
+
+    if data and data.get("shop_session_start_message_id"):
+        remember_customer_action_message(data, message)
 
     products = get_active_products()
 
