@@ -311,11 +311,9 @@ def cart_keyboard():
 
 
 def quantity_keyboard(selected_qty, available_left, max_qty):
-    selected_qty = int(selected_qty)
     keyboard = [
         [
             KeyboardButton(text="➖ פחות"),
-            KeyboardButton(text=f"כמות: {selected_qty}"),
             KeyboardButton(text="➕ יותר")
         ],
         [KeyboardButton(text="🛒 הוסף לסל")],
@@ -1211,7 +1209,8 @@ async def handle_shop(message: Message):
             rtl(
                 "<b>🔢 בחירת כמות</b>\n\n"
                 f"{field('כמות נבחרת', data['selected_qty'])}\n"
-                f"{field('זמין להזמנה כרגע', available_left)}"
+                f"{field('זמין להזמנה כרגע', available_left)}\n\n"
+                "<b>המוצר יתווסף לסל רק לאחר לחיצה על 🛒 הוסף לסל.</b>"
             ),
             reply_markup=quantity_keyboard(data["selected_qty"], available_left, int(product.get("max_qty", 100))),
             parse_mode="HTML"
@@ -1690,7 +1689,8 @@ async def handle_shop(message: Message):
                 rtl(
                     "<b>🔢 בחירת כמות</b>\n\n"
                     f"{field('כמות נבחרת', selected_qty)}\n"
-                    f"{field('זמין להזמנה כרגע', available_left)}"
+                    f"{field('זמין להזמנה כרגע', available_left)}\n\n"
+                    "<b>המוצר יתווסף לסל רק לאחר לחיצה על 🛒 הוסף לסל.</b>"
                 ),
                 reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
                 parse_mode="HTML"
@@ -1709,7 +1709,8 @@ async def handle_shop(message: Message):
                 rtl(
                     "<b>🔢 בחירת כמות</b>\n\n"
                     f"{field('כמות נבחרת', selected_qty)}\n"
-                    f"{field('זמין להזמנה כרגע', available_left)}"
+                    f"{field('זמין להזמנה כרגע', available_left)}\n\n"
+                    "<b>המוצר יתווסף לסל רק לאחר לחיצה על 🛒 הוסף לסל.</b>"
                 ),
                 reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
                 parse_mode="HTML"
@@ -1721,7 +1722,8 @@ async def handle_shop(message: Message):
                 rtl(
                     "<b>🔢 בחירת כמות</b>\n\n"
                     f"{field('כמות נבחרת', selected_qty)}\n"
-                    f"{field('זמין להזמנה כרגע', available_left)}"
+                    f"{field('זמין להזמנה כרגע', available_left)}\n\n"
+                    "<b>המוצר יתווסף לסל רק לאחר לחיצה על 🛒 הוסף לסל.</b>"
                 ),
                 reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
                 parse_mode="HTML"
