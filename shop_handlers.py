@@ -237,6 +237,96 @@ async def delete_customer_message(message: Message):
         pass
 
 
+SHOP_SESSION_MAX_DELETE_RANGE = 120
+SHOP_SESSION_TTL_SECONDS = 30 * 60
+
+
+async def cleanup_shop_session_messages(bot, chat_id, data, last_message_id=None):
+    if not data:
+        return
+
+    start_id = data.get("shop_session_start_message_id")
+
+    if not start_id:
+        return
+
+    if last_message_id is None:
+        last_message_id = data.get("last_shop_message_id") or start_id
+
+    start_id = int(start_id)
+    last_message_id = int(last_message_id)
+
+    if last_message_id < start_id:
+        return
+
+    if last_message_id - start_id > SHOP_SESSION_MAX_DELETE_RANGE:
+        start_id = last_message_id - SHOP_SESSION_MAX_DELETE_RANGE
+
+    for message_id in range(start_id, last_message_id + 1):
+        try:
+            await bot.delete_message(chat_id, message_id)
+        except Exception:
+            pass
+
+    data.pop("shop_session_start_message_id", None)
+    data.pop("last_shop_message_id", None)
+
+
+async def cleanup_shop_session_later(bot, chat_id, data, session_start_id):
+    await asyncio.sleep(SHOP_SESSION_TTL_SECONDS)
+
+    if not data:
+        return
+
+    if data.get("shop_session_start_message_id") != session_start_id:
+        return
+
+    await cleanup_shop_session_messages(
+        bot,
+        chat_id,
+        data,
+        data.get("last_shop_message_id") or session_start_id
+    )
+
+
+def start_shop_session(message: Message, data):
+    if not data:
+        return
+
+    data["shop_session_start_message_id"] = message.message_id
+    data["last_shop_message_id"] = message.message_id
+
+    session_start_id = message.message_id
+
+    try:
+        asyncio.create_task(
+            cleanup_shop_session_later(
+                message.bot,
+                message.chat.id,
+                data,
+                session_start_id
+            )
+        )
+    except Exception:
+        pass
+
+
+def touch_shop_session(message: Message, data, sent_message=None):
+    if not data:
+        return
+
+    if sent_message:
+        data["last_shop_message_id"] = max(
+            int(data.get("last_shop_message_id") or 0),
+            int(sent_message.message_id)
+        )
+    else:
+        data["last_shop_message_id"] = max(
+            int(data.get("last_shop_message_id") or 0),
+            int(message.message_id)
+        )
+
+
 
 TEMP_MESSAGE_TTL_SECONDS = 30 * 60
 
@@ -832,21 +922,24 @@ async def shop(message: Message):
 
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
+    start_shop_session(message, users[uid])
 
     products = get_active_products()
 
     if not products:
-        await message.answer(
+        sent_message = await message.answer(
             rtl("<b>🛒 החנות</b>\n\nכרגע אין מוצרים זמינים בחנות."),
             parse_mode="HTML"
         )
+        touch_shop_session(message, users[uid], sent_message)
         return
 
-    await message.answer(
+    sent_message = await message.answer(
         rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
+    touch_shop_session(message, users[uid], sent_message)
 
 
 @router.message(F.text == "⬅️ חזרה")
@@ -965,7 +1058,7 @@ async def checkout(message: Message):
     data["step"] = "fulfillment_choice"
     data["saved_profile"] = get_customer_profile(uid)
 
-    await message.answer(
+    sent_message = await message.answer(
         rtl(
             "<b>📦 איך תרצה לקבל את ההזמנה?</b>\n\n"
             "בחר אחת מהאפשרויות:"
@@ -973,6 +1066,7 @@ async def checkout(message: Message):
         reply_markup=fulfillment_keyboard(),
         parse_mode="HTML"
     )
+    touch_shop_session(message, data, sent_message)
 
 async def submit_paid_order(message: Message, data):
     uid = message.from_user.id
@@ -1105,6 +1199,7 @@ async def submit_paid_order(message: Message, data):
             )
 
     await cleanup_temp_messages(message.bot, message.chat.id, data)
+    await cleanup_shop_session_messages(message.bot, message.chat.id, data, message.message_id)
     users.pop(uid, None)
 
     if is_pickup_order(data):
@@ -1172,7 +1267,7 @@ async def confirm_order(message: Message):
 
     order_type_text = "🛍️ איסוף עצמי" if is_pickup_order(data) else "🚚 משלוח עד הבית"
 
-    await message.answer(
+    sent_message = await message.answer(
         rtl(
             "<b>💳 תשלום הזמנה</b>\n\n"
             f"{field('סוג הזמנה', order_type_text)}\n"
@@ -1184,6 +1279,7 @@ async def confirm_order(message: Message):
         reply_markup=payment_keyboard(),
         parse_mode="HTML"
     )
+    touch_shop_session(message, data, sent_message)
 
 
 
@@ -1502,11 +1598,12 @@ async def handle_shop(message: Message):
     if txt in products:
         users.setdefault(uid, {"cart": [], "step": None})
         users[uid]["step"] = None
-        await message.answer(
+        sent_message = await message.answer(
             rtl(f"<b>📂 {h(txt)}</b>\n\nבחר מוצר:"),
             reply_markup=products_keyboard(txt),
             parse_mode="HTML"
         )
+        touch_shop_session(message, users[uid], sent_message)
         return
 
     product = find_product(txt)
@@ -1910,12 +2007,13 @@ async def handle_shop(message: Message):
                 return
 
             data["step"] = "confirm"
-            await message.answer(
+            sent_message = await message.answer(
                 build_order_summary(data),
                 reply_markup=order_summary_keyboard(data),
                 parse_mode="HTML",
                 disable_web_page_preview=True
             )
+            touch_shop_session(message, data, sent_message)
             await send_pickup_navigation_if_needed(message, data)
             return
 
@@ -2229,12 +2327,13 @@ async def handle_shop(message: Message):
             set_pickup_details(data)
             data["step"] = "confirm"
 
-            await message.answer(
+            sent_message = await message.answer(
                 build_order_summary(data),
                 reply_markup=order_summary_keyboard(data),
                 parse_mode="HTML",
                 disable_web_page_preview=True
             )
+            touch_shop_session(message, data, sent_message)
             await send_pickup_navigation_if_needed(message, data)
             return
 
@@ -2338,11 +2437,12 @@ async def handle_shop(message: Message):
         data["apartment"] = txt
         data["step"] = "confirm"
 
-        await message.answer(
+        sent_message = await message.answer(
             build_order_summary(data),
             reply_markup=order_summary_keyboard(data),
             parse_mode="HTML",
             disable_web_page_preview=True
         )
+        touch_shop_session(message, data, sent_message)
         await send_pickup_navigation_if_needed(message, data)
         return
