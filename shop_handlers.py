@@ -310,10 +310,15 @@ def cart_keyboard():
 
 
 
-def quantity_keyboard(available_left, max_qty):
+def quantity_keyboard(selected_qty, available_left, max_qty):
+    selected_qty = int(selected_qty)
     keyboard = [
+        [
+            KeyboardButton(text="➖ פחות"),
+            KeyboardButton(text=f"כמות: {selected_qty}"),
+            KeyboardButton(text="➕ יותר")
+        ],
         [KeyboardButton(text="🛒 הוסף לסל")],
-        [KeyboardButton(text="✏️ כמות אחרת")],
         [KeyboardButton(text="🛒 הסל שלי")],
         [KeyboardButton(text="⬅️ חזרה לקטגוריות")]
     ]
@@ -714,7 +719,7 @@ async def clear_cart(message: Message):
     if not data or not data.get("cart"):
         users[uid] = {"cart": [], "step": None}
         await message.answer(
-            rtl("<b>🛒 הסל שלך ריק.</b>"),
+            rtl("<b>🛒 הסל שלך כבר ריק.</b>"),
             reply_markup=categories_keyboard(),
             parse_mode="HTML"
         )
@@ -1200,13 +1205,15 @@ async def handle_shop(message: Message):
         data["selected_product"] = product
         data["step"] = "qty"
 
+        data["selected_qty"] = 1
+
         await message.answer(
             rtl(
                 "<b>🔢 בחירת כמות</b>\n\n"
-                "להוספת יחידה אחת לחץ על 🛒 הוסף לסל. לכמות גדולה יותר לחץ על ✏️ כמות אחרת.\n"
-                f"<b>זמין להזמנה כרגע:</b> {available_left}"
+                f"{field('כמות נבחרת', data['selected_qty'])}\n"
+                f"{field('זמין להזמנה כרגע', available_left)}"
             ),
-            reply_markup=quantity_keyboard(available_left, int(product.get("max_qty", 100))),
+            reply_markup=quantity_keyboard(data["selected_qty"], available_left, int(product.get("max_qty", 100))),
             parse_mode="HTML"
         )
         return
@@ -1615,43 +1622,7 @@ async def handle_shop(message: Message):
         )
         return
 
-    if data.get("step") == "qty_manual":
-        if not txt.isdigit():
-            await message.answer(
-                rtl("<b>⚠️ נא לרשום כמות במספרים בלבד.</b>"),
-                parse_mode="HTML"
-            )
-            return
-
-        data["step"] = "qty"
-
     if data.get("step") == "qty":
-        if txt == "🛒 הוסף לסל":
-            txt = "1"
-
-        elif txt == "✏️ כמות אחרת":
-            data["step"] = "qty_manual"
-            await message.answer(
-                rtl(
-                    "<b>✏️ הזנת כמות</b>\n\n"
-                    "רשום את הכמות הרצויה במספרים בלבד."
-                ),
-                parse_mode="HTML"
-            )
-            return
-
-        if not txt.isdigit():
-            await message.answer(
-                rtl("<b>⚠️ בחר פעולה מהכפתורים.</b>"),
-                reply_markup=quantity_keyboard(
-                    int((data.get("selected_product") or {}).get("stock", 0)) - product_qty_in_cart(data.get("cart", []), (data.get("selected_product") or {}).get("name", "")),
-                    int((data.get("selected_product") or {}).get("max_qty", 100))
-                ),
-                parse_mode="HTML"
-            )
-            return
-
-        qty = int(txt)
         product = data.get("selected_product")
 
         if not product:
@@ -1665,20 +1636,112 @@ async def handle_shop(message: Message):
         fresh_product = get_product_by_name(product["name"])
         if not fresh_product or int(fresh_product.get("active", 0)) != 1:
             data["step"] = None
+            data.pop("selected_product", None)
+            data.pop("selected_qty", None)
             await message.answer(
                 rtl("<b>❌ המוצר לא זמין כרגע.</b>"),
                 parse_mode="HTML"
             )
             return
 
+        product.update(fresh_product)
+
         max_qty = int(fresh_product.get("max_qty", 100))
         stock = int(fresh_product.get("stock", 0))
         already_in_cart = product_qty_in_cart(data["cart"], product["name"])
         available_left = stock - already_in_cart
+        selected_qty = int(data.get("selected_qty", 1))
+
+        if available_left <= 0:
+            data["step"] = None
+            data.pop("selected_product", None)
+            data.pop("selected_qty", None)
+
+            await message.answer(
+                rtl("<b>📦 כל המלאי הזמין של המוצר כבר נמצא אצלך בסל.</b>"),
+                reply_markup=cart_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        max_allowed_now = min(available_left, max_qty)
+
+        if selected_qty > max_allowed_now:
+            selected_qty = max_allowed_now
+            data["selected_qty"] = selected_qty
+
+        if txt == "➕ יותר":
+            if selected_qty >= max_allowed_now:
+                await message.answer(
+                    rtl(
+                        "<b>⚠️ לא ניתן להגדיל כמות מעבר למלאי הזמין.</b>\n\n"
+                        f"{field('כמות נבחרת', selected_qty)}\n"
+                        f"{field('זמין להזמנה כרגע', available_left)}"
+                    ),
+                    reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
+                    parse_mode="HTML"
+                )
+                return
+
+            selected_qty += 1
+            data["selected_qty"] = selected_qty
+
+            await message.answer(
+                rtl(
+                    "<b>🔢 בחירת כמות</b>\n\n"
+                    f"{field('כמות נבחרת', selected_qty)}\n"
+                    f"{field('זמין להזמנה כרגע', available_left)}"
+                ),
+                reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
+                parse_mode="HTML"
+            )
+            return
+
+        if txt == "➖ פחות":
+            if selected_qty <= 1:
+                selected_qty = 1
+            else:
+                selected_qty -= 1
+
+            data["selected_qty"] = selected_qty
+
+            await message.answer(
+                rtl(
+                    "<b>🔢 בחירת כמות</b>\n\n"
+                    f"{field('כמות נבחרת', selected_qty)}\n"
+                    f"{field('זמין להזמנה כרגע', available_left)}"
+                ),
+                reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
+                parse_mode="HTML"
+            )
+            return
+
+        if txt.startswith("כמות:"):
+            await message.answer(
+                rtl(
+                    "<b>🔢 בחירת כמות</b>\n\n"
+                    f"{field('כמות נבחרת', selected_qty)}\n"
+                    f"{field('זמין להזמנה כרגע', available_left)}"
+                ),
+                reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
+                parse_mode="HTML"
+            )
+            return
+
+        if txt != "🛒 הוסף לסל":
+            await message.answer(
+                rtl("<b>⚠️ בחר פעולה מתוך הכפתורים בלבד.</b>"),
+                reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
+                parse_mode="HTML"
+            )
+            return
+
+        qty = selected_qty
 
         if qty <= 0:
             await message.answer(
                 rtl("<b>⚠️ הכמות חייבת להיות גדולה מ־0.</b>"),
+                reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
                 parse_mode="HTML"
             )
             return
@@ -1686,6 +1749,7 @@ async def handle_shop(message: Message):
         if qty > max_qty:
             await message.answer(
                 rtl(f"<b>⚠️ ניתן להזמין עד {max_qty} יחידות מהמוצר הזה.</b>"),
+                reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
                 parse_mode="HTML"
             )
             return
@@ -1693,6 +1757,7 @@ async def handle_shop(message: Message):
         if qty > available_left:
             await message.answer(
                 rtl(f"<b>⚠️ כרגע ניתן להוסיף עוד {available_left} יחידות בלבד.</b>"),
+                reply_markup=quantity_keyboard(selected_qty, available_left, max_qty),
                 parse_mode="HTML"
             )
             return
@@ -1705,6 +1770,7 @@ async def handle_shop(message: Message):
 
         data["step"] = None
         data.pop("selected_product", None)
+        data.pop("selected_qty", None)
 
         await message.answer(
             cart_text(data["cart"], title="✅ נוסף לסל"),
