@@ -1192,18 +1192,22 @@ async def quantity_inline_action(callback: CallbackQuery):
         selected_qty = requested_qty
         data["selected_qty"] = selected_qty
 
-        await callback.message.edit_text(
-            rtl(
-                "<b>🔢 בחירת כמות</b>\n\n"
-                f"{field('כמות נבחרת', selected_qty)}\n\n"
-                "בחר את הכמות הרצויה להזמנה.\n"
-                "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
-                "רק לאחר בחירת הכמות ולחיצה על 🛒 הוסף לסל,\n"
-                "המוצרים יתווספו לסל ותוכל להמשיך."
-            ),
-            reply_markup=quantity_inline_keyboard(selected_qty),
-            parse_mode="HTML"
-        )
+        try:
+            await callback.message.edit_text(
+                rtl(
+                    "<b>🔢 בחירת כמות</b>\n\n"
+                    f"{field('כמות נבחרת', selected_qty)}\n\n"
+                    "בחר את הכמות הרצויה להזמנה.\n"
+                    "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
+                    "רק לאחר בחירת הכמות ולחיצה על 🛒 הוסף לסל,\n"
+                    "המוצרים יתווספו לסל ותוכל להמשיך."
+                ),
+                reply_markup=quantity_inline_keyboard(selected_qty),
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
         await callback.answer()
         return
 
@@ -1213,18 +1217,22 @@ async def quantity_inline_action(callback: CallbackQuery):
 
         data["selected_qty"] = selected_qty
 
-        await callback.message.edit_text(
-            rtl(
-                "<b>🔢 בחירת כמות</b>\n\n"
-                f"{field('כמות נבחרת', selected_qty)}\n\n"
-                "בחר את הכמות הרצויה להזמנה.\n"
-                "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
-                "רק לאחר בחירת הכמות ולחיצה על 🛒 הוסף לסל,\n"
-                "המוצרים יתווספו לסל ותוכל להמשיך למשלוח או לאיסוף."
-            ),
-            reply_markup=quantity_inline_keyboard(selected_qty),
-            parse_mode="HTML"
-        )
+        try:
+            await callback.message.edit_text(
+                rtl(
+                    "<b>🔢 בחירת כמות</b>\n\n"
+                    f"{field('כמות נבחרת', selected_qty)}\n\n"
+                    "בחר את הכמות הרצויה להזמנה.\n"
+                    "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
+                    "רק לאחר בחירת הכמות ולחיצה על 🛒 הוסף לסל,\n"
+                    "המוצרים יתווספו לסל ותוכל להמשיך למשלוח או לאיסוף."
+                ),
+                reply_markup=quantity_inline_keyboard(selected_qty),
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
         await callback.answer()
         return
 
@@ -1428,7 +1436,7 @@ async def handle_shop(message: Message):
 
     products = get_active_products()
 
-    if data and not is_free_text_allowed_step(data.get("step")) and not is_system_button(txt):
+    if data and data.get("step") != "qty" and not is_free_text_allowed_step(data.get("step")) and not is_system_button(txt):
         product_names = set()
         for items in products.values():
             for product_item in items:
@@ -2123,8 +2131,7 @@ async def handle_shop(message: Message):
 
         if txt != "🛒 הוסף לסל":
             await message.answer(
-                rtl("<b>⚠️ בחר פעולה מתוך הכפתורים בלבד.</b>"),
-                reply_markup=quantity_inline_keyboard(selected_qty),
+                rtl("<b>⚠️ לבחירת כמות יש להשתמש בכפתורים מתחת להודעה.</b>"),
                 parse_mode="HTML"
             )
             return
