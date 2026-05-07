@@ -1084,8 +1084,8 @@ async def order_notification_action(callback: CallbackQuery):
         pickup_client_messages = {
             "approved": (
                 "<b>✅ ההזמנה שלך אושרה.</b>\n\n"
-                "נעדכן אותך ברגע שההזמנה תהיה מוכנה לאיסוף "
-                "מנקודת האיסוף."
+                "ברגע שההזמנה תהיה מוכנה, תקבלו הודעה לאיסוף "
+            
             ),
             "processing": "📦 ההזמנה שלך בהכנה.",
             "shipping": (
