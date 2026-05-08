@@ -177,49 +177,6 @@ def is_valid_admin_button_text(text):
 # CUSTOMERS + BROADCAST CLEAN FEATURE
 # ============================================================
 
-async def consume_admin_click(message: Message):
-    try:
-        await message.delete()
-    except Exception:
-        pass
-
-
-async def delete_admin_temp_messages(bot, user_id):
-    state = admin_states.get(user_id)
-
-    if not state:
-        return
-
-    message_ids = state.get("temp_bot_messages", [])
-
-    for message_id in message_ids:
-        try:
-            await bot.delete_message(user_id, message_id)
-        except Exception:
-            pass
-
-    state["temp_bot_messages"] = []
-
-
-async def send_admin_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML"):
-    uid = message.from_user.id
-
-    if uid not in admin_states:
-        admin_states[uid] = {"step": "admin"}
-
-    await delete_admin_temp_messages(message.bot, uid)
-
-    sent = await message.answer(
-        text,
-        reply_markup=reply_markup,
-        parse_mode=parse_mode
-    )
-
-    admin_states[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
-
-    return sent
-
-
 def clean_admin_text(text):
     return str(text or "").replace("\u200f", "").replace("\u200e", "").strip()
 
@@ -1551,14 +1508,12 @@ async def send_support_reply_to_customer(message: Message):
 
 @router.message(F.text == "🔐 פאנל ניהול")
 async def admin_panel_button(message: Message):
-
-    await consume_admin_click(message)
     if not is_admin(message.from_user.id):
         return
 
     admin_states[message.from_user.id] = {"step": "admin"}
 
-    await send_admin_temp_message(
+    await message.answer(
         rtl("<b>🔐 פאנל ניהול Vendora</b>\n\nבחר פעולה מהתפריט למטה."),
         reply_markup=admin_keyboard(),
         parse_mode="HTML"
@@ -1640,8 +1595,6 @@ async def broadcast_start(message: Message):
 
 @router.message(F.text == "⬅️ יציאה מניהול")
 async def exit_admin(message: Message):
-
-    await consume_admin_click(message)
     if not is_admin(message.from_user.id):
         return
 
@@ -1657,14 +1610,12 @@ async def exit_admin(message: Message):
 
 @router.message(lambda message: clean_admin_text(message.text).startswith("📩 פניות שירות"))
 async def support_tickets_menu(message: Message):
-
-    await consume_admin_click(message)
     if not is_admin(message.from_user.id):
         return
 
     admin_states[message.from_user.id] = {"step": "support_tickets_menu"}
 
-    await send_admin_temp_message(
+    await message.answer(
         rtl("<b>📩 פניות שירות</b>\n\nבחר פעולה מהתפריט."),
         reply_markup=support_tickets_menu_keyboard(),
         parse_mode="HTML"
@@ -1673,14 +1624,12 @@ async def support_tickets_menu(message: Message):
 
 @router.message(F.text == "⬅️ חזרה לפניות שירות")
 async def back_to_support_tickets_menu(message: Message):
-
-    await consume_admin_click(message)
     if not is_admin(message.from_user.id):
         return
 
     admin_states[message.from_user.id] = {"step": "support_tickets_menu"}
 
-    await send_admin_temp_message(
+    await message.answer(
         rtl("<b>📩 פניות שירות</b>\n\nבחר פעולה מהתפריט."),
         reply_markup=support_tickets_menu_keyboard(),
         parse_mode="HTML"
@@ -1719,14 +1668,12 @@ async def list_support_tickets(message: Message):
 
 @router.message(F.text == "🔍 חיפוש פנייה")
 async def search_support_ticket_start(message: Message):
-
-    await consume_admin_click(message)
     if not is_admin(message.from_user.id):
         return
 
     admin_states[message.from_user.id] = {"step": "support_ticket_search"}
 
-    await send_admin_temp_message(
+    await message.answer(
         rtl("<b>🔍 חיפוש פנייה</b>\n\nרשום מספר פנייה. לדוגמה: T1001"),
         parse_mode="HTML"
     )
@@ -1734,8 +1681,6 @@ async def search_support_ticket_start(message: Message):
 
 @router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "support_ticket_search")
 async def search_support_ticket_run(message: Message):
-
-    await consume_admin_click(message)
     ticket_number = clean_admin_text(message.text).upper()
     ticket = get_support_ticket(ticket_number)
 
@@ -1762,8 +1707,6 @@ async def search_support_ticket_run(message: Message):
 
 @router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "support_ticket_select")
 async def open_support_ticket_from_list(message: Message):
-
-    await consume_admin_click(message)
     ticket_number = extract_ticket_number_from_button(message.text)
     ticket = get_support_ticket(ticket_number)
 
@@ -1788,8 +1731,6 @@ async def open_support_ticket_from_list(message: Message):
 
 @router.message(F.text == "↩️ השב ללקוח")
 async def support_ticket_reply_from_view(message: Message):
-
-    await consume_admin_click(message)
     if not is_admin(message.from_user.id):
         return
 
@@ -1894,8 +1835,6 @@ async def send_support_ticket_reply(message: Message):
 
 @router.message(F.text == "📄 ייצוא TXT")
 async def export_support_ticket_txt(message: Message):
-
-    await consume_admin_click(message)
     if not is_admin(message.from_user.id):
         return
 
@@ -1929,8 +1868,6 @@ async def export_support_ticket_txt(message: Message):
 
 @router.message(F.text == "✅ סגור פנייה")
 async def close_support_ticket_from_admin(message: Message):
-
-    await consume_admin_click(message)
     if not is_admin(message.from_user.id):
         return
 
@@ -2064,14 +2001,12 @@ async def confirm_clear_all_orders(message: Message):
 
 @router.message(F.text == "⬅️ חזרה לניהול")
 async def back_admin(message: Message):
-
-    await consume_admin_click(message)
     if not is_admin(message.from_user.id):
         return
 
     admin_states[message.from_user.id] = {"step": "admin"}
 
-    await send_admin_temp_message(
+    await message.answer(
         rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
         reply_markup=admin_keyboard(),
         parse_mode="HTML"
@@ -2096,8 +2031,6 @@ async def orders_management_start(message: Message):
 
 @router.message(F.text == "🧾 הזמנות אחרונות")
 async def recent_orders(message: Message):
-
-    await consume_admin_click(message)
     if not is_admin(message.from_user.id):
         return
 
@@ -2119,8 +2052,6 @@ async def recent_orders(message: Message):
 
 @router.message(F.text == "🆕 הזמנות חדשות")
 async def new_orders(message: Message):
-
-    await consume_admin_click(message)
     if not is_admin(message.from_user.id):
         return
 
@@ -2142,14 +2073,12 @@ async def new_orders(message: Message):
 
 @router.message(F.text == "🔎 חפש הזמנה")
 async def search_order_start(message: Message):
-
-    await consume_admin_click(message)
     if not is_admin(message.from_user.id):
         return
 
     admin_states[message.from_user.id] = {"step": "search_order"}
 
-    await send_admin_temp_message(
+    await message.answer(
         rtl("<b>🔎 חיפוש הזמנה</b>\n\nרשום מספר הזמנה.\nלדוגמה: V1001"),
         parse_mode="HTML"
     )
@@ -2171,8 +2100,6 @@ async def search_by_phone_start(message: Message):
 
 @router.message(F.text == "📊 מצב העסק")
 async def business_dashboard(message: Message):
-
-    await consume_admin_click(message)
     if not is_admin(message.from_user.id):
         return
 
@@ -2205,7 +2132,7 @@ async def business_dashboard(message: Message):
         f"{field('השנה', stats['year_top_product'])} ({stats['year_top_qty']})"
     )
 
-    await send_admin_temp_message(
+    await message.answer(
         rtl(text),
         reply_markup=admin_keyboard(),
         parse_mode="HTML"
@@ -2214,8 +2141,6 @@ async def business_dashboard(message: Message):
 
 @router.message(F.text == "📅 סטטיסטיקה לפי תאריך")
 async def statistics_by_date_start(message: Message):
-
-    await consume_admin_click(message)
     if not is_admin(message.from_user.id):
         return
 
@@ -2227,7 +2152,7 @@ async def statistics_by_date_start(message: Message):
         "calendar_month": today.month
     }
 
-    await send_admin_temp_message(
+    await message.answer(
         rtl(
             "<b>📅 סטטיסטיקה לפי תאריך</b>\n\n"
             "בחר יום מתוך לוח השנה.\n"
