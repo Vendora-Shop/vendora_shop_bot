@@ -218,6 +218,65 @@ async def delete_customer_message(message: Message):
         pass
 
 
+async def delete_temp_bot_messages(bot, user_id):
+    data = users.get(user_id)
+
+    if not data:
+        return
+
+    message_ids = data.get("temp_bot_messages", [])
+
+    if not message_ids:
+        return
+
+    for message_id in message_ids:
+        try:
+            await bot.delete_message(user_id, message_id)
+        except Exception:
+            pass
+
+    data["temp_bot_messages"] = []
+
+
+async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML"):
+    uid = message.from_user.id
+
+    if uid not in users:
+        users[uid] = {"cart": []}
+
+    await delete_temp_bot_messages(message.bot, uid)
+
+    sent = await message.answer(
+        text,
+        reply_markup=reply_markup,
+        parse_mode=parse_mode
+    )
+
+    users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
+
+    return sent
+
+
+async def send_temp_photo(message: Message, photo, caption=None, reply_markup=None, parse_mode="HTML"):
+    uid = message.from_user.id
+
+    if uid not in users:
+        users[uid] = {"cart": []}
+
+    await delete_temp_bot_messages(message.bot, uid)
+
+    sent = await message.answer_photo(
+        photo=photo,
+        caption=caption,
+        reply_markup=reply_markup,
+        parse_mode=parse_mode
+    )
+
+    users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
+
+    return sent
+
+
 def is_button_only_step_for_customer(step):
     return step in {
         None,
@@ -646,9 +705,9 @@ async def send_product_card(message: Message, product):
     image = product.get("image_file_id")
 
     if image:
-        await message.answer_photo(photo=image, caption=caption, parse_mode="HTML")
+        await send_temp_photo(message, photo=image, caption=caption, parse_mode="HTML")
     else:
-        await message.answer(caption, parse_mode="HTML")
+        await send_temp_message(message, caption, parse_mode="HTML")
 
 
 def set_pickup_details(data):
@@ -870,7 +929,8 @@ async def shop(message: Message):
         )
         return
 
-    await message.answer(
+    await send_temp_message(
+        message,
         rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
@@ -897,7 +957,8 @@ async def back_to_admin_panel_from_shop(message: Message):
 async def back_main(message: Message):
     users.pop(message.from_user.id, None)
 
-    await message.answer(
+    await send_temp_message(
+        message,
         rtl("<b>↩️ חזרת לתפריט הראשי</b>"),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
@@ -1477,7 +1538,8 @@ async def back_to_main_menu(message: Message):
 
     users[uid]["step"] = "main"
 
-    await message.answer(
+    await send_temp_message(
+        message,
         rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט למטה."),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
