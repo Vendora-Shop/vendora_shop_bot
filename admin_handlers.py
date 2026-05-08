@@ -1,12 +1,13 @@
+import os
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from html import escape
 from datetime import datetime
 import calendar
 
 from config import ADMIN_ID
-from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard, customers_menu_keyboard, customer_actions_keyboard, customer_select_keyboard
+from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard, customers_menu_keyboard, customer_actions_keyboard, customer_select_keyboard, support_tickets_menu_keyboard, support_ticket_actions_keyboard, support_ticket_select_keyboard
 from database import (
     add_product,
     get_all_products,
@@ -35,6 +36,11 @@ from database import (
     get_customer_by_id,
     get_orders_by_customer_telegram_id,
     clear_all_orders_for_testing,
+    get_support_tickets_by_status,
+    get_support_ticket,
+    get_support_messages,
+    add_support_message,
+    close_support_ticket,
 )
 
 router = Router()
@@ -136,6 +142,14 @@ def is_valid_admin_button_text(text):
         "🚚 יצאה למשלוח",
         "✅ הושלמה",
         "❌ בוטלה",
+        "📩 פניות שירות",
+        "📬 פניות פתוחות",
+        "📁 פניות סגורות",
+        "🔍 חיפוש פנייה",
+        "↩️ השב ללקוח",
+        "📄 ייצוא TXT",
+        "✅ סגור פנייה",
+        "⬅️ חזרה לפניות שירות",
         "◀️ חודש קודם",
         "📍 היום",
         "▶️ חודש הבא",
@@ -464,6 +478,91 @@ async def handle_broadcast_confirm_screen(message: Message):
         parse_mode="HTML"
     )
 
+
+
+
+# ================== SUPPORT TICKETS ADMIN ==================
+
+def extract_ticket_number_from_button(text):
+    text = str(text or "").strip()
+    if text.startswith("📩 "):
+        text = text.replace("📩 ", "", 1)
+    if "|" in text:
+        return text.split("|", 1)[0].strip()
+    return text.strip()
+
+
+def support_status_label(status):
+    return "פתוחה" if status == "open" else "סגורה"
+
+
+def support_ticket_text(ticket):
+    if not ticket:
+        return rtl("<b>⚠️ הפנייה לא נמצאה.</b>")
+
+    messages = get_support_messages(ticket["ticket_number"])
+
+    text = (
+        "<b>📩 פנייה לשירות לקוחות</b>\n\n"
+        f"{field('מספר פנייה', ticket.get('ticket_number'))}\n"
+        f"{field('סטטוס', support_status_label(ticket.get('status')))}\n"
+        f"{field('שם Telegram', ticket.get('telegram_name') or '-')}\n"
+        f"{field('Telegram ID', ticket.get('telegram_id') or '-')}\n"
+        f"{field('פלאפון', ticket.get('phone') or '-')}\n"
+        f"{field('נפתחה בתאריך', ticket.get('created_at') or '-')}\n"
+    )
+
+    if ticket.get("closed_at"):
+        text += f"{field('נסגרה בתאריך', ticket.get('closed_at'))}\n"
+
+    text += "\n<b>שיחה:</b>\n"
+
+    if not messages:
+        text += "אין עדיין הודעות בפנייה."
+        return rtl(text)
+
+    for msg in messages[-15:]:
+        sender = "לקוח" if msg.get("sender_type") == "customer" else "אדמין"
+        text += (
+            f"\n<b>{h(sender)} | {h(msg.get('created_at') or '-')}</b>\n"
+            f"{h(msg.get('message_text') or '')}\n"
+        )
+
+    return rtl(text)
+
+
+def export_support_ticket_to_txt(ticket_number):
+    ticket = get_support_ticket(ticket_number)
+    messages = get_support_messages(ticket_number)
+
+    if not ticket:
+        return None
+
+    file_path = os.path.join("/tmp", f"support_ticket_{ticket_number}.txt")
+
+    lines = [
+        f"Support Ticket: {ticket.get('ticket_number')}",
+        f"Status: {support_status_label(ticket.get('status'))}",
+        f"Telegram Name: {ticket.get('telegram_name') or '-'}",
+        f"Telegram ID: {ticket.get('telegram_id') or '-'}",
+        f"Phone: {ticket.get('phone') or '-'}",
+        f"Created At: {ticket.get('created_at') or '-'}",
+        f"Closed At: {ticket.get('closed_at') or '-'}",
+        "",
+        "Messages:",
+        ""
+    ]
+
+    for msg in messages:
+        sender = "Customer" if msg.get("sender_type") == "customer" else "Admin"
+        lines.append(f"[{msg.get('created_at')}] {sender} ({msg.get('sender_name') or '-'}):")
+        lines.append(msg.get("message_text") or "")
+        lines.append("")
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+    return file_path
 
 
 # ================== PICKUP DISPLAY SETTINGS ==================
@@ -1428,6 +1527,295 @@ async def exit_admin(message: Message):
         parse_mode="HTML"
     )
 
+
+
+
+@router.message(F.text == "📩 פניות שירות")
+async def support_tickets_menu(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    admin_states[message.from_user.id] = {"step": "support_tickets_menu"}
+    await message.answer(
+        rtl("<b>📩 פניות שירות</b>\n\nבחר פעולה מהתפריט."),
+        reply_markup=support_tickets_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "⬅️ חזרה לפניות שירות")
+async def back_to_support_tickets_menu(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    admin_states[message.from_user.id] = {"step": "support_tickets_menu"}
+    await message.answer(
+        rtl("<b>📩 פניות שירות</b>\n\nבחר פעולה מהתפריט."),
+        reply_markup=support_tickets_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text.in_({"📬 פניות פתוחות", "📁 פניות סגורות"}))
+async def list_support_tickets(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    status = "open" if message.text == "📬 פניות פתוחות" else "closed"
+    tickets = get_support_tickets_by_status(status, 30)
+
+    admin_states[message.from_user.id] = {"step": "support_ticket_select", "support_ticket_status": status}
+    title = "📬 פניות פתוחות" if status == "open" else "📁 פניות סגורות"
+
+    if not tickets:
+        await message.answer(
+            rtl(f"<b>{title}</b>\n\nאין פניות להצגה."),
+            reply_markup=support_tickets_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    await message.answer(
+        rtl(f"<b>{title}</b>\n\nבחר פנייה מהרשימה."),
+        reply_markup=support_ticket_select_keyboard(tickets),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "🔍 חיפוש פנייה")
+async def search_support_ticket_start(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    admin_states[message.from_user.id] = {"step": "support_ticket_search"}
+    await message.answer(
+        rtl("<b>🔍 חיפוש פנייה</b>\n\nרשום מספר פנייה. לדוגמה: T1001"),
+        parse_mode="HTML"
+    )
+
+
+@router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "support_ticket_search")
+async def search_support_ticket_run(message: Message):
+    ticket_number = clean_admin_text(message.text).upper()
+    ticket = get_support_ticket(ticket_number)
+    if not ticket:
+        admin_states[message.from_user.id] = {"step": "support_tickets_menu"}
+        await message.answer(
+            rtl("<b>⚠️ הפנייה לא נמצאה.</b>"),
+            reply_markup=support_tickets_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+    admin_states[message.from_user.id] = {"step": "support_ticket_view", "support_ticket_number": ticket_number}
+    await message.answer(
+        support_ticket_text(ticket),
+        reply_markup=support_ticket_actions_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "support_ticket_select")
+async def open_support_ticket_from_list(message: Message):
+    ticket_number = extract_ticket_number_from_button(message.text)
+    ticket = get_support_ticket(ticket_number)
+    if not ticket:
+        await message.answer(rtl("<b>⚠️ בחר פנייה מתוך הרשימה בלבד.</b>"), parse_mode="HTML")
+        return
+    admin_states[message.from_user.id] = {"step": "support_ticket_view", "support_ticket_number": ticket_number}
+    await message.answer(
+        support_ticket_text(ticket),
+        reply_markup=support_ticket_actions_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data.startswith("support_ticket_reply:"))
+async def support_ticket_reply_from_notification(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    ticket_number = (callback.data or "").split(":", 1)[1]
+    ticket = get_support_ticket(ticket_number)
+    if not ticket:
+        await callback.answer("הפנייה לא נמצאה.", show_alert=True)
+        return
+    admin_states[callback.from_user.id] = {"step": "support_ticket_reply", "support_ticket_number": ticket_number}
+    await callback.message.answer(
+        rtl(
+            "<b>↩️ תשובה ללקוח</b>\n\n"
+            f"{field('מספר פנייה', ticket_number)}\n"
+            f"{field('לקוח', ticket.get('telegram_name') or '-')}\n"
+            f"{field('פלאפון', ticket.get('phone') or '-')}\n\n"
+            "כתוב עכשיו את ההודעה שתרצה לשלוח ללקוח."
+        ),
+        reply_markup=support_reply_cancel_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(F.text == "↩️ השב ללקוח")
+async def support_ticket_reply_from_view(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    state = admin_states.get(message.from_user.id, {})
+    ticket_number = state.get("support_ticket_number")
+    ticket = get_support_ticket(ticket_number) if ticket_number else None
+    if not ticket:
+        await message.answer(
+            rtl("<b>⚠️ אין פנייה פעילה לתשובה.</b>"),
+            reply_markup=support_tickets_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+    if ticket.get("status") != "open":
+        await message.answer(
+            rtl("<b>⚠️ לא ניתן להשיב לפנייה סגורה.</b>"),
+            reply_markup=support_ticket_actions_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+    admin_states[message.from_user.id] = {"step": "support_ticket_reply", "support_ticket_number": ticket_number}
+    await message.answer(
+        rtl(
+            "<b>↩️ תשובה ללקוח</b>\n\n"
+            f"{field('מספר פנייה', ticket_number)}\n"
+            "כתוב עכשיו את ההודעה שתרצה לשלוח ללקוח."
+        ),
+        reply_markup=support_reply_cancel_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "support_ticket_reply")
+async def send_support_ticket_reply(message: Message):
+    state = admin_states.get(message.from_user.id, {})
+    ticket_number = state.get("support_ticket_number")
+    ticket = get_support_ticket(ticket_number) if ticket_number else None
+    reply_text = clean_admin_text(message.text)
+
+    if reply_text in {"❌ בטל תשובה", "⬅️ חזרה לניהול"}:
+        return
+
+    if not ticket:
+        admin_states[message.from_user.id] = {"step": "admin"}
+        await message.answer(rtl("<b>⚠️ הפנייה לא נמצאה.</b>"), reply_markup=admin_keyboard(), parse_mode="HTML")
+        return
+
+    if ticket.get("status") != "open":
+        admin_states[message.from_user.id] = {"step": "support_ticket_view", "support_ticket_number": ticket_number}
+        await message.answer(rtl("<b>⚠️ הפנייה כבר סגורה.</b>"), reply_markup=support_ticket_actions_keyboard(), parse_mode="HTML")
+        return
+
+    if len(reply_text) < 1:
+        return
+
+    add_support_message(ticket_number, "admin", message.from_user.full_name, reply_text)
+
+    await message.bot.send_message(
+        int(ticket["telegram_id"]),
+        rtl("<b>📩 תשובה משירות הלקוחות</b>\n\n" f"{h(reply_text)}"),
+        parse_mode="HTML"
+    )
+
+    admin_states[message.from_user.id] = {"step": "support_ticket_view", "support_ticket_number": ticket_number}
+
+    await message.answer(
+        rtl("<b>✅ התשובה נשלחה ללקוח.</b>"),
+        reply_markup=support_ticket_actions_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "📄 ייצוא TXT")
+async def export_support_ticket_txt(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    state = admin_states.get(message.from_user.id, {})
+    ticket_number = state.get("support_ticket_number")
+    if not ticket_number:
+        await message.answer(
+            rtl("<b>⚠️ אין פנייה פעילה לייצוא.</b>"),
+            reply_markup=support_tickets_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+    file_path = export_support_ticket_to_txt(ticket_number)
+    if not file_path:
+        await message.answer(
+            rtl("<b>⚠️ לא הצלחתי לייצא את הפנייה.</b>"),
+            reply_markup=support_ticket_actions_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+    await message.answer_document(
+        FSInputFile(file_path),
+        caption=rtl(f"📄 <b>ייצוא פנייה</b> {h(ticket_number)}"),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "✅ סגור פנייה")
+async def close_support_ticket_from_admin(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    state = admin_states.get(message.from_user.id, {})
+    ticket_number = state.get("support_ticket_number")
+    ticket = get_support_ticket(ticket_number) if ticket_number else None
+    if not ticket:
+        await message.answer(
+            rtl("<b>⚠️ אין פנייה פעילה לסגירה.</b>"),
+            reply_markup=support_tickets_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+    ok = close_support_ticket(ticket_number)
+    if ok:
+        add_support_message(ticket_number, "admin", message.from_user.full_name, "הפנייה נסגרה על ידי שירות הלקוחות.")
+        try:
+            await message.bot.send_message(
+                int(ticket["telegram_id"]),
+                rtl("<b>✅ הפנייה נסגרה.</b>\nתודה שפנית אלינו."),
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+    admin_states[message.from_user.id] = {"step": "support_ticket_view", "support_ticket_number": ticket_number}
+    ticket = get_support_ticket(ticket_number)
+    await message.answer(
+        support_ticket_text(ticket),
+        reply_markup=support_ticket_actions_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data.startswith("support_ticket_close:"))
+async def close_support_ticket_from_notification(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    ticket_number = (callback.data or "").split(":", 1)[1]
+    ticket = get_support_ticket(ticket_number)
+    if not ticket:
+        await callback.answer("הפנייה לא נמצאה.", show_alert=True)
+        return
+    if ticket.get("status") != "open":
+        await callback.answer("הפנייה כבר סגורה.", show_alert=True)
+        return
+    close_support_ticket(ticket_number)
+    add_support_message(ticket_number, "admin", callback.from_user.full_name, "הפנייה נסגרה על ידי שירות הלקוחות.")
+    try:
+        await callback.message.bot.send_message(
+            int(ticket["telegram_id"]),
+            rtl("<b>✅ הפנייה נסגרה.</b>\nתודה שפנית אלינו."),
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+    await callback.message.answer(
+        rtl("<b>✅ הפנייה נסגרה.</b>\n\n" f"{field('מספר פנייה', ticket_number)}"),
+        reply_markup=admin_keyboard(),
+        parse_mode="HTML"
+    )
+    admin_states[callback.from_user.id] = {"step": "admin"}
+    await callback.answer()
 
 
 @router.message(F.text == "🧹 מחק את כל ההזמנות")
