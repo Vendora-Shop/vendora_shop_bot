@@ -274,6 +274,7 @@ def is_customer_system_button(text):
         "🚚 משלוח עד הבית",
         "🛍️ איסוף עצמי מהחנות",
         "✅ המשך עם הפרטים השמורים",
+        "✅ חזור לפרטים השמורים",
         "✏️ הזן פרטים חדשים",
         "✅ סימולציית תשלום הצליחה",
         "⬅️ חזרה לסיכום הזמנה",
@@ -367,9 +368,6 @@ def admin_new_order_keyboard(order_number):
 def categories_keyboard():
     products = get_active_products()
 
-    if txt == "✅ המשך עם הפרטים השמורים" and data and data.get("cart"):
-        await use_saved_profile_flow(message, data)
-        return
     keyboard = [[KeyboardButton(text=cat)] for cat in products.keys()]
     keyboard.append([KeyboardButton(text="🛒 הסל שלי")])
     keyboard.append([KeyboardButton(text="⬅️ חזרה")])
@@ -468,6 +466,17 @@ def use_saved_details_keyboard():
         keyboard=[
             [KeyboardButton(text="✅ המשך עם הפרטים השמורים")],
             [KeyboardButton(text="✏️ הזן פרטים חדשים")],
+            [KeyboardButton(text="❌ בטל הזמנה")]
+        ],
+        resize_keyboard=True
+    )
+
+
+
+def manual_details_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✅ חזור לפרטים השמורים")],
             [KeyboardButton(text="❌ בטל הזמנה")]
         ],
         resize_keyboard=True
@@ -731,6 +740,7 @@ async def use_saved_profile_flow(message: Message, data):
         data["step"] = "name"
         await message.answer(
             rtl("<b>📝 פרטי הזמנה חדשים</b>\n\nרשום את השם המלא שלך:"),
+            reply_markup=manual_details_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -748,6 +758,7 @@ async def use_saved_profile_flow(message: Message, data):
         data["step"] = "name"
         await message.answer(
             rtl("<b>📝 פרטי הזמנה חדשים</b>\n\nרשום את השם המלא שלך:"),
+            reply_markup=manual_details_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -1463,6 +1474,10 @@ async def handle_shop(message: Message):
 
     products = get_active_products()
 
+    if txt in {"✅ המשך עם הפרטים השמורים", "✅ חזור לפרטים השמורים"} and data and data.get("cart"):
+        await use_saved_profile_flow(message, data)
+        return
+
     if data:
         step = data.get("step")
         if not is_free_text_step_for_customer(step):
@@ -1911,6 +1926,7 @@ async def handle_shop(message: Message):
             data["step"] = "name"
             await message.answer(
                 rtl("<b>📝 פרטי הזמנה חדשים</b>\n\nרשום את השם המלא שלך:"),
+                reply_markup=manual_details_keyboard(),
                 parse_mode="HTML"
             )
             return
