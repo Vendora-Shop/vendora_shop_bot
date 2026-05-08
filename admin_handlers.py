@@ -887,8 +887,6 @@ def is_admin_active_step(message: Message):
     if txt.startswith("/"):
         return False
 
-    # אם האדמין משתמש בצד הלקוח, לא לתת ל-admin_handlers
-    # לתפוס כפתורי חנות/חזרה ולהחזיר אותו לבד לפאנל ניהול.
     if is_customer_navigation_button_for_admin_guard(txt):
         return False
 
@@ -1458,7 +1456,7 @@ async def cancel_support_reply(message: Message):
 
             await message.answer(
                 support_ticket_text(ticket),
-                reply_markup=support_ticket_actions_keyboard(),
+                reply_markup=support_ticket_keyboard_by_status(ticket),
                 parse_mode="HTML"
             )
             return
@@ -1751,7 +1749,7 @@ async def support_ticket_reply_from_view(message: Message):
     if ticket.get("status") != "open":
         await message.answer(
             rtl("<b>⚠️ לא ניתן להשיב לפנייה סגורה.</b>"),
-            reply_markup=support_ticket_actions_keyboard(),
+            reply_markup=support_ticket_keyboard_by_status(ticket),
             parse_mode="HTML"
         )
         return
@@ -1799,7 +1797,7 @@ async def send_support_ticket_reply(message: Message):
         }
         await message.answer(
             rtl("<b>⚠️ הפנייה כבר סגורה.</b>"),
-            reply_markup=support_ticket_actions_keyboard(),
+            reply_markup=support_ticket_keyboard_by_status(ticket),
             parse_mode="HTML"
         )
         return
@@ -1856,7 +1854,7 @@ async def export_support_ticket_txt(message: Message):
     if not file_path:
         await message.answer(
             rtl("<b>⚠️ לא הצלחתי לייצא את הפנייה.</b>"),
-            reply_markup=support_ticket_actions_keyboard(),
+            reply_markup=support_ticket_keyboard_by_status(ticket),
             parse_mode="HTML"
         )
         return
