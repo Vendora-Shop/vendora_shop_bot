@@ -511,16 +511,11 @@ def manual_details_keyboard():
 
 
 def support_customer_keyboard(user_id=None):
-    keyboard = [
-        [KeyboardButton(text="✅ הבעיה נפתרה")]
-    ]
-
-    if user_id == ADMIN_ID:
-        keyboard.append([KeyboardButton(text="⬅️ חזרה לניהול")])
-        keyboard.append([KeyboardButton(text="🔐 פאנל ניהול")])
-
     return ReplyKeyboardMarkup(
-        keyboard=keyboard,
+        keyboard=[
+            [KeyboardButton(text="✅ הבעיה נפתרה")],
+            [KeyboardButton(text="⬅️ חזרה לתפריט")]
+        ],
         resize_keyboard=True
     )
 
@@ -1488,7 +1483,6 @@ async def back_to_main_menu(message: Message):
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
-
 
 
 @router.message(F.text == "🏠 הכתובות שלי")
