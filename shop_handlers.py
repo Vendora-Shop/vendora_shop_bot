@@ -216,6 +216,9 @@ async def delete_customer_message(message: Message):
 
 def is_button_only_step_for_customer(step):
     return step in {
+        None,
+        "start",
+        "main",
         "browse_products",
         "product_select",
         "qty",
@@ -229,6 +232,24 @@ def is_button_only_step_for_customer(step):
         "addresses_menu",
         "address_select",
         "address_profile",
+    }
+
+
+def is_free_text_step_for_customer(step):
+    return step in {
+        "name",
+        "phone",
+        "city",
+        "street",
+        "floor",
+        "apartment",
+        "qty_manual",
+        "support",
+        "add_address_label",
+        "add_address_city",
+        "add_address_street",
+        "add_address_floor",
+        "add_address_apartment",
     }
 
 
@@ -1390,14 +1411,18 @@ async def handle_shop(message: Message):
 
     products = get_active_products()
 
-    if data and is_button_only_step_for_customer(data.get("step")) and not is_customer_system_button(txt):
-        if data.get("step") in {"browse_products", "product_select"} and is_valid_customer_product_or_category_text(txt, products):
-            pass
-        else:
-            await delete_customer_message(message)
-            return
+    if data:
+        step = data.get("step")
+        if not is_free_text_step_for_customer(step):
+            if is_customer_system_button(txt):
+                pass
+            elif step in {"browse_products", "product_select", None, "start", "main"} and is_valid_customer_product_or_category_text(txt, products):
+                pass
+            else:
+                await delete_customer_message(message)
+                return
 
-    if not data and not is_customer_system_button(txt):
+    if not data and not is_customer_system_button(txt) and not is_valid_customer_product_or_category_text(txt, products):
         await delete_customer_message(message)
         return
 
@@ -1645,10 +1670,7 @@ async def handle_shop(message: Message):
         address_id = extract_address_id_from_button(txt)
 
         if not address_id:
-            await message.answer(
-                rtl("<b>⚠️ בחר כתובת מתוך הרשימה בלבד.</b>"),
-                parse_mode="HTML"
-            )
+            await delete_customer_message(message)
             return
 
         address = get_customer_address_by_id(uid, address_id)
@@ -1701,11 +1723,7 @@ async def handle_shop(message: Message):
             )
             return
 
-        await message.answer(
-            rtl("<b>⚠️ בחר פעולה מתוך הכפתורים בלבד.</b>"),
-            reply_markup=address_actions_keyboard(),
-            parse_mode="HTML"
-        )
+        await delete_customer_message(message)
         return
 
     if data.get("step") == "add_address_label":
@@ -2267,4 +2285,9 @@ async def handle_shop(message: Message):
             disable_web_page_preview=True
         )
         await send_pickup_navigation_if_needed(message, data)
+        return
+
+    # CUSTOMER_FALLBACK_DELETE_MARKER
+    if data and not is_free_text_step_for_customer(data.get("step")):
+        await delete_customer_message(message)
         return
