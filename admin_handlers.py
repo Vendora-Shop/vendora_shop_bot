@@ -34,6 +34,7 @@ from database import (
     search_customers,
     get_customer_by_id,
     get_orders_by_customer_telegram_id,
+    clear_all_orders_for_testing,
 )
 
 router = Router()
@@ -1329,6 +1330,78 @@ async def exit_admin(message: Message):
     await message.answer(
         rtl("<b>✅ יצאת מפאנל הניהול.</b>"),
         reply_markup=main_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+
+@router.message(F.text == "🧹 מחק את כל ההזמנות")
+async def ask_clear_all_orders(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "confirm_clear_all_orders"}
+
+    await message.answer(
+        rtl(
+            "<b>⚠️ מחיקת כל ההזמנות</b>\n\n"
+            "הפעולה תמחק את כל ההזמנות מהמערכת:\n"
+            "הזמנות חדשות, אחרונות, פתוחות, הושלמו ובוטלו.\n\n"
+            "<b>הלקוחות והמוצרים לא יימחקו.</b>\n\n"
+            "לאישור סופי לחץ על הכפתור למטה."
+        ),
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="✅ כן, מחק את כל ההזמנות")],
+                [KeyboardButton(text="❌ ביטול מחיקה")],
+                [KeyboardButton(text="⬅️ חזרה לניהול")]
+            ],
+            resize_keyboard=True
+        ),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "❌ ביטול מחיקה")
+async def cancel_clear_all_orders(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "admin"}
+
+    await message.answer(
+        rtl("<b>✅ המחיקה בוטלה.</b>"),
+        reply_markup=admin_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "✅ כן, מחק את כל ההזמנות")
+async def confirm_clear_all_orders(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    state = admin_states.get(message.from_user.id, {})
+
+    if state.get("step") != "confirm_clear_all_orders":
+        await message.answer(
+            rtl("<b>⚠️ כדי למחוק הזמנות יש להתחיל מהכפתור: 🧹 מחק את כל ההזמנות.</b>"),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    deleted_count = clear_all_orders_for_testing()
+
+    admin_states[message.from_user.id] = {"step": "admin"}
+
+    await message.answer(
+        rtl(
+            "<b>✅ כל ההזמנות נמחקו בהצלחה.</b>\n\n"
+            f"{field('נמחקו הזמנות', deleted_count)}\n\n"
+            "הלקוחות והמוצרים נשארו במערכת."
+        ),
+        reply_markup=admin_keyboard(),
         parse_mode="HTML"
     )
 
