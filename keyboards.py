@@ -240,24 +240,8 @@ def support_ticket_select_keyboard(tickets, back_text="⬅️ חזרה לפני�
         ticket_number = ticket.get("ticket_number")
         phone = ticket.get("phone") or "-"
         name = ticket.get("telegram_name") or "לקוח"
-        subject = ticket.get("subject") or "ללא נושא"
         status = "פתוחה" if ticket.get("status") == "open" else "סגורה"
-        keyboard.append([KeyboardButton(text=f"📩 {ticket_number} | {subject} | {phone} | {name} | {status}")])
+        keyboard.append([KeyboardButton(text=f"📩 {ticket_number} | {phone} | {name} | {status}")])
     keyboard.append([KeyboardButton(text=back_text)])
     keyboard.append([KeyboardButton(text="⬅️ חזרה לניהול")])
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
-
-
-def support_subject_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📦 שאלה על הזמנה קיימת")],
-            [KeyboardButton(text="🚚 משלוח / איסוף")],
-            [KeyboardButton(text="💳 תשלום")],
-            [KeyboardButton(text="🛍️ מוצר / מלאי")],
-            [KeyboardButton(text="📝 שינוי פרטים")],
-            [KeyboardButton(text="❓ אחר")],
-            [KeyboardButton(text="⬅️ חזרה לתפריט")]
-        ],
-        resize_keyboard=True
-    )
