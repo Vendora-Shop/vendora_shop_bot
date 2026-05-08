@@ -250,6 +250,18 @@ def support_ticket_actions_keyboard():
     )
 
 
+
+def closed_support_ticket_actions_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📄 ייצוא TXT")],
+            [KeyboardButton(text="⬅️ חזרה לפניות שירות")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
 def support_ticket_select_keyboard(tickets, back_text="⬅️ חזרה לפניות שירות"):
     keyboard = []
 
