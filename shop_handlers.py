@@ -623,9 +623,8 @@ async def start(message: Message):
     }
 
     await message.answer(
-        rtl("<b>🏠 תפריט ראשי</b>"),
-        reply_markup=main_keyboard(message.from_user.id),
-        parse_mode="HTML"
+        "‎",
+        reply_markup=main_keyboard(message.from_user.id)
     )
 
 
