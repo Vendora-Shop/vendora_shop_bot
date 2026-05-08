@@ -354,6 +354,19 @@ def large_quantity_contact_text(max_qty):
 
 
 
+def admin_support_reply_keyboard(telegram_id):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="↩️ השב ללקוח",
+                    callback_data=f"support_reply:{telegram_id}"
+                )
+            ]
+        ]
+    )
+
+
 def admin_new_order_keyboard(order_number):
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -841,14 +854,49 @@ async def shop(message: Message):
     )
 
 
+@router.message(F.text == "⬅️ חזרה לניהול")
+async def back_to_admin_panel_from_shop(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    users.pop(message.from_user.id, None)
+
+    from keyboards import admin_keyboard
+
+    await message.answer(
+        rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
+        reply_markup=admin_keyboard(),
+        parse_mode="HTML"
+    )
+
+
 @router.message(F.text == "⬅️ חזרה")
 async def back_main(message: Message):
     users.pop(message.from_user.id, None)
-    await message.answer(
-        rtl("<b>↩️ חזרת לתפריט הראשי</b>"),
-        reply_markup=main_keyboard(message.from_user.id),
-        parse_mode="HTML"
-    )
+
+    if message.from_user.id == ADMIN_ID:
+        from keyboards import admin_keyboard
+
+        await message.answer(
+            rtl("<b>↩️ חזרת לתפריט הראשי</b>"),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if message.from_user.id == ADMIN_ID:
+        from keyboards import admin_keyboard
+        await message.answer(
+            rtl("<b>↩️ חזרת לתפריט הראשי</b>"),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+    else:
+        await message.answer(
+            rtl("<b>↩️ חזרת לתפריט הראשי</b>"),
+            reply_markup=main_keyboard(message.from_user.id),
+            parse_mode="HTML"
+        )
 
 
 @router.message(F.text == "⬅️ חזרה לקטגוריות")
@@ -1394,6 +1442,16 @@ async def back_to_main_menu(message: Message):
         users[uid] = {"cart": []}
 
     users[uid]["step"] = "main"
+
+    if uid == ADMIN_ID:
+        from keyboards import admin_keyboard
+
+        await message.answer(
+            rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט למטה."),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
 
     await message.answer(
         rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט למטה."),
@@ -1954,13 +2012,24 @@ async def handle_shop(message: Message):
                 f"{field('Telegram ID', uid)}\n"
                 f"{field('הודעה', txt)}"
             ),
+            reply_markup=admin_support_reply_keyboard(uid),
             parse_mode="HTML"
         )
 
         users.pop(uid, None)
+
+        if uid == ADMIN_ID:
+            from keyboards import admin_keyboard
+            finish_keyboard = admin_keyboard()
+        else:
+            finish_keyboard = main_keyboard(message.from_user.id)
+
         await message.answer(
-            rtl("<b>✅ קיבלנו את הפנייה שלך.</b>\nנציג יחזור אליך בהקדם."),
-            reply_markup=main_keyboard(message.from_user.id),
+            rtl(
+                "<b>✅ הפנייה התקבלה ונמצאת בטיפול.</b>\n"
+                "נציג שירות יחזור אליך בהקדם האפשרי."
+            ),
+            reply_markup=finish_keyboard,
             parse_mode="HTML"
         )
         return
