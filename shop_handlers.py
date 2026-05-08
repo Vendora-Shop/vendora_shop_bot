@@ -273,7 +273,7 @@ def is_customer_system_button(text):
         "✏️ שנה פרטים",
         "🚚 משלוח עד הבית",
         "🛍️ איסוף עצמי מהחנות",
-        "✅ השתמש בפרטים השמורים",
+        "✅ המשך עם הפרטים השמורים",
         "✏️ הזן פרטים חדשים",
         "✅ סימולציית תשלום הצליחה",
         "⬅️ חזרה לסיכום הזמנה",
@@ -366,6 +366,10 @@ def admin_new_order_keyboard(order_number):
 
 def categories_keyboard():
     products = get_active_products()
+
+    if txt == "✅ המשך עם הפרטים השמורים" and data and data.get("cart"):
+        await use_saved_profile_flow(message, data)
+        return
     keyboard = [[KeyboardButton(text=cat)] for cat in products.keys()]
     keyboard.append([KeyboardButton(text="🛒 הסל שלי")])
     keyboard.append([KeyboardButton(text="⬅️ חזרה")])
@@ -462,7 +466,7 @@ def payment_keyboard():
 def use_saved_details_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="✅ השתמש בפרטים השמורים")],
+            [KeyboardButton(text="✅ המשך עם הפרטים השמורים")],
             [KeyboardButton(text="✏️ הזן פרטים חדשים")],
             [KeyboardButton(text="❌ בטל הזמנה")]
         ],
@@ -710,6 +714,54 @@ def fill_saved_profile_into_data(data, profile):
     data["base_city"] = base_city
     return True
 
+
+
+
+async def use_saved_profile_flow(message: Message, data):
+    profile = get_customer_profile(message.from_user.id)
+
+    if not profile:
+        await message.answer(
+            rtl(
+                "<b>⚠️ אין פרטים שמורים.</b>\n\n"
+                "יש להזין פרטים חדשים כדי להמשיך."
+            ),
+            parse_mode="HTML"
+        )
+        data["step"] = "name"
+        await message.answer(
+            rtl("<b>📝 פרטי הזמנה חדשים</b>\n\nרשום את השם המלא שלך:"),
+            parse_mode="HTML"
+        )
+        return
+
+    ok = fill_saved_profile_into_data(data, profile)
+
+    if not ok:
+        await message.answer(
+            rtl(
+                "<b>⚠️ לא ניתן לחשב משלוח לפי הפרטים השמורים.</b>\n\n"
+                "יש להזין פרטים חדשים כדי להמשיך."
+            ),
+            parse_mode="HTML"
+        )
+        data["step"] = "name"
+        await message.answer(
+            rtl("<b>📝 פרטי הזמנה חדשים</b>\n\nרשום את השם המלא שלך:"),
+            parse_mode="HTML"
+        )
+        return
+
+    data["step"] = "confirm"
+
+    await message.answer(
+        build_order_summary(data),
+        reply_markup=order_summary_keyboard(data),
+        parse_mode="HTML",
+        disable_web_page_preview=True
+    )
+
+    await send_pickup_navigation_if_needed(message, data)
 
 
 
@@ -1821,7 +1873,7 @@ async def handle_shop(message: Message):
         return
 
     if data.get("step") == "saved_profile_choice":
-        if txt == "✅ השתמש בפרטים השמורים":
+        if txt == "✅ המשך עם הפרטים השמורים":
             profile = data.get("saved_profile") or get_customer_profile(uid)
 
             if not profile:
