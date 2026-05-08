@@ -1267,6 +1267,7 @@ async def recent_orders(message: Message):
     if not is_admin(message.from_user.id):
         return
 
+    admin_states[message.from_user.id] = {"step": "admin"}
     orders = get_recent_orders(10)
 
     if not orders:
@@ -1287,6 +1288,7 @@ async def new_orders(message: Message):
     if not is_admin(message.from_user.id):
         return
 
+    admin_states[message.from_user.id] = {"step": "admin"}
     orders = get_orders_by_status("new", 20)
 
     if not orders:
