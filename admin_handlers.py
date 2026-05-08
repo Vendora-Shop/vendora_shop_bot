@@ -83,6 +83,18 @@ def is_admin_button_only_step(step):
     }
 
 
+
+def should_warn_once(user_id, key):
+    state = admin_states.setdefault(user_id, {})
+    warn_key = f"warned_{key}"
+
+    if state.get(warn_key):
+        return False
+
+    state[warn_key] = True
+    return True
+
+
 def is_valid_admin_button_text(text):
     text = clean_admin_text(text)
 
@@ -512,7 +524,6 @@ def support_ticket_text(ticket):
         f"{field('שם Telegram', ticket.get('telegram_name') or '-')}\n"
         f"{field('Telegram ID', ticket.get('telegram_id') or '-')}\n"
         f"{field('פלאפון', ticket.get('phone') or '-')}\n"
-        f"{field('נושא פנייה', ticket.get('subject') or 'ללא נושא')}\n"
         f"{field('נפתחה בתאריך', ticket.get('created_at') or '-')}\n"
     )
 
@@ -550,7 +561,6 @@ def export_support_ticket_to_txt(ticket_number):
         f"Telegram Name: {ticket.get('telegram_name') or '-'}",
         f"Telegram ID: {ticket.get('telegram_id') or '-'}",
         f"Phone: {ticket.get('phone') or '-'}",
-        f"Subject: {ticket.get('subject') or '-'}",
         f"Created At: {ticket.get('created_at') or '-'}",
         f"Closed At: {ticket.get('closed_at') or '-'}",
         "",
@@ -1538,16 +1548,13 @@ async def exit_admin(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    admin_states.pop(message.from_user.id, None)
+    admin_states[message.from_user.id] = {"step": "main"}
 
     await message.answer(
         rtl("<b>✅ יצאת מפאנל הניהול.</b>"),
-        reply_markup=main_keyboard(),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
-
-
-
 
 @router.message(lambda message: clean_admin_text(message.text).startswith("📩 פניות שירות"))
 async def support_tickets_menu(message: Message):
@@ -1661,8 +1668,7 @@ async def support_ticket_reply_from_notification(callback: CallbackQuery):
             "<b>↩️ תשובה ללקוח</b>\n\n"
             f"{field('מספר פנייה', ticket_number)}\n"
             f"{field('לקוח', ticket.get('telegram_name') or '-')}\n"
-            f"{field('פלאפון', ticket.get('phone') or '-')}\n"
-            f"{field('נושא פנייה', ticket.get('subject') or 'ללא נושא')}\n\n"
+            f"{field('פלאפון', ticket.get('phone') or '-')}\n\n"
             "כתוב עכשיו את ההודעה שתרצה לשלוח ללקוח."
         ),
         reply_markup=support_reply_cancel_keyboard(),
@@ -3308,3 +3314,26 @@ async def admin_flow(message: Message):
         text = f"<b>🗑️ המוצר נמחק</b>\n\n{field('מוצר', txt)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
         await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
         return
+
+@router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") in {
+    "support_tickets_menu",
+    "support_ticket_select",
+    "support_ticket_view",
+    "admin",
+    "main"
+} and not is_valid_admin_button_text(message.text))
+async def delete_admin_junk_message(message: Message):
+    step = admin_states.get(message.from_user.id, {}).get("step") or "admin"
+
+    if should_warn_once(message.from_user.id, f"junk_{step}"):
+        await message.answer(
+            rtl("<b>⚠️ בחר פעולה מתוך הכפתורים בלבד.</b>"),
+            parse_mode="HTML"
+        )
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+
