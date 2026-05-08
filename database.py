@@ -127,6 +127,11 @@ def create_tables():
         )
     """)
 
+    try:
+        cur.execute("ALTER TABLE support_tickets ADD COLUMN subject TEXT DEFAULT ''")
+    except Exception:
+        pass
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS support_messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
