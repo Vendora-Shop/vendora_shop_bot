@@ -1279,7 +1279,7 @@ async def recent_orders(message: Message):
         parse_mode="HTML"
     )
 
-    for order in orders:
+    for order in reversed(orders):
         await message.answer(format_order(order), parse_mode="HTML")
 
 
@@ -1300,7 +1300,7 @@ async def new_orders(message: Message):
         parse_mode="HTML"
     )
 
-    for order in orders:
+    for order in reversed(orders):
         await message.answer(format_order(order), parse_mode="HTML")
 
 
@@ -1586,6 +1586,41 @@ async def admin_flow(message: Message):
     # PRIORITY CUSTOMER BROADCAST STATES
     uid = message.from_user.id
     txt = clean_admin_text(message.text)
+
+    if txt == "🧾 הזמנות אחרונות":
+        admin_states[uid] = {"step": "admin"}
+        orders = get_recent_orders(20)
+
+        if not orders:
+            await message.answer(rtl("<b>🧾 הזמנות אחרונות</b>\n\nאין הזמנות במערכת."), parse_mode="HTML")
+            return
+
+        await message.answer(
+            rtl(f"<b>🧾 הזמנות אחרונות</b>\n\nנמצאו {len(orders)} הזמנות אחרונות."),
+            parse_mode="HTML"
+        )
+
+        for order in reversed(orders):
+            await message.answer(format_order(order), parse_mode="HTML")
+        return
+
+    if txt == "🆕 הזמנות חדשות":
+        admin_states[uid] = {"step": "admin"}
+        orders = get_orders_by_status("new", 30)
+
+        if not orders:
+            await message.answer(rtl("<b>🆕 הזמנות חדשות</b>\n\nאין הזמנות חדשות כרגע."), parse_mode="HTML")
+            return
+
+        await message.answer(
+            rtl(f"<b>🆕 הזמנות חדשות</b>\n\nנמצאו {len(orders)} הזמנות חדשות."),
+            parse_mode="HTML"
+        )
+
+        for order in reversed(orders):
+            await message.answer(format_order(order), parse_mode="HTML")
+        return
+
     state = admin_states.get(uid) or {}
     step = state.get("step")
 
