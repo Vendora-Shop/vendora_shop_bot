@@ -112,6 +112,31 @@ def create_tables():
         )
     """)
 
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS support_tickets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_number TEXT UNIQUE,
+            telegram_id INTEGER NOT NULL,
+            telegram_name TEXT DEFAULT '',
+            phone TEXT NOT NULL,
+            status TEXT DEFAULT 'open',
+            created_at TEXT NOT NULL,
+            closed_at TEXT DEFAULT ''
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS support_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_number TEXT NOT NULL,
+            sender_type TEXT NOT NULL,
+            sender_name TEXT DEFAULT '',
+            message_text TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -1729,3 +1754,150 @@ def clear_all_orders_for_testing():
     conn.close()
 
     return int(deleted_count or 0)
+
+def generate_support_ticket_number(ticket_id):
+    return f"T{1000 + int(ticket_id)}"
+
+
+def create_support_ticket(telegram_id, telegram_name, phone):
+    create_tables()
+    conn = get_connection()
+    cur = conn.cursor()
+    now = israel_now_str()
+    cur.execute("""
+        INSERT INTO support_tickets
+        (ticket_number, telegram_id, telegram_name, phone, status, created_at, closed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, ("", int(telegram_id), telegram_name or "", phone, "open", now, ""))
+    ticket_id = cur.lastrowid
+    ticket_number = generate_support_ticket_number(ticket_id)
+    cur.execute("UPDATE support_tickets SET ticket_number = ? WHERE id = ?", (ticket_number, ticket_id))
+    conn.commit()
+    conn.close()
+    return ticket_number
+
+
+def add_support_message(ticket_number, sender_type, sender_name, message_text):
+    create_tables()
+    conn = get_connection()
+    cur = conn.cursor()
+    now = israel_now_str()
+    cur.execute("""
+        INSERT INTO support_messages
+        (ticket_number, sender_type, sender_name, message_text, created_at)
+        VALUES (?, ?, ?, ?, ?)
+    """, (ticket_number, sender_type, sender_name or "", message_text or "", now))
+    conn.commit()
+    conn.close()
+    return True
+
+
+def support_ticket_row_to_dict(row):
+    if not row:
+        return None
+    ticket_id, ticket_number, telegram_id, telegram_name, phone, status, created_at, closed_at = row
+    return {
+        "id": ticket_id,
+        "ticket_number": ticket_number,
+        "telegram_id": telegram_id,
+        "telegram_name": telegram_name,
+        "phone": phone,
+        "status": status,
+        "created_at": created_at,
+        "closed_at": closed_at,
+    }
+
+
+def support_message_row_to_dict(row):
+    if not row:
+        return None
+    message_id, ticket_number, sender_type, sender_name, message_text, created_at = row
+    return {
+        "id": message_id,
+        "ticket_number": ticket_number,
+        "sender_type": sender_type,
+        "sender_name": sender_name,
+        "message_text": message_text,
+        "created_at": created_at,
+    }
+
+
+def get_support_ticket(ticket_number):
+    create_tables()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, ticket_number, telegram_id, telegram_name, phone, status, created_at, closed_at
+        FROM support_tickets
+        WHERE ticket_number = ?
+    """, (ticket_number,))
+    row = cur.fetchone()
+    conn.close()
+    return support_ticket_row_to_dict(row)
+
+
+def get_open_support_ticket_by_user(telegram_id):
+    create_tables()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, ticket_number, telegram_id, telegram_name, phone, status, created_at, closed_at
+        FROM support_tickets
+        WHERE telegram_id = ? AND status = 'open'
+        ORDER BY id DESC
+        LIMIT 1
+    """, (int(telegram_id),))
+    row = cur.fetchone()
+    conn.close()
+    return support_ticket_row_to_dict(row)
+
+
+def get_support_tickets_by_status(status='open', limit=20):
+    create_tables()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, ticket_number, telegram_id, telegram_name, phone, status, created_at, closed_at
+        FROM support_tickets
+        WHERE status = ?
+        ORDER BY id DESC
+        LIMIT ?
+    """, (status, int(limit)))
+    rows = cur.fetchall()
+    conn.close()
+    return [support_ticket_row_to_dict(row) for row in rows]
+
+
+def get_support_messages(ticket_number):
+    create_tables()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, ticket_number, sender_type, sender_name, message_text, created_at
+        FROM support_messages
+        WHERE ticket_number = ?
+        ORDER BY id ASC
+    """, (ticket_number,))
+    rows = cur.fetchall()
+    conn.close()
+    return [support_message_row_to_dict(row) for row in rows]
+
+
+def close_support_ticket(ticket_number):
+    create_tables()
+    conn = get_connection()
+    cur = conn.cursor()
+    now = israel_now_str()
+    cur.execute("""
+        UPDATE support_tickets
+        SET status = 'closed', closed_at = ?
+        WHERE ticket_number = ? AND status = 'open'
+    """, (now, ticket_number))
+    conn.commit()
+    changed = cur.rowcount
+    conn.close()
+    return changed > 0
+
+
+def search_support_ticket(ticket_number):
+    return get_support_ticket(ticket_number)
