@@ -2021,6 +2021,16 @@ async def handle_shop(message: Message):
         return
 
     if data.get("step") == "support_subject":
+        if txt == "✅ הבעיה נפתרה":
+            users.pop(uid, None)
+
+            await message.answer(
+                rtl("<b>✅ הפנייה בוטלה.</b>\nחזרת לתפריט הראשי."),
+                reply_markup=main_keyboard(message.from_user.id),
+                parse_mode="HTML"
+            )
+            return
+
         support_subjects = {
             "📦 שאלה על הזמנה קיימת",
             "🚚 משלוח / איסוף",
@@ -2053,6 +2063,16 @@ async def handle_shop(message: Message):
         return
 
     if data.get("step") == "support_phone":
+        if txt == "✅ הבעיה נפתרה":
+            users.pop(uid, None)
+
+            await message.answer(
+                rtl("<b>✅ הפנייה בוטלה.</b>\nחזרת לתפריט הראשי."),
+                reply_markup=main_keyboard(message.from_user.id),
+                parse_mode="HTML"
+            )
+            return
+
         phone = clean_phone(txt)
 
         if not valid_phone(phone):
