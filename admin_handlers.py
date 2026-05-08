@@ -158,6 +158,9 @@ def is_valid_admin_button_text(text):
     if text in fixed_buttons:
         return True
 
+    if text.startswith("📩 פניות שירות"):
+        return True
+
     if text.startswith("🧾 "):
         return True
 
@@ -509,6 +512,7 @@ def support_ticket_text(ticket):
         f"{field('שם Telegram', ticket.get('telegram_name') or '-')}\n"
         f"{field('Telegram ID', ticket.get('telegram_id') or '-')}\n"
         f"{field('פלאפון', ticket.get('phone') or '-')}\n"
+        f"{field('נושא פנייה', ticket.get('subject') or 'ללא נושא')}\n"
         f"{field('נפתחה בתאריך', ticket.get('created_at') or '-')}\n"
     )
 
@@ -546,6 +550,7 @@ def export_support_ticket_to_txt(ticket_number):
         f"Telegram Name: {ticket.get('telegram_name') or '-'}",
         f"Telegram ID: {ticket.get('telegram_id') or '-'}",
         f"Phone: {ticket.get('phone') or '-'}",
+        f"Subject: {ticket.get('subject') or '-'}",
         f"Created At: {ticket.get('created_at') or '-'}",
         f"Closed At: {ticket.get('closed_at') or '-'}",
         "",
@@ -1544,7 +1549,7 @@ async def exit_admin(message: Message):
 
 
 
-@router.message(F.text == "📩 פניות שירות")
+@router.message(lambda message: clean_admin_text(message.text).startswith("📩 פניות שירות"))
 async def support_tickets_menu(message: Message):
     if not is_admin(message.from_user.id):
         return
@@ -1588,7 +1593,7 @@ async def list_support_tickets(message: Message):
         return
 
     await message.answer(
-        rtl(f"<b>{title}</b>\n\nבחר פנייה מהרשימה."),
+        rtl(f"<b>{title}</b>\n\nבחר פנייה מהרשימה כדי לראות את כל ההודעות."),
         reply_markup=support_ticket_select_keyboard(tickets),
         parse_mode="HTML"
     )
@@ -1656,7 +1661,8 @@ async def support_ticket_reply_from_notification(callback: CallbackQuery):
             "<b>↩️ תשובה ללקוח</b>\n\n"
             f"{field('מספר פנייה', ticket_number)}\n"
             f"{field('לקוח', ticket.get('telegram_name') or '-')}\n"
-            f"{field('פלאפון', ticket.get('phone') or '-')}\n\n"
+            f"{field('פלאפון', ticket.get('phone') or '-')}\n"
+            f"{field('נושא פנייה', ticket.get('subject') or 'ללא נושא')}\n\n"
             "כתוב עכשיו את ההודעה שתרצה לשלוח ללקוח."
         ),
         reply_markup=support_reply_cancel_keyboard(),
