@@ -249,6 +249,8 @@ def is_free_text_step_for_customer(step):
         "apartment",
         "qty_manual",
         "support",
+        "support_phone",
+        "support_chat",
         "add_address_label",
         "add_address_city",
         "add_address_street",
@@ -513,11 +515,17 @@ def manual_details_keyboard():
 
 
 
-def support_customer_keyboard():
+def support_customer_keyboard(user_id=None):
+    keyboard = [
+        [KeyboardButton(text="❌ סגור פנייה")]
+    ]
+
+    if user_id == ADMIN_ID:
+        keyboard.append([KeyboardButton(text="⬅️ חזרה לניהול")])
+        keyboard.append([KeyboardButton(text="🔐 פאנל ניהול")])
+
     return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="❌ סגור פנייה")]
-        ],
+        keyboard=keyboard,
         resize_keyboard=True
     )
 
@@ -1418,7 +1426,7 @@ async def support(message: Message):
                 f"{field('מספר פנייה', existing_ticket['ticket_number'])}\n"
                 "יש לך פנייה פתוחה. כתוב את ההודעה שלך ונעביר אותה לנציג."
             ),
-            reply_markup=support_customer_keyboard(),
+            reply_markup=support_customer_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -1434,6 +1442,7 @@ async def support(message: Message):
             "כדי לפתוח פנייה לשירות לקוחות, רשום מספר פלאפון תקין.\n"
             "לדוגמה: 0547937503"
         ),
+        reply_markup=support_customer_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
@@ -2075,7 +2084,7 @@ async def handle_shop(message: Message):
                 f"{field('מספר פנייה', ticket_number)}\n"
                 "כתוב עכשיו את ההודעה שלך ונציג שירות יחזור אליך בהקדם."
             ),
-            reply_markup=support_customer_keyboard(),
+            reply_markup=support_customer_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -2159,7 +2168,7 @@ async def handle_shop(message: Message):
                 "<b>✅ ההודעה התקבלה ונמצאת בטיפול.</b>\n"
                 "נציג שירות יחזור אליך בהקדם האפשרי."
             ),
-            reply_markup=support_customer_keyboard(),
+            reply_markup=support_customer_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
