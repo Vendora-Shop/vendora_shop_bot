@@ -7,7 +7,7 @@ from datetime import datetime
 import calendar
 
 from config import ADMIN_ID
-from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard, customers_menu_keyboard, customer_actions_keyboard, customer_select_keyboard, support_tickets_menu_keyboard, support_ticket_actions_keyboard, support_ticket_select_keyboard
+from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard, customers_menu_keyboard, customer_actions_keyboard, customer_select_keyboard, support_tickets_menu_keyboard, support_ticket_actions_keyboard, closed_support_ticket_actions_keyboard, support_ticket_select_keyboard
 from database import (
     add_product,
     get_all_products,
@@ -499,6 +499,13 @@ def extract_ticket_number_from_button(text):
 
 def support_status_label(status):
     return "פתוחה" if status == "open" else "סגורה"
+
+
+def support_ticket_keyboard_by_status(ticket):
+    if ticket and ticket.get("status") == "closed":
+        return closed_support_ticket_actions_keyboard()
+
+    return support_ticket_actions_keyboard()
 
 
 def support_ticket_text(ticket):
@@ -1695,7 +1702,7 @@ async def search_support_ticket_run(message: Message):
 
     await message.answer(
         support_ticket_text(ticket),
-        reply_markup=support_ticket_actions_keyboard(),
+        reply_markup=support_ticket_keyboard_by_status(ticket),
         parse_mode="HTML"
     )
 
@@ -1719,7 +1726,7 @@ async def open_support_ticket_from_list(message: Message):
 
     await message.answer(
         support_ticket_text(ticket),
-        reply_markup=support_ticket_actions_keyboard(),
+        reply_markup=support_ticket_keyboard_by_status(ticket),
         parse_mode="HTML"
     )
 
@@ -1823,7 +1830,7 @@ async def send_support_ticket_reply(message: Message):
 
     await message.answer(
         rtl("<b>✅ התשובה נשלחה ללקוח.</b>"),
-        reply_markup=support_ticket_actions_keyboard(),
+        reply_markup=support_ticket_keyboard_by_status(ticket),
         parse_mode="HTML"
     )
 
@@ -1878,6 +1885,19 @@ async def close_support_ticket_from_admin(message: Message):
         )
         return
 
+    if ticket.get("status") == "closed":
+        admin_states[message.from_user.id] = {"step": "support_tickets_menu"}
+
+        await message.answer(
+            rtl(
+                "<b>ℹ️ הפנייה כבר סגורה.</b>\n\n"
+                f"{field('מספר פנייה', ticket_number)}"
+            ),
+            reply_markup=support_ticket_keyboard_by_status(ticket),
+            parse_mode="HTML"
+        )
+        return
+
     ok = close_support_ticket(ticket_number)
 
     if ok:
@@ -1897,16 +1917,15 @@ async def close_support_ticket_from_admin(message: Message):
         except Exception:
             pass
 
-    admin_states[message.from_user.id] = {
-        "step": "support_ticket_view",
-        "support_ticket_number": ticket_number
-    }
-
-    ticket = get_support_ticket(ticket_number)
+    admin_states[message.from_user.id] = {"step": "support_tickets_menu"}
 
     await message.answer(
-        support_ticket_text(ticket),
-        reply_markup=support_ticket_actions_keyboard(),
+        rtl(
+            "<b>✅ הפנייה נסגרה בהצלחה.</b>\n\n"
+            f"{field('מספר פנייה', ticket_number)}\n"
+            "הפנייה עברה לפניות סגורות."
+        ),
+        reply_markup=support_tickets_menu_keyboard(),
         parse_mode="HTML"
     )
 
