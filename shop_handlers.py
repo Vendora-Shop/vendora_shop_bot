@@ -203,6 +203,68 @@ users = {}
 
 RTL = "\u200F"
 
+
+# ================== SAFE INPUT CLEANUP ==================
+# מוחק קשקושים של לקוחות רק במקומות שבהם צריך לבחור מכפתורים.
+# לא מוחק סיכומי הזמנה, PDF או הודעות מעקב.
+async def delete_customer_message(message: Message):
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+
+def is_button_only_step_for_customer(step):
+    return step in {
+        "qty",
+        "cart",
+        "fulfillment_choice",
+        "saved_profile_choice",
+        "payment_simulation",
+        "confirm",
+        "my_orders",
+        "reorder_select",
+        "addresses_menu",
+        "address_select",
+        "address_profile",
+    }
+
+
+def is_customer_system_button(text):
+    text = str(text or "").strip()
+    return text in {
+        "🛒 חנות",
+        "🛒 הסל שלי",
+        "📦 ההזמנות שלי",
+        "🏠 הכתובות שלי",
+        "👤 הפרטים שלי",
+        "📞 שירות לקוחות",
+        "⬅️ חזרה",
+        "⬅️ חזרה לקטגוריות",
+        "⬅️ חזרה לתפריט",
+        "➕ הוסף עוד מוצר",
+        "✅ המשך להזמנה",
+        "🧹 רוקן סל",
+        "❌ בטל הזמנה",
+        "✅ אשר הזמנה",
+        "✏️ שנה פרטים",
+        "🚚 משלוח עד הבית",
+        "🛍️ איסוף עצמי מהחנות",
+        "✅ השתמש בפרטים השמורים",
+        "✏️ הזן פרטים חדשים",
+        "✅ סימולציית תשלום הצליחה",
+        "⬅️ חזרה לסיכום הזמנה",
+        "❌ ביטול תשלום",
+        "🔁 הזמן שוב",
+        "⬅️ חזרה להזמנות שלי",
+        "📋 הצג כתובות",
+        "➕ הוסף כתובת",
+        "🗑️ מחק כתובת",
+        "⬅️ חזרה לכתובות",
+        "⬅️ חזרה לרשימת כתובות",
+    }
+
+
 # ================== PICKUP SETTINGS ==================
 # כאן מגדירים את כל פרטי האיסוף העצמי.
 # אם בעתיד תרצה לשנות כתובת / שעות / ניווט — משנים רק כאן.
@@ -629,6 +691,7 @@ async def start(message: Message):
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
+
 
 @router.message(F.text == "👤 הפרטים שלי")
 async def my_details(message: Message):
@@ -1311,6 +1374,10 @@ async def handle_shop(message: Message):
 
     products = get_active_products()
 
+    if data and is_button_only_step_for_customer(data.get("step")) and not is_customer_system_button(txt):
+        await delete_customer_message(message)
+        return
+
     if txt in products:
         users.setdefault(uid, {"cart": [], "step": None})
         users[uid]["step"] = None
@@ -1983,11 +2050,7 @@ async def handle_shop(message: Message):
             return
 
         if txt != "🛒 הוסף לסל":
-            await message.answer(
-                rtl("<b>⚠️ בחר פעולה מתוך הכפתורים בלבד.</b>"),
-                reply_markup=quantity_inline_keyboard(selected_qty),
-                parse_mode="HTML"
-            )
+            await delete_customer_message(message)
             return
 
         qty = selected_qty
