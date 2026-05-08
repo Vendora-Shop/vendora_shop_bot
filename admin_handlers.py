@@ -40,6 +40,17 @@ from database import (
 router = Router()
 admin_states = {}
 
+
+def support_reply_cancel_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="❌ בטל תשובה")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
 RTL = "\u200F"
 
 
@@ -1233,6 +1244,90 @@ async def order_notification_action(callback: CallbackQuery):
 
 
 
+
+@router.callback_query(F.data.startswith("support_reply:"))
+async def start_support_reply(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+
+    try:
+        customer_id = int((callback.data or "").split(":", 1)[1])
+    except Exception:
+        await callback.answer("שגיאה בזיהוי הלקוח.", show_alert=True)
+        return
+
+    admin_states[callback.from_user.id] = {
+        "step": "support_reply",
+        "support_reply_customer_id": customer_id
+    }
+
+    await callback.message.answer(
+        rtl(
+            "<b>↩️ תשובה ללקוח</b>\n\n"
+            f"{field('Telegram ID', customer_id)}\n\n"
+            "כתוב עכשיו את ההודעה שתרצה לשלוח ללקוח."
+        ),
+        reply_markup=support_reply_cancel_keyboard(),
+        parse_mode="HTML"
+    )
+
+    await callback.answer()
+
+
+@router.message(F.text == "❌ בטל תשובה")
+async def cancel_support_reply(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    state = admin_states.get(message.from_user.id, {})
+
+    if state.get("step") == "support_reply":
+        admin_states[message.from_user.id] = {"step": "admin"}
+
+        await message.answer(
+            rtl("<b>✅ התשובה בוטלה.</b>"),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+
+
+@router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "support_reply")
+async def send_support_reply_to_customer(message: Message):
+    state = admin_states.get(message.from_user.id, {})
+    customer_id = state.get("support_reply_customer_id")
+    reply_text = (message.text or "").strip()
+
+    if not customer_id:
+        admin_states[message.from_user.id] = {"step": "admin"}
+        await message.answer(
+            rtl("<b>⚠️ לא נמצא לקוח לשליחת תשובה.</b>"),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if not reply_text or reply_text in {"⬅️ חזרה לניהול", "❌ בטל תשובה"}:
+        return
+
+    await message.bot.send_message(
+        customer_id,
+        rtl(
+            "<b>📩 תשובה משירות הלקוחות</b>\n\n"
+            f"{h(reply_text)}"
+        ),
+        parse_mode="HTML"
+    )
+
+    admin_states[message.from_user.id] = {"step": "admin"}
+
+    await message.answer(
+        rtl("<b>✅ התשובה נשלחה ללקוח.</b>"),
+        reply_markup=admin_keyboard(),
+        parse_mode="HTML"
+    )
+
+
 @router.message(F.text == "🔐 פאנל ניהול")
 async def admin_panel_button(message: Message):
     if not is_admin(message.from_user.id):
@@ -1418,8 +1513,6 @@ async def back_admin(message: Message):
         reply_markup=admin_keyboard(),
         parse_mode="HTML"
     )
-
-
 
 @router.message(F.text == "📦 ניהול הזמנות")
 async def orders_management_start(message: Message):
