@@ -4,7 +4,7 @@ from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardB
 from html import escape
 
 from config import ADMIN_ID
-from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard
+from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard, support_subject_keyboard
 from database import (
     get_active_products,
     get_product_by_name,
@@ -249,6 +249,7 @@ def is_free_text_step_for_customer(step):
         "apartment",
         "qty_manual",
         "support",
+        "support_subject",
         "support_phone",
         "support_chat",
         "add_address_label",
@@ -268,6 +269,12 @@ def is_customer_system_button(text):
         "🏠 הכתובות שלי",
         "👤 הפרטים שלי",
         "📞 שירות לקוחות",
+        "❓ אחר",
+        "📝 שינוי פרטים",
+        "🛍️ מוצר / מלאי",
+        "💳 תשלום",
+        "🚚 משלוח / איסוף",
+        "📦 שאלה על הזמנה קיימת",
         "⬅️ חזרה",
         "⬅️ חזרה לקטגוריות",
         "⬅️ חזרה לתפריט",
@@ -361,6 +368,19 @@ def large_quantity_contact_text(max_qty):
 
 
 
+def admin_new_support_ticket_keyboard(ticket_number):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📩 פתח פנייה",
+                    callback_data=f"support_ticket_reply:{ticket_number}"
+                )
+            ]
+        ]
+    )
+
+
 def admin_support_ticket_keyboard(ticket_number):
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -400,12 +420,13 @@ def categories_keyboard():
     products = get_active_products()
 
     open_support_ticket = get_open_support_ticket_by_user(uid)
-    if open_support_ticket and (not data or data.get("step") in {None, "start", "main"}) and txt not in {"🛒 חנות", "👤 הפרטים שלי", "📦 ההזמנות שלי", "🏠 הכתובות שלי", "📞 שירות לקוחות", "🔐 פאנל ניהול"}:
+    if open_support_ticket and txt not in {"🛒 חנות", "👤 הפרטים שלי", "📦 ההזמנות שלי", "🏠 הכתובות שלי", "📞 שירות לקוחות", "🔐 פאנל ניהול", "✅ הבעיה נפתרה"}:
         users[uid] = {
             "cart": [],
             "step": "support_chat",
             "support_ticket_number": open_support_ticket["ticket_number"],
-            "support_phone": open_support_ticket["phone"]
+            "support_phone": open_support_ticket["phone"],
+            "support_subject": open_support_ticket.get("subject") or ""
         }
         data = users[uid]
 
@@ -1427,13 +1448,15 @@ async def support(message: Message):
             "cart": [],
             "step": "support_chat",
             "support_ticket_number": existing_ticket["ticket_number"],
-            "support_phone": existing_ticket["phone"]
+            "support_phone": existing_ticket["phone"],
+            "support_subject": existing_ticket.get("subject") or ""
         }
 
         await message.answer(
             rtl(
                 "<b>📞 שירות לקוחות</b>\n\n"
                 f"{field('מספר פנייה', existing_ticket['ticket_number'])}\n"
+                f"{field('נושא הפנייה', existing_ticket.get('subject') or 'ללא נושא')}\n"
                 "יש לך פנייה פתוחה. כתוב את ההודעה שלך כאן והיא תועבר לנציג."
             ),
             reply_markup=support_customer_keyboard(message.from_user.id),
@@ -1443,16 +1466,15 @@ async def support(message: Message):
 
     users[uid] = {
         "cart": [],
-        "step": "support_phone"
+        "step": "support_subject"
     }
 
     await message.answer(
         rtl(
             "<b>📞 שירות לקוחות</b>\n\n"
-            "כדי לפתוח פנייה לשירות לקוחות, רשום מספר פלאפון תקין.\n"
-            "לדוגמה: 0547937503"
+            "בחר את נושא הפנייה:"
         ),
-        reply_markup=support_customer_keyboard(message.from_user.id),
+        reply_markup=support_subject_keyboard(),
         parse_mode="HTML"
     )
 
@@ -2068,6 +2090,39 @@ async def handle_shop(message: Message):
         )
         return
 
+    if data.get("step") == "support_subject":
+        support_subjects = {
+            "📦 שאלה על הזמנה קיימת",
+            "🚚 משלוח / איסוף",
+            "💳 תשלום",
+            "🛍️ מוצר / מלאי",
+            "📝 שינוי פרטים",
+            "❓ אחר"
+        }
+
+        if txt not in support_subjects:
+            await message.answer(
+                rtl("<b>⚠️ בחר נושא מתוך הכפתורים בלבד.</b>"),
+                reply_markup=support_subject_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        data["support_subject"] = txt
+        data["step"] = "support_phone"
+
+        await message.answer(
+            rtl(
+                "<b>📞 שירות לקוחות</b>\n\n"
+                f"{field('נושא הפנייה', txt)}\n\n"
+                "רשום מספר פלאפון תקין.\n"
+                "לדוגמה: 0547937503"
+            ),
+            reply_markup=support_customer_keyboard(message.from_user.id),
+            parse_mode="HTML"
+        )
+        return
+
     if data.get("step") == "support_phone":
         phone = clean_phone(txt)
 
@@ -2080,14 +2135,19 @@ async def handle_shop(message: Message):
 
         existing_ticket = get_open_support_ticket_by_user(uid)
 
+        created_new_ticket = False
+
         if existing_ticket:
             ticket_number = existing_ticket["ticket_number"]
         else:
             ticket_number = create_support_ticket(
                 telegram_id=uid,
                 telegram_name=message.from_user.full_name,
-                phone=phone
+                phone=phone,
+                subject=data.get("support_subject", "")
             )
+            created_new_ticket = True
+
 
         data["step"] = "support_chat"
         data["support_ticket_number"] = ticket_number
@@ -2097,6 +2157,7 @@ async def handle_shop(message: Message):
             rtl(
                 "<b>✅ הפנייה נפתחה ונמצאת בטיפול.</b>\n\n"
                 f"{field('מספר פנייה', ticket_number)}\n"
+                f"{field('נושא הפנייה', data.get('support_subject', '-'))}\n"
                 "כתוב עכשיו את ההודעה שלך ונציג שירות יחזור אליך בהקדם."
             ),
             reply_markup=support_customer_keyboard(message.from_user.id),
@@ -2105,13 +2166,15 @@ async def handle_shop(message: Message):
         return
 
     if data.get("step") == "support_chat":
-        ticket_number = data.get("support_ticket_number")
         existing_ticket = get_open_support_ticket_by_user(uid)
 
         if existing_ticket:
             ticket_number = existing_ticket["ticket_number"]
             data["support_ticket_number"] = ticket_number
             data["support_phone"] = existing_ticket.get("phone") or data.get("support_phone", "-")
+            data["support_subject"] = existing_ticket.get("subject") or data.get("support_subject", "")
+        else:
+            ticket_number = data.get("support_ticket_number")
 
         if txt == "✅ הבעיה נפתרה":
             if ticket_number:
@@ -2183,20 +2246,6 @@ async def handle_shop(message: Message):
             "customer",
             message.from_user.full_name,
             txt
-        )
-
-        await message.bot.send_message(
-            ADMIN_ID,
-            rtl(
-                "<b>📩 הודעה חדשה בפניית שירות</b>\n\n"
-                f"{field('מספר פנייה', ticket_number)}\n"
-                f"{field('שם', message.from_user.full_name)}\n"
-                f"{field('Telegram ID', uid)}\n"
-                f"{field('פלאפון', data.get('support_phone', '-'))}\n"
-                f"{field('הודעה', txt)}"
-            ),
-            reply_markup=admin_support_ticket_keyboard(ticket_number),
-            parse_mode="HTML"
         )
 
         await message.answer(
