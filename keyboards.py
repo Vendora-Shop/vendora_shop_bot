@@ -28,6 +28,7 @@ def admin_keyboard():
             [KeyboardButton(text="📊 מצב העסק"), KeyboardButton(text="📅 סטטיסטיקה לפי תאריך")],
             [KeyboardButton(text="📢 שלח הודעה ללקוחות")],
             [KeyboardButton(text="👥 לקוחות")],
+            [KeyboardButton(text="📩 פניות שירות")],
             [KeyboardButton(text="🔄 עדכן סטטוס הזמנה")],
             [KeyboardButton(text="🧹 מחק את כל ההזמנות")],
             [KeyboardButton(text="➕ הוסף מוצר"), KeyboardButton(text="📦 רשימת מוצרים")],
@@ -192,3 +193,40 @@ def customer_select_keyboard(customers):
         keyboard=keyboard,
         resize_keyboard=True
     )
+
+def support_tickets_menu_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📬 פניות פתוחות")],
+            [KeyboardButton(text="📁 פניות סגורות")],
+            [KeyboardButton(text="🔍 חיפוש פנייה")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def support_ticket_actions_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="↩️ השב ללקוח")],
+            [KeyboardButton(text="📄 ייצוא TXT")],
+            [KeyboardButton(text="✅ סגור פנייה")],
+            [KeyboardButton(text="⬅️ חזרה לפניות שירות")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def support_ticket_select_keyboard(tickets, back_text="⬅️ חזרה לפניות שירות"):
+    keyboard = []
+    for ticket in tickets:
+        ticket_number = ticket.get("ticket_number")
+        phone = ticket.get("phone") or "-"
+        name = ticket.get("telegram_name") or "לקוח"
+        status = "פתוחה" if ticket.get("status") == "open" else "סגורה"
+        keyboard.append([KeyboardButton(text=f"📩 {ticket_number} | {phone} | {name} | {status}")])
+    keyboard.append([KeyboardButton(text=back_text)])
+    keyboard.append([KeyboardButton(text="⬅️ חזרה לניהול")])
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
