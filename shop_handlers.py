@@ -334,7 +334,7 @@ STORE_CONTACT_PHONE = "054-7937503"
 STORE_CONTACT_TELEGRAM = "@Vendora"
 
 
-#קעקרערעק
+
 
 def h(text):
     return escape(str(text))
@@ -902,7 +902,6 @@ async def back_main(message: Message):
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
-
 
 @router.message(F.text == "⬅️ חזרה לקטגוריות")
 async def back_categories(message: Message):
@@ -1483,7 +1482,6 @@ async def back_to_main_menu(message: Message):
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
-
 
 @router.message(F.text == "🏠 הכתובות שלי")
 async def my_addresses(message: Message):
