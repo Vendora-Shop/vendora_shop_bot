@@ -1705,3 +1705,27 @@ def delete_customer_address(telegram_id, address_id):
 
     return changed > 0
 
+
+
+
+def clear_all_orders_for_testing():
+    """
+    מוחק את כל ההזמנות בלבד.
+    לא מוחק לקוחות, לא מוחק מוצרים ולא נוגע במלאי.
+    מיועד לניקוי סביבת בדיקות.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("DELETE FROM orders")
+    deleted_count = cur.rowcount
+
+    try:
+        cur.execute("DELETE FROM sqlite_sequence WHERE name = 'orders'")
+    except Exception:
+        pass
+
+    conn.commit()
+    conn.close()
+
+    return int(deleted_count or 0)
