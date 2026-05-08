@@ -120,17 +120,11 @@ def create_tables():
             telegram_id INTEGER NOT NULL,
             telegram_name TEXT DEFAULT '',
             phone TEXT NOT NULL,
-            subject TEXT DEFAULT '',
             status TEXT DEFAULT 'open',
             created_at TEXT NOT NULL,
             closed_at TEXT DEFAULT ''
         )
     """)
-
-    try:
-        cur.execute("ALTER TABLE support_tickets ADD COLUMN subject TEXT DEFAULT ''")
-    except Exception:
-        pass
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS support_messages (
@@ -1765,16 +1759,16 @@ def generate_support_ticket_number(ticket_id):
     return f"T{1000 + int(ticket_id)}"
 
 
-def create_support_ticket(telegram_id, telegram_name, phone, subject=""):
+def create_support_ticket(telegram_id, telegram_name, phone):
     create_tables()
     conn = get_connection()
     cur = conn.cursor()
     now = israel_now_str()
     cur.execute("""
         INSERT INTO support_tickets
-        (ticket_number, telegram_id, telegram_name, phone, subject, status, created_at, closed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, ("", int(telegram_id), telegram_name or "", phone, subject or "", "open", now, ""))
+        (ticket_number, telegram_id, telegram_name, phone, status, created_at, closed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, ("", int(telegram_id), telegram_name or "", phone, "open", now, ""))
     ticket_id = cur.lastrowid
     ticket_number = generate_support_ticket_number(ticket_id)
     cur.execute("UPDATE support_tickets SET ticket_number = ? WHERE id = ?", (ticket_number, ticket_id))
@@ -1801,19 +1795,13 @@ def add_support_message(ticket_number, sender_type, sender_name, message_text):
 def support_ticket_row_to_dict(row):
     if not row:
         return None
-    if len(row) == 8:
-        ticket_id, ticket_number, telegram_id, telegram_name, phone, status, created_at, closed_at = row
-        subject = ""
-    else:
-        ticket_id, ticket_number, telegram_id, telegram_name, phone, subject, status, created_at, closed_at = row
-
+    ticket_id, ticket_number, telegram_id, telegram_name, phone, status, created_at, closed_at = row
     return {
         "id": ticket_id,
         "ticket_number": ticket_number,
         "telegram_id": telegram_id,
         "telegram_name": telegram_name,
         "phone": phone,
-        "subject": subject or "",
         "status": status,
         "created_at": created_at,
         "closed_at": closed_at,
@@ -1839,7 +1827,7 @@ def get_support_ticket(ticket_number):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        SELECT id, ticket_number, telegram_id, telegram_name, phone, subject, status, created_at, closed_at
+        SELECT id, ticket_number, telegram_id, telegram_name, phone, status, created_at, closed_at
         FROM support_tickets
         WHERE ticket_number = ?
     """, (ticket_number,))
@@ -1853,7 +1841,7 @@ def get_open_support_ticket_by_user(telegram_id):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        SELECT id, ticket_number, telegram_id, telegram_name, phone, subject, status, created_at, closed_at
+        SELECT id, ticket_number, telegram_id, telegram_name, phone, status, created_at, closed_at
         FROM support_tickets
         WHERE telegram_id = ? AND status = 'open'
         ORDER BY id DESC
@@ -1869,7 +1857,7 @@ def get_support_tickets_by_status(status='open', limit=20):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        SELECT id, ticket_number, telegram_id, telegram_name, phone, subject, status, created_at, closed_at
+        SELECT id, ticket_number, telegram_id, telegram_name, phone, status, created_at, closed_at
         FROM support_tickets
         WHERE status = ?
         ORDER BY id DESC
