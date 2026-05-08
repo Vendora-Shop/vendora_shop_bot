@@ -216,6 +216,8 @@ async def delete_customer_message(message: Message):
 
 def is_button_only_step_for_customer(step):
     return step in {
+        "browse_products",
+        "product_select",
         "qty",
         "cart",
         "fulfillment_choice",
@@ -263,6 +265,20 @@ def is_customer_system_button(text):
         "⬅️ חזרה לכתובות",
         "⬅️ חזרה לרשימת כתובות",
     }
+
+
+def is_valid_customer_product_or_category_text(text, products):
+    text = str(text or "").strip()
+
+    if text in products:
+        return True
+
+    for items in products.values():
+        for product in items:
+            if text == product.get("name"):
+                return True
+
+    return False
 
 
 # ================== PICKUP SETTINGS ==================
@@ -755,7 +771,7 @@ async def back_main(message: Message):
 async def back_categories(message: Message):
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
-    users[uid]["step"] = None
+    users[uid]["step"] = "browse_products"
     await message.answer(
         rtl("<b>📂 קטגוריות</b>\n\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
@@ -767,7 +783,7 @@ async def back_categories(message: Message):
 async def add_more(message: Message):
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
-    users[uid]["step"] = None
+    users[uid]["step"] = "browse_products"
     await message.answer(
         rtl("<b>➕ הוספת מוצר</b>\n\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
@@ -792,7 +808,7 @@ async def clear_cart(message: Message):
     data = users.get(uid)
 
     if not data or not data.get("cart"):
-        users[uid] = {"cart": [], "step": None}
+        users[uid] = {"cart": [], "step": "browse_products"}
         await message.answer(
             rtl("<b>🛒 הסל שלך כבר ריק.</b>"),
             reply_markup=categories_keyboard(),
@@ -800,7 +816,7 @@ async def clear_cart(message: Message):
         )
         return
 
-    users[uid] = {"cart": [], "step": None}
+    users[uid] = {"cart": [], "step": "browse_products"}
     await message.answer(
         rtl("<b>🧹 הסל התרוקן בהצלחה.</b>"),
         reply_markup=categories_keyboard(),
@@ -1375,12 +1391,19 @@ async def handle_shop(message: Message):
     products = get_active_products()
 
     if data and is_button_only_step_for_customer(data.get("step")) and not is_customer_system_button(txt):
+        if data.get("step") in {"browse_products", "product_select"} and is_valid_customer_product_or_category_text(txt, products):
+            pass
+        else:
+            await delete_customer_message(message)
+            return
+
+    if not data and not is_customer_system_button(txt):
         await delete_customer_message(message)
         return
 
     if txt in products:
         users.setdefault(uid, {"cart": [], "step": None})
-        users[uid]["step"] = None
+        users[uid]["step"] = "product_select"
         await message.answer(
             rtl(f"<b>📂 {h(txt)}</b>\n\nבחר מוצר:"),
             reply_markup=products_keyboard(txt),
