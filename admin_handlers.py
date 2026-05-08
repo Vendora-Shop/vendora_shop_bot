@@ -41,6 +41,109 @@ admin_states = {}
 
 RTL = "\u200F"
 
+
+# ================== ADMIN SAFE INPUT CLEANUP ==================
+async def delete_admin_message(message: Message):
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+
+def is_admin_button_only_step(step):
+    return step in {
+        "admin",
+        "orders_section",
+        "orders_select",
+        "order_actions",
+        "customers_menu",
+        "customers_select",
+        "customer_profile",
+        "broadcast_confirm",
+        "status_value",
+        "image_photo",
+    }
+
+
+def is_valid_admin_button_text(text):
+    text = clean_admin_text(text)
+
+    fixed_buttons = {
+        "🔐 פאנל ניהול",
+        "📦 ניהול הזמנות",
+        "🧾 הזמנות אחרונות",
+        "🆕 הזמנות חדשות",
+        "🔎 חפש הזמנה",
+        "📞 חפש לפי טלפון",
+        "📊 מצב העסק",
+        "📅 סטטיסטיקה לפי תאריך",
+        "📢 שלח הודעה ללקוחות",
+        "👥 לקוחות",
+        "לקוחות 👥",
+        "🔄 עדכן סטטוס הזמנה",
+        "➕ הוסף מוצר",
+        "📦 רשימת מוצרים",
+        "✏️ שנה מחיר",
+        "📝 שנה תיאור",
+        "✏️ אפס והגדר מלאי חדש",
+        "➕ הגדל מלאי קיים",
+        "🖼️ עדכן תמונה",
+        "🔴 כבה מוצר",
+        "🟢 הפעל מוצר",
+        "🗑️ מחק מוצר",
+        "⬅️ יציאה מניהול",
+        "⬅️ חזרה לניהול",
+        "⬅️ חזרה לניהול הזמנות",
+        "⬅️ חזרה לרשימת הזמנות",
+        "📋 הזמנות פתוחות",
+        "🆕 חדשות",
+        "✅ אושרו",
+        "📦 בטיפול",
+        "🚚 במשלוח",
+        "🧾 הושלמו",
+        "❌ בוטלו",
+        "✅ אשר הזמנה",
+        "📦 העבר לטיפול",
+        "📦 העבר להכנה",
+        "🚚 סמן כיצא למשלוח",
+        "🛍️ מוכן לאיסוף",
+        "✅ סמן כהושלם",
+        "✅ סמן כנאסף",
+        "❌ בטל הזמנה",
+        "👁️ צפייה בלבד",
+        "📋 רשימת לקוחות",
+        "🔎 חפש לקוח",
+        "⬅️ חזרה ללקוחות",
+        "⬅️ חזרה לרשימת לקוחות",
+        "📦 היסטוריית הזמנות לקוח",
+        "✅ אשר ושלח ללקוחות",
+        "✏️ ערוך הודעה",
+        "❌ בטל שליחה",
+        "✅ אושרה",
+        "📦 בטיפול",
+        "🚚 יצאה למשלוח",
+        "✅ הושלמה",
+        "❌ בוטלה",
+        "◀️ חודש קודם",
+        "📍 היום",
+        "▶️ חודש הבא",
+    }
+
+    if text in fixed_buttons:
+        return True
+
+    if text.startswith("🧾 "):
+        return True
+
+    if text.startswith("👤 "):
+        return True
+
+    if text.startswith("📅 "):
+        return True
+
+    return False
+
+
 # ============================================================
 # CUSTOMERS + BROADCAST CLEAN FEATURE
 # ============================================================
@@ -1623,6 +1726,11 @@ async def admin_flow(message: Message):
 
     state = admin_states.get(uid) or {}
     step = state.get("step")
+
+    # ADMIN_FLOW_SAFE_DELETE_MARKER
+    if is_admin_button_only_step(step) and not is_valid_admin_button_text(txt):
+        await delete_admin_message(message)
+        return
 
     if step == "broadcast_text":
         await handle_broadcast_text_screen(message)
