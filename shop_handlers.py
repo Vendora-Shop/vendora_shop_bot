@@ -218,6 +218,13 @@ async def delete_customer_message(message: Message):
         pass
 
 
+async def consume_customer_click(message: Message):
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+
 async def delete_temp_bot_messages(bot, user_id):
     data = users.get(user_id)
 
@@ -238,18 +245,26 @@ async def delete_temp_bot_messages(bot, user_id):
     data["temp_bot_messages"] = []
 
 
-async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML"):
+async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None):
     uid = message.from_user.id
 
     if uid not in users:
         users[uid] = {"cart": []}
 
-    await delete_temp_bot_messages(message.bot, uid)
+    if clear_previous:
+        await delete_temp_bot_messages(message.bot, uid)
+
+    kwargs = {
+        "reply_markup": reply_markup,
+        "parse_mode": parse_mode
+    }
+
+    if disable_web_page_preview is not None:
+        kwargs["disable_web_page_preview"] = disable_web_page_preview
 
     sent = await message.answer(
         text,
-        reply_markup=reply_markup,
-        parse_mode=parse_mode
+        **kwargs
     )
 
     users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
@@ -257,13 +272,14 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
     return sent
 
 
-async def send_temp_photo(message: Message, photo, caption=None, reply_markup=None, parse_mode="HTML"):
+async def send_temp_photo(message: Message, photo, caption=None, reply_markup=None, parse_mode="HTML", clear_previous=True):
     uid = message.from_user.id
 
     if uid not in users:
         users[uid] = {"cart": []}
 
-    await delete_temp_bot_messages(message.bot, uid)
+    if clear_previous:
+        await delete_temp_bot_messages(message.bot, uid)
 
     sent = await message.answer_photo(
         photo=photo,
@@ -910,6 +926,7 @@ async def my_details(message: Message):
 
 @router.message(F.text == "🛒 חנות")
 async def shop(message: Message):
+    await consume_customer_click(message)
     uid = message.from_user.id
 
     if uid not in users:
@@ -955,6 +972,7 @@ async def back_to_admin_panel_from_shop(message: Message):
 
 @router.message(F.text == "⬅️ חזרה")
 async def back_main(message: Message):
+    await consume_customer_click(message)
     users.pop(message.from_user.id, None)
 
     await send_temp_message(
@@ -966,10 +984,12 @@ async def back_main(message: Message):
 
 @router.message(F.text == "⬅️ חזרה לקטגוריות")
 async def back_categories(message: Message):
+    await consume_customer_click(message)
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
     users[uid]["step"] = "browse_products"
-    await message.answer(
+    await send_temp_message(
+        message,
         rtl("<b>📂 קטגוריות</b>\n\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
@@ -978,10 +998,12 @@ async def back_categories(message: Message):
 
 @router.message(F.text == "➕ הוסף עוד מוצר")
 async def add_more(message: Message):
+    await consume_customer_click(message)
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
     users[uid]["step"] = "browse_products"
-    await message.answer(
+    await send_temp_message(
+        message,
         rtl("<b>➕ הוספת מוצר</b>\n\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
@@ -990,9 +1012,11 @@ async def add_more(message: Message):
 
 @router.message(F.text == "🛒 הסל שלי")
 async def show_cart(message: Message):
+    await consume_customer_click(message)
     uid = message.from_user.id
     data = users.setdefault(uid, {"cart": [], "step": None})
-    await message.answer(
+    await send_temp_message(
+        message,
         cart_text(data["cart"]),
         reply_markup=cart_keyboard(),
         parse_mode="HTML"
@@ -1001,6 +1025,7 @@ async def show_cart(message: Message):
 
 @router.message(F.text == "🧹 רוקן סל")
 async def clear_cart(message: Message):
+    await consume_customer_click(message)
     uid = message.from_user.id
     data = users.get(uid)
 
@@ -1053,6 +1078,7 @@ async def edit_details(message: Message):
 
 @router.message(F.text == "✅ המשך להזמנה")
 async def checkout(message: Message):
+    await consume_customer_click(message)
     uid = message.from_user.id
     data = users.get(uid)
 
@@ -1063,10 +1089,13 @@ async def checkout(message: Message):
         )
         return
 
+    await delete_temp_bot_messages(message.bot, uid)
+
     data["step"] = "fulfillment_choice"
     data["saved_profile"] = get_customer_profile(uid)
 
-    await message.answer(
+    await send_temp_message(
+        message,
         rtl(
             "<b>📦 איך תרצה לקבל את ההזמנה?</b>\n\n"
             "בחר אחת מהאפשרויות:"
@@ -1233,6 +1262,7 @@ async def submit_paid_order(message: Message, data):
 
 @router.message(F.text == "✅ אשר הזמנה")
 async def confirm_order(message: Message):
+    await consume_customer_click(message)
     uid = message.from_user.id
     data = users.get(uid)
 
@@ -1267,6 +1297,8 @@ async def confirm_order(message: Message):
     products_total = cart_total(data["cart"])
     delivery_price = float(data["delivery_price"])
     final_total = products_total + delivery_price
+
+    await delete_temp_bot_messages(message.bot, uid)
 
     data["step"] = "payment_simulation"
 
@@ -1427,11 +1459,15 @@ async def quantity_inline_action(callback: CallbackQuery):
         data.pop("selected_product", None)
         data.pop("selected_qty", None)
 
-        await callback.message.answer(
+        await delete_temp_bot_messages(callback.message.bot, uid)
+
+        sent = await callback.message.answer(
             cart_text(data["cart"], title="✅ נוסף לסל"),
             reply_markup=cart_keyboard(),
             parse_mode="HTML"
         )
+        users.setdefault(uid, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+
         await callback.answer("המוצר נוסף לסל.")
         return
 
@@ -1638,7 +1674,9 @@ async def handle_shop(message: Message):
     if txt in products:
         users.setdefault(uid, {"cart": [], "step": None})
         users[uid]["step"] = "product_select"
-        await message.answer(
+        await consume_customer_click(message)
+        await send_temp_message(
+            message,
             rtl(f"<b>📂 {h(txt)}</b>\n\nבחר מוצר:"),
             reply_markup=products_keyboard(txt),
             parse_mode="HTML"
@@ -1648,6 +1686,8 @@ async def handle_shop(message: Message):
     product = find_product(txt)
 
     if product:
+        await consume_customer_click(message)
+
         users.setdefault(uid, {"cart": [], "step": None})
         data = users[uid]
 
@@ -1695,7 +1735,8 @@ async def handle_shop(message: Message):
 
         data["selected_qty"] = 1
 
-        await message.answer(
+        await send_temp_message(
+            message,
             rtl(
                 "<b>🔢 בחירת כמות</b>\n\n"
                 f"{field('כמות נבחרת', data['selected_qty'])}\n\n"
@@ -1705,7 +1746,8 @@ async def handle_shop(message: Message):
                 "המוצרים יתווספו לסל ותוכל להמשיך למשלוח או לאיסוף."
             ),
             reply_markup=quantity_inline_keyboard(data["selected_qty"]),
-            parse_mode="HTML"
+            parse_mode="HTML",
+            clear_previous=False
         )
         return
 
@@ -1713,6 +1755,9 @@ async def handle_shop(message: Message):
         return
 
     if data.get("step") == "payment_simulation":
+        if txt in {"✅ סימולציית תשלום הצליחה", "⬅️ חזרה לסיכום הזמנה", "❌ ביטול תשלום"}:
+            await consume_customer_click(message)
+
         if txt == "✅ סימולציית תשלום הצליחה":
             await submit_paid_order(message, data)
             return
@@ -1744,6 +1789,10 @@ async def handle_shop(message: Message):
         return
 
     if data.get("step") == "fulfillment_choice":
+        if txt in {"🚚 משלוח עד הבית", "🛍️ איסוף עצמי מהחנות"}:
+            await consume_customer_click(message)
+            await delete_temp_bot_messages(message.bot, uid)
+
         if txt == "🚚 משלוח עד הבית":
             data["fulfillment_type"] = "delivery"
             profile = data.get("saved_profile") or get_customer_profile(uid)
@@ -1775,6 +1824,8 @@ async def handle_shop(message: Message):
             if profile and profile.get("customer_name") and profile.get("phone"):
                 data["name"] = profile["customer_name"]
                 data["phone"] = profile["phone"]
+                await delete_temp_bot_messages(message.bot, uid)
+
                 data["step"] = "confirm"
 
                 await message.answer(
@@ -2484,7 +2535,11 @@ async def handle_shop(message: Message):
         data.pop("selected_product", None)
         data.pop("selected_qty", None)
 
-        await message.answer(
+        await consume_customer_click(message)
+        await delete_temp_bot_messages(message.bot, uid)
+
+        await send_temp_message(
+            message,
             cart_text(data["cart"], title="✅ נוסף לסל"),
             reply_markup=cart_keyboard(),
             parse_mode="HTML"
@@ -2521,6 +2576,8 @@ async def handle_shop(message: Message):
 
         if is_pickup_order(data):
             set_pickup_details(data)
+            await delete_temp_bot_messages(message.bot, uid)
+
             data["step"] = "confirm"
 
             await message.answer(
