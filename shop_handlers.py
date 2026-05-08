@@ -198,31 +198,6 @@ def clone_cart_from_order(order):
     return cloned_cart, unavailable_products
 
 
-@router.message(CommandStart())
-async def start(message: Message):
-    users[message.from_user.id] = {
-        "cart": [],
-        "step": "start"
-    }
-
-    await message.answer(
-        rtl(
-            "<b>👋 ברוכים הבאים ל־Vendora</b>\n\n"
-            "הגעתם לחנות הדיגיטלית של Vendora.\n\n"
-            "כאן תוכלו לבצע הזמנה בצורה נוחה ומהירה:\n"
-            "🛒 לבחור מוצרים מהחנות\n"
-            "🧺 להוסיף מוצרים לסל\n"
-            "🚚 לבחור משלוח עד הבית או איסוף עצמי\n"
-            "👤 לשמור פרטים להזמנות הבאות\n"
-            "📞 לפנות לשירות לקוחות במקרה הצורך\n\n"
-            "<b>איך מתחילים?</b>\n"
-            "לחצו על 🛒 חנות בתפריט למטה ובחרו מוצרים.\n\n"
-            "<b>צריכים עזרה?</b>\n"
-            "לחצו על 📞 שירות לקוחות."
-        ),
-        reply_markup=main_keyboard(message.from_user.id),
-        parse_mode="HTML"
-    )
 
 users = {}
 
@@ -637,18 +612,20 @@ def fill_saved_profile_into_data(data, profile):
     return True
 
 
+
+
 @router.message(CommandStart())
 async def start(message: Message):
     users.pop(message.from_user.id, None)
+    users[message.from_user.id] = {
+        "cart": [],
+        "step": "start"
+    }
+
     await message.answer(
-        rtl(
-            "<b>🔥 ברוך הבא ל־Vendora Shop</b>\n\n"
-            "חנות חכמה לציוד הובלות, שילוח ושליחים.\n"
-            "בחר פעולה מהתפריט למטה."
-        ),
+        rtl("<b>🏠 תפריט ראשי</b>"),
         reply_markup=main_keyboard(message.from_user.id),
-        parse_mode="HTML",
-        disable_web_page_preview=True
+        parse_mode="HTML"
     )
 
 
