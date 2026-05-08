@@ -1381,7 +1381,21 @@ async def cancel_support_reply(message: Message):
 
     state = admin_states.get(message.from_user.id, {})
 
-    if state.get("step") == "support_reply":
+    if state.get("step") in {"support_reply", "support_ticket_reply"}:
+        ticket_number = state.get("support_ticket_number")
+        if ticket_number:
+            admin_states[message.from_user.id] = {
+                "step": "support_ticket_view",
+                "support_ticket_number": ticket_number
+            }
+            ticket = get_support_ticket(ticket_number)
+            await message.answer(
+                support_ticket_text(ticket),
+                reply_markup=support_ticket_actions_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
         admin_states[message.from_user.id] = {"step": "admin"}
 
         await message.answer(
