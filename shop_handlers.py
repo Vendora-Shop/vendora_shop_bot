@@ -622,11 +622,13 @@ async def start(message: Message):
         "step": "start"
     }
 
-    await message.answer(
-        "‎",
-        reply_markup=main_keyboard(message.from_user.id)
-    )
+    customer_name = message.from_user.first_name or "לקוח יקר"
 
+    await message.answer(
+        rtl(f"<b>👋 ברוך הבא {h(customer_name)}</b>"),
+        reply_markup=main_keyboard(message.from_user.id),
+        parse_mode="HTML"
+    )
 
 @router.message(F.text == "👤 הפרטים שלי")
 async def my_details(message: Message):
