@@ -275,7 +275,7 @@ def is_customer_system_button(text):
         "✅ המשך להזמנה",
         "🧹 רוקן סל",
         "❌ בטל הזמנה",
-        "❌ סגור פנייה",
+        "✅ הבעיה נפתרה",
         "✅ אשר הזמנה",
         "✏️ שנה פרטים",
         "🚚 משלוח עד הבית",
@@ -399,6 +399,16 @@ def admin_new_order_keyboard(order_number):
 def categories_keyboard():
     products = get_active_products()
 
+    open_support_ticket = get_open_support_ticket_by_user(uid)
+    if open_support_ticket and (not data or data.get("step") in {None, "start", "main"}) and txt not in {"🛒 חנות", "👤 הפרטים שלי", "📦 ההזמנות שלי", "🏠 הכתובות שלי", "📞 שירות לקוחות", "🔐 פאנל ניהול"}:
+        users[uid] = {
+            "cart": [],
+            "step": "support_chat",
+            "support_ticket_number": open_support_ticket["ticket_number"],
+            "support_phone": open_support_ticket["phone"]
+        }
+        data = users[uid]
+
     keyboard = [[KeyboardButton(text=cat)] for cat in products.keys()]
     keyboard.append([KeyboardButton(text="🛒 הסל שלי")])
     keyboard.append([KeyboardButton(text="⬅️ חזרה")])
@@ -517,7 +527,7 @@ def manual_details_keyboard():
 
 def support_customer_keyboard(user_id=None):
     keyboard = [
-        [KeyboardButton(text="❌ סגור פנייה")]
+        [KeyboardButton(text="✅ הבעיה נפתרה")]
     ]
 
     if user_id == ADMIN_ID:
@@ -1424,7 +1434,7 @@ async def support(message: Message):
             rtl(
                 "<b>📞 שירות לקוחות</b>\n\n"
                 f"{field('מספר פנייה', existing_ticket['ticket_number'])}\n"
-                "יש לך פנייה פתוחה. כתוב את ההודעה שלך ונעביר אותה לנציג."
+                "יש לך פנייה פתוחה. כתוב את ההודעה שלך כאן והיא תועבר לנציג."
             ),
             reply_markup=support_customer_keyboard(message.from_user.id),
             parse_mode="HTML"
@@ -2068,11 +2078,16 @@ async def handle_shop(message: Message):
             )
             return
 
-        ticket_number = create_support_ticket(
-            telegram_id=uid,
-            telegram_name=message.from_user.full_name,
-            phone=phone
-        )
+        existing_ticket = get_open_support_ticket_by_user(uid)
+
+        if existing_ticket:
+            ticket_number = existing_ticket["ticket_number"]
+        else:
+            ticket_number = create_support_ticket(
+                telegram_id=uid,
+                telegram_name=message.from_user.full_name,
+                phone=phone
+            )
 
         data["step"] = "support_chat"
         data["support_ticket_number"] = ticket_number
@@ -2091,27 +2106,36 @@ async def handle_shop(message: Message):
 
     if data.get("step") == "support_chat":
         ticket_number = data.get("support_ticket_number")
+        existing_ticket = get_open_support_ticket_by_user(uid)
 
-        if txt == "❌ סגור פנייה":
+        if existing_ticket:
+            ticket_number = existing_ticket["ticket_number"]
+            data["support_ticket_number"] = ticket_number
+            data["support_phone"] = existing_ticket.get("phone") or data.get("support_phone", "-")
+
+        if txt == "✅ הבעיה נפתרה":
             if ticket_number:
                 close_support_ticket(ticket_number)
                 add_support_message(
                     ticket_number,
                     "customer",
                     message.from_user.full_name,
-                    "הלקוח סגר את הפנייה."
+                    "הלקוח סימן שהבעיה נפתרה."
                 )
 
-                await message.bot.send_message(
-                    ADMIN_ID,
-                    rtl(
-                        "<b>✅ פנייה נסגרה על ידי הלקוח</b>\n\n"
-                        f"{field('מספר פנייה', ticket_number)}\n"
-                        f"{field('לקוח', message.from_user.full_name)}\n"
-                        f"{field('טלפון', data.get('support_phone', '-'))}"
-                    ),
-                    parse_mode="HTML"
-                )
+                try:
+                    await message.bot.send_message(
+                        ADMIN_ID,
+                        rtl(
+                            "<b>✅ הפנייה נסגרה על ידי הלקוח</b>\n\n"
+                            f"{field('מספר פנייה', ticket_number)}\n"
+                            f"{field('לקוח', message.from_user.full_name)}\n"
+                            f"{field('טלפון', data.get('support_phone', '-'))}"
+                        ),
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
 
             users.pop(uid, None)
 
@@ -2121,7 +2145,7 @@ async def handle_shop(message: Message):
                 pass
 
             await message.answer(
-                rtl("<b>✅ הפנייה נסגרה.</b>\nתוכל לפתוח פנייה חדשה בכל שלב."),
+                rtl("<b>✅ הפנייה נסגרה.</b>\nתודה שפנית לשירות הלקוחות של Vendora."),
                 reply_markup=main_keyboard(message.from_user.id),
                 parse_mode="HTML"
             )
@@ -2130,17 +2154,29 @@ async def handle_shop(message: Message):
         if len(txt) < 2:
             await message.answer(
                 rtl("<b>⚠️ נא לרשום הודעה לנציג.</b>"),
+                reply_markup=support_customer_keyboard(message.from_user.id),
                 parse_mode="HTML"
             )
             return
 
         if not ticket_number:
-            ticket_number = create_support_ticket(
-                telegram_id=uid,
-                telegram_name=message.from_user.full_name,
-                phone=data.get("support_phone", "-")
-            )
-            data["support_ticket_number"] = ticket_number
+            existing_ticket = get_open_support_ticket_by_user(uid)
+
+            if existing_ticket:
+                ticket_number = existing_ticket["ticket_number"]
+                data["support_phone"] = existing_ticket.get("phone") or data.get("support_phone", "-")
+            else:
+                await message.answer(
+                    rtl(
+                        "<b>📞 שירות לקוחות</b>\n\n"
+                        "כדי לפתוח פנייה לשירות לקוחות, רשום מספר פלאפון תקין.\n"
+                        "לדוגמה: 0547937503"
+                    ),
+                    reply_markup=support_customer_keyboard(message.from_user.id),
+                    parse_mode="HTML"
+                )
+                data["step"] = "support_phone"
+                return
 
         add_support_message(
             ticket_number,
