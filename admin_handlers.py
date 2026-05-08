@@ -825,7 +825,6 @@ def is_admin(user_id):
 
 
 
-
 def is_customer_navigation_button_for_admin_guard(text):
     text = clean_admin_text(text)
 
@@ -881,9 +880,8 @@ def is_admin_active_step(message: Message):
     if txt.startswith("/"):
         return False
 
-    # חשוב:
-    # אם האדמין משתמש בצד הלקוח ולוחץ חזרה/חנות/קטגוריות,
-    # לא לתת ל-admin_handlers לתפוס את ההודעה ולהחזיר אותו לפאנל ניהול.
+    # אם האדמין משתמש בצד הלקוח, לא לתת ל-admin_handlers
+    # לתפוס כפתורי חנות/חזרה ולהחזיר אותו לבד לפאנל ניהול.
     if is_customer_navigation_button_for_admin_guard(txt):
         return False
 
@@ -1599,7 +1597,7 @@ async def exit_admin(message: Message):
 
     await message.answer(
         rtl("<b>✅ יצאת מפאנל הניהול.</b>"),
-        reply_markup=main_keyboard(),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
