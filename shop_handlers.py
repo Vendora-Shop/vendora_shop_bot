@@ -1992,11 +1992,11 @@ async def back_from_order_summary_to_previous_step(message: Message):
     )
 
 
-@router.message(F.text == "✅ אשר הזמנה")
+@router.message(
+    F.text == "✅ אשר הזמנה",
+    lambda message: not is_admin_panel_active_for_shop_guard(message.from_user.id)
+)
 async def confirm_order(message: Message):
-    if is_admin_panel_active_for_shop_guard(message.from_user.id):
-        return
-
     await consume_customer_click(message)
     uid = message.from_user.id
     data = users.get(uid)
