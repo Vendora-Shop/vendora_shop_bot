@@ -33,6 +33,34 @@ router = Router()
 async def customer_close_support_ticket_button(message: Message):
     await close_customer_open_support_ticket(message)
 
+@router.message(F.text == "❌ ביטול תשלום")
+async def customer_cancel_payment_button(message: Message):
+    uid = message.from_user.id
+    data = users.get(uid, {})
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    if data.get("step") == "payment_simulation":
+        data["step"] = "confirm"
+
+        await message.answer(
+            build_order_summary(data),
+            reply_markup=confirm_order_keyboard(),
+            parse_mode="HTML",
+            disable_web_page_preview=True
+        )
+        return
+
+    await message.answer(
+        rtl("<b>ℹ️ אין תשלום פעיל לביטול.</b>"),
+        reply_markup=main_keyboard(message.from_user.id),
+        parse_mode="HTML"
+    )
+
+
 
 # ================== SAVED ADDRESSES UI ==================
 def format_address(address):
@@ -761,18 +789,6 @@ SUPPORT_FAQ_BY_SUBJECT = {
 }
 
 
-def pickup_continue_keyboard(user_id=None):
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="✅ המשך עם הפרטים השמורים")],
-            [KeyboardButton(text="✏️ הזן פרטים חדשים")],
-            [KeyboardButton(text="⬅️ חזרה לתפריט")]
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=False
-    )
-
-
 def support_faq_keyboard(subject):
     questions = SUPPORT_FAQ_BY_SUBJECT.get(subject, SUPPORT_FAQ_BY_SUBJECT.get("❓ אחר", []))
 
@@ -1161,8 +1177,7 @@ async def send_product_card(message: Message, product):
     if image:
         await send_temp_photo(message, photo=image, caption=caption, parse_mode="HTML")
     else:
-        await send_temp_message(message, caption, parse_mode="HTML",
-                disable_web_page_preview=True)
+        await send_temp_message(message, caption, parse_mode="HTML")
 
 
 def set_pickup_details(data):
@@ -1200,7 +1215,7 @@ def pickup_text():
     navigation_line = ""
 
     if PICKUP_NAVIGATION_URL:
-        navigation_line = "\n📍 פתח ניווט עם Waze דרך כפתור הניווט"
+        navigation_line = f'\n📍 <a href="{h(PICKUP_NAVIGATION_URL)}">פתח ניווט עם Waze</a>'
 
     return (
         "<b>🛍️ איסוף עצמי מהחנות</b>\n\n"
@@ -2283,7 +2298,9 @@ async def handle_shop(message: Message):
                     f"{pickup_text()}\n\n"
                     "<b>📝 פרטי לקוח</b>\n"
                     "רשום את השם המלא שלך:"
-                ),
+                ,
+                disable_web_page_preview=True
+            ),
                 parse_mode="HTML"
             )
             return
