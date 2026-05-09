@@ -1526,18 +1526,22 @@ async def clear_cart(message: Message):
     uid = message.from_user.id
     data = users.get(uid)
 
+    await delete_temp_bot_messages(message.bot, uid)
+
     if not data or not data.get("cart"):
         users[uid] = {"cart": [], "step": "browse_products"}
-        await message.answer(
-            rtl("<b>🛒 הסל שלך כבר ריק.</b>"),
+        await send_temp_message(
+            message,
+            rtl("<b>🛒 הסל שלך כבר ריק.</b>\n\nבחר מוצר:"),
             reply_markup=categories_keyboard(),
             parse_mode="HTML"
         )
         return
 
     users[uid] = {"cart": [], "step": "browse_products"}
-    await message.answer(
-        rtl("<b>🧹 הסל התרוקן בהצלחה.</b>"),
+    await send_temp_message(
+        message,
+        rtl("<b>🧹 הסל התרוקן בהצלחה.</b>\n\nבחר מוצר:"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
