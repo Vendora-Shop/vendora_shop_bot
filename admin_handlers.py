@@ -1409,6 +1409,11 @@ async def order_notification_action(callback: CallbackQuery):
             parse_mode="HTML"
         )
     except Exception:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+
         await callback.message.answer(
             format_order(order),
             reply_markup=order_notification_keyboard(order_number, order.get("status")),
