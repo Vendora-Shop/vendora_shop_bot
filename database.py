@@ -1763,6 +1763,82 @@ def clear_all_orders_for_testing():
 
 
 
+
+
+def reset_full_order_system():
+    """
+    איפוס מלא של מערכת ההזמנות:
+    - מוחק הזמנות
+    - מוחק פניות שירות והודעות
+    - מאפס סטטיסטיקות לקוחות
+
+    לא מוחק:
+    - לקוחות
+    - כתובות
+    - מוצרים
+    - קטגוריות
+    """
+
+    create_tables()
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # מחיקת הזמנות
+    cur.execute("DELETE FROM orders")
+
+    # מחיקת פניות שירות
+    cur.execute("DELETE FROM support_messages")
+    cur.execute("DELETE FROM support_tickets")
+
+    # איפוס סטטיסטיקות לקוחות
+    cur.execute("""
+        UPDATE customers
+        SET
+            last_order_number = NULL,
+            total_orders = 0,
+            total_spent = 0
+    """)
+
+    conn.commit()
+    conn.close()
+
+    return True
+
+
+
+def reset_customer_order_statistics():
+    """
+    מאפס סטטיסטיקות הזמנות של לקוחות בלבד:
+    - last_order_number
+    - total_orders
+    - total_spent
+
+    לא מוחק לקוחות, כתובות, מוצרים או הזמנות.
+    מתאים לאחר מחיקת הזמנות בסביבת בדיקות.
+    """
+    create_tables()
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE customers
+        SET
+            last_order_number = NULL,
+            total_orders = 0,
+            total_spent = 0
+    """)
+
+    changed_count = cur.rowcount
+
+    conn.commit()
+    conn.close()
+
+    return int(changed_count or 0)
+
+
+
 # ================== SUPPORT TICKETS ==================
 
 def generate_support_ticket_number(ticket_id):
