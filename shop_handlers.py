@@ -1573,6 +1573,8 @@ async def edit_details(message: Message):
         return
 
     data["step"] = "name"
+    data["editing_details"] = True
+
     await message.answer(
         rtl("<b>✏️ עדכון פרטים</b>\n\nרשום את השם המלא שלך:"),
         parse_mode="HTML"
@@ -3212,7 +3214,9 @@ async def handle_shop(message: Message):
 
         data["phone"] = phone
 
-        if is_pickup_order(data):
+        order_type = str(data.get("order_type") or data.get("fulfillment_type") or data.get("receive_type") or "")
+
+        if is_pickup_order(data) and "משלוח" not in order_type and order_type != "delivery":
             set_pickup_details(data)
             await delete_temp_bot_messages(message.bot, uid)
 
