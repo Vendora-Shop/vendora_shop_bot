@@ -143,9 +143,7 @@ def is_valid_admin_button_text(text):
         "🛍️ מוכן לאיסוף",
         "✅ סמן כהושלם",
         "✅ סמן כנאסף",
-        "❌ בטל הזמנה",
-        "👁️ צפייה בלבד",
-        "📋 רשימת לקוחות",
+        "❌ בטל הזמנה",        "📋 רשימת לקוחות",
         "🔎 חפש לקוח",
         "⬅️ חזרה ללקוחות",
         "⬅️ חזרה לרשימת לקוחות",
@@ -695,11 +693,6 @@ def order_notification_keyboard(order_number, status):
                 InlineKeyboardButton(text="❌ בטל", callback_data=f"order_action:cancel:{order_number}")
             ])
 
-    else:
-        buttons.append([
-            InlineKeyboardButton(text="👁️ צפייה בלבד", callback_data=f"order_action:view:{order_number}")
-        ])
-
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -1033,9 +1026,7 @@ def order_select_keyboard(orders, back_text="⬅️ חזרה לניהול הזמ
 def order_action_keyboard(order_status, pickup=False):
     if order_status in {"done", "cancelled"}:
         return ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="👁️ צפייה בלבד")],
-                [KeyboardButton(text="⬅️ חזרה לרשימת הזמנות")],
+            keyboard=[                [KeyboardButton(text="⬅️ חזרה לרשימת הזמנות")],
                 [KeyboardButton(text="⬅️ חזרה לניהול")]
             ],
             resize_keyboard=True
@@ -1177,7 +1168,7 @@ def validate_status_change(current_status, new_status):
         return False, (
             "<b>🔒 לא ניתן לשנות סטטוס</b>\n\n"
             "ההזמנה נמצאת בסטטוס סופי ולכן נעולה לשינויים רגילים.\n"
-            "הזמנות שהושלמו או בוטלו נשמרות בארכיון לצפייה בלבד."
+            "הזמנות שהושלמו או בוטלו נשמרות בארכיון."
         )
 
     if new_status == "cancelled":
@@ -1346,10 +1337,6 @@ async def order_notification_action(callback: CallbackQuery):
         return
 
     current_status = order_before.get("status")
-
-    if action == "view":
-        await callback.answer("הזמנה זו לצפייה בלבד.", show_alert=True)
-        return
 
     if action not in NOTIFICATION_ACTION_BY_BUTTON:
         await callback.answer("פעולה לא תקינה.", show_alert=True)
@@ -3016,22 +3003,6 @@ async def admin_flow(message: Message):
                 reply_markup=order_select_keyboard(orders),
                 parse_mode="HTML"
             )
-            return
-
-        if txt == "👁️ צפייה בלבד":
-            order_number = state.get("order_number")
-            order = get_order_by_number(order_number)
-
-            if order:
-                await message.answer(
-                    rtl(
-                        "<b>👁️ צפייה בלבד</b>\n\n"
-                        "הזמנה זו נמצאת בסטטוס סופי ונשמרת בארכיון.\n"
-                        "לא ניתן לשנות אותה מכאן."
-                    ),
-                    reply_markup=order_action_keyboard(order.get("status"), is_order_pickup(order)),
-                    parse_mode="HTML"
-                )
             return
 
         if txt not in ORDER_ACTION_BY_BUTTON:
