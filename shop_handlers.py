@@ -778,6 +778,7 @@ def use_saved_details_keyboard():
         keyboard=[
             [KeyboardButton(text="✅ המשך עם הפרטים השמורים")],
             [KeyboardButton(text="✏️ הזן פרטים חדשים")],
+            [KeyboardButton(text="⬅️ חזרה לבחירת משלוח / איסוף")],
             [KeyboardButton(text="❌ בטל הזמנה")]
         ],
         resize_keyboard=True
@@ -789,6 +790,7 @@ def manual_details_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="✅ חזור לפרטים השמורים")],
+            [KeyboardButton(text="⬅️ חזרה לבחירת משלוח / איסוף")],
             [KeyboardButton(text="❌ בטל הזמנה")]
         ],
         resize_keyboard=True
