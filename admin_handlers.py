@@ -36,6 +36,8 @@ from database import (
     get_customer_by_id,
     get_orders_by_customer_telegram_id,
     clear_all_orders_for_testing,
+    reset_customer_order_statistics,
+    reset_full_order_system,
     get_support_tickets_by_status,
     get_support_ticket,
     get_support_messages,
@@ -2019,6 +2021,91 @@ async def confirm_clear_all_orders(message: Message):
             "<b>✅ כל ההזמנות נמחקו בהצלחה.</b>\n\n"
             f"{field('נמחקו הזמנות', deleted_count)}\n\n"
             "הלקוחות והמוצרים נשארו במערכת."
+        ),
+        reply_markup=admin_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+
+
+
+
+
+@router.message(F.text == "🧹 איפוס מערכת הזמנות")
+async def ask_full_order_reset(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "confirm_full_order_reset"}
+
+    await message.answer(
+        rtl(
+            "<b>⚠️ איפוס מערכת הזמנות</b>\n\n"
+            "הפעולה תבצע:\n"
+            "• מחיקת כל ההזמנות\n"
+            "• מחיקת כל פניות השירות\n"
+            "• איפוס סטטיסטיקות לקוחות\n\n"
+            "<b>לא יימחקו:</b>\n"
+            "• לקוחות\n"
+            "• כתובות\n"
+            "• מוצרים\n"
+            "• קטגוריות\n\n"
+            "לאישור לחץ על הכפתור למטה."
+        ),
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="✅ כן, אפס את מערכת ההזמנות")],
+                [KeyboardButton(text="❌ ביטול איפוס מערכת")],
+                [KeyboardButton(text="⬅️ חזרה לניהול")]
+            ],
+            resize_keyboard=True
+        ),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "❌ ביטול איפוס מערכת")
+async def cancel_full_order_reset(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "admin"}
+
+    await message.answer(
+        rtl("<b>✅ האיפוס בוטל.</b>"),
+        reply_markup=admin_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "✅ כן, אפס את מערכת ההזמנות")
+async def confirm_full_order_reset(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    state = admin_states.get(message.from_user.id, {})
+
+    if state.get("step") != "confirm_full_order_reset":
+        await message.answer(
+            rtl("<b>⚠️ יש להתחיל מהכפתור: 🧹 איפוס מערכת הזמנות.</b>"),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    reset_full_order_system()
+
+    admin_states[message.from_user.id] = {"step": "admin"}
+
+    await message.answer(
+        rtl(
+            "<b>✅ מערכת ההזמנות אופסה בהצלחה.</b>\n\n"
+            "נמחקו:\n"
+            "• כל ההזמנות\n"
+            "• כל פניות השירות\n"
+            "• כל סטטיסטיקות הלקוחות\n\n"
+            "לקוחות, כתובות ומוצרים נשארו במערכת."
         ),
         reply_markup=admin_keyboard(),
         parse_mode="HTML"
