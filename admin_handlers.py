@@ -1883,39 +1883,65 @@ async def close_support_ticket_from_admin(message: Message):
         )
         return
 
-    if ticket.get("status") == "closed":
-        admin_states[message.from_user.id] = {"step": "support_tickets_menu"}
+    latest_ticket = get_support_ticket(ticket_number)
+
+    if latest_ticket and latest_ticket.get("status") == "closed":
+        admin_states[message.from_user.id] = {
+            "step": "support_ticket_view",
+            "support_ticket_number": ticket_number
+        }
 
         await message.answer(
             rtl(
                 "<b>ℹ️ הפנייה כבר סגורה.</b>\n\n"
                 f"{field('מספר פנייה', ticket_number)}"
             ),
-            reply_markup=support_ticket_keyboard_by_status(ticket),
+            reply_markup=closed_support_ticket_actions_keyboard(),
             parse_mode="HTML"
         )
         return
 
-    ok = close_support_ticket(ticket_number)
+    closed_ok = close_support_ticket(ticket_number)
 
-    if ok:
-        add_support_message(
-            ticket_number,
-            "admin",
-            message.from_user.full_name,
-            "הפנייה נסגרה על ידי שירות הלקוחות."
+    if not closed_ok:
+        admin_states[message.from_user.id] = {
+            "step": "support_ticket_view",
+            "support_ticket_number": ticket_number
+        }
+
+        await message.answer(
+            rtl(
+                "<b>ℹ️ הפנייה כבר סגורה.</b>\n\n"
+                f"{field('מספר פנייה', ticket_number)}"
+            ),
+            reply_markup=closed_support_ticket_actions_keyboard(),
+            parse_mode="HTML"
         )
+        return
 
-        try:
-            await message.bot.send_message(
-                int(ticket["telegram_id"]),
-                rtl("<b>✅ הפנייה נסגרה.</b>\nתודה שפנית אלינו."),
-                parse_mode="HTML"
-            )
-        except Exception:
-            pass
+    add_support_message(
+        ticket_number,
+        "admin",
+        message.from_user.full_name,
+        "הפנייה נסגרה על ידי שירות הלקוחות."
+    )
 
-    admin_states[message.from_user.id] = {"step": "support_tickets_menu"}
+    try:
+        await message.bot.send_message(
+            int(ticket["telegram_id"]),
+            rtl(
+                "<b>✅ הפנייה נסגרה.</b>\n"
+                "תודה שפנית לשירות הלקוחות של Vendora."
+            ),
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+    admin_states[message.from_user.id] = {
+        "step": "support_ticket_view",
+        "support_ticket_number": ticket_number
+    }
 
     await message.answer(
         rtl(
@@ -1923,7 +1949,7 @@ async def close_support_ticket_from_admin(message: Message):
             f"{field('מספר פנייה', ticket_number)}\n"
             "הפנייה עברה לפניות סגורות."
         ),
-        reply_markup=support_tickets_menu_keyboard(),
+        reply_markup=closed_support_ticket_actions_keyboard(),
         parse_mode="HTML"
     )
 
