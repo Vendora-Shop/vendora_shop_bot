@@ -909,12 +909,12 @@ def is_admin_active_step(message: Message):
     if step == "orders_section" and txt in ORDER_SECTION_BY_BUTTON:
         return True
 
+    # אם האדמין משתמש בצד הלקוח, לא לתת ל-admin_handlers
+    # לתפוס כפתורי חנות/חזרה ולהחזיר אותו לבד לפאנל ניהול.
     if is_customer_navigation_button_for_admin_guard(txt):
         return False
 
     return True
-
-
 def product_names_keyboard():
     rows = get_all_products()
     keyboard = []
