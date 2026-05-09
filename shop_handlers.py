@@ -29,6 +29,11 @@ from pdf_generator import create_invoice_pdf
 router = Router()
 
 
+@router.message(F.text == "✅ הבעיה נפתרה")
+async def customer_close_support_ticket_button(message: Message):
+    await close_customer_open_support_ticket(message)
+
+
 # ================== SAVED ADDRESSES UI ==================
 def format_address(address):
     return (
@@ -234,18 +239,10 @@ async def notify_admin_new_support_ticket(bot, ticket_number, subject, phone, us
 
 
 
-async def close_customer_open_support_ticket(message: Message, data):
+async def close_customer_open_support_ticket(message: Message, data=None):
     uid = message.from_user.id
 
-    ticket_number = None
-
-    if data:
-        ticket_number = data.get("support_ticket_number")
-
-    ticket = get_support_ticket(ticket_number) if ticket_number else None
-
-    if not ticket or ticket.get("status") != "open":
-        ticket = get_open_support_ticket_by_user(uid)
+    ticket = get_open_support_ticket_by_user(uid)
 
     if not ticket:
         users.pop(uid, None)
@@ -262,9 +259,11 @@ async def close_customer_open_support_ticket(message: Message, data):
 
     ticket_number = ticket["ticket_number"]
 
-    if ticket.get("status") == "closed":
-        users.pop(uid, None)
+    closed_ok = close_support_ticket(ticket_number)
 
+    users.pop(uid, None)
+
+    if not closed_ok:
         await message.answer(
             rtl(
                 "<b>ℹ️ הפנייה כבר סגורה.</b>\n"
@@ -275,43 +274,29 @@ async def close_customer_open_support_ticket(message: Message, data):
         )
         return True
 
-    closed_ok = close_support_ticket(ticket_number)
+    add_support_message(
+        ticket_number,
+        "customer",
+        message.from_user.full_name,
+        "הלקוח סימן שהבעיה נפתרה."
+    )
 
-    users.pop(uid, None)
-
-    if closed_ok:
-        add_support_message(
-            ticket_number,
-            "customer",
-            message.from_user.full_name,
-            "הלקוח סימן שהבעיה נפתרה."
-        )
-
-        await notify_admin_ticket_closed_by_customer(
-            message.bot,
-            ticket_number,
-            message.from_user.full_name
-        )
-
-        await message.answer(
-            rtl(
-                "<b>✅ הפנייה נסגרה.</b>\n"
-                "תודה שפנית לשירות הלקוחות של Vendora."
-            ),
-            reply_markup=main_keyboard(message.from_user.id),
-            parse_mode="HTML"
-        )
-        return True
+    await notify_admin_ticket_closed_by_customer(
+        message.bot,
+        ticket_number,
+        message.from_user.full_name
+    )
 
     await message.answer(
         rtl(
-            "<b>ℹ️ הפנייה כבר סגורה.</b>\n"
-            "חזרת לתפריט הראשי."
+            "<b>✅ הפנייה נסגרה.</b>\n"
+            "תודה שפנית לשירות הלקוחות של Vendora."
         ),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
     return True
+
 
 
 async def notify_admin_ticket_closed_by_customer(bot, ticket_number, user_full_name=""):
@@ -1773,14 +1758,6 @@ async def add_address_start(message: Message):
         parse_mode="HTML"
     )
 
-@router.message(F.text == "✅ הבעיה נפתרה")
-async def customer_close_support_ticket_button(message: Message):
-    uid = message.from_user.id
-    data = users.get(uid, {})
-
-    await close_customer_open_support_ticket(message, data)
-
-
 
 @router.message()
 async def handle_shop(message: Message):
@@ -2271,13 +2248,7 @@ async def handle_shop(message: Message):
 
     if data.get("step") == "support_subject":
         if txt == "✅ הבעיה נפתרה":
-            users.pop(uid, None)
-
-            await message.answer(
-                rtl("<b>✅ הפנייה בוטלה.</b>\nחזרת לתפריט הראשי."),
-                reply_markup=main_keyboard(message.from_user.id),
-                parse_mode="HTML"
-            )
+            await close_customer_open_support_ticket(message, data)
             return
 
         support_subjects = {
