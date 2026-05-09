@@ -761,6 +761,18 @@ SUPPORT_FAQ_BY_SUBJECT = {
 }
 
 
+def pickup_continue_keyboard(user_id=None):
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✅ המשך עם הפרטים השמורים")],
+            [KeyboardButton(text="✏️ הזן פרטים חדשים")],
+            [KeyboardButton(text="⬅️ חזרה לתפריט")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
+
+
 def support_faq_keyboard(subject):
     questions = SUPPORT_FAQ_BY_SUBJECT.get(subject, SUPPORT_FAQ_BY_SUBJECT.get("❓ אחר", []))
 
@@ -1188,7 +1200,7 @@ def pickup_text():
     navigation_line = ""
 
     if PICKUP_NAVIGATION_URL:
-        navigation_line = f'\n📍 <a href="{h(PICKUP_NAVIGATION_URL)}">פתח ניווט עם Waze</a>'
+        navigation_line = "\n📍 פתח ניווט עם Waze דרך כפתור הניווט"
 
     return (
         "<b>🛍️ איסוף עצמי מהחנות</b>\n\n"
