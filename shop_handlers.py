@@ -387,6 +387,57 @@ async def delete_temp_bot_messages(bot, user_id):
 
 
 
+async def delete_state_message(bot, user_id, data, key):
+    message_id = data.pop(key, None)
+
+    if message_id:
+        try:
+            await bot.delete_message(user_id, message_id)
+        except Exception:
+            pass
+
+
+async def clear_qty_runtime_state(bot, user_id, data):
+    for message_key in [
+        "qty_manual_message_id",
+        "qty_invalid_warning_message_id",
+        "qty_limit_warning_message_id",
+        "qty_stock_warning_message_id",
+        "qty_zero_warning_message_id",
+    ]:
+        await delete_state_message(bot, user_id, data, message_key)
+
+    for key in [
+        "selected_product",
+        "selected_qty",
+        "qty_manual_lock",
+        "qty_invalid_warning_sent",
+        "qty_limit_warning_sent",
+        "qty_stock_warning_sent",
+        "qty_zero_warning_sent",
+    ]:
+        data.pop(key, None)
+
+
+async def send_qty_warning_once(message: Message, data, sent_key, message_key, text):
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    if data.get(sent_key):
+        return
+
+    sent = await message.answer(
+        text,
+        reply_markup=ReplyKeyboardRemove(),
+        parse_mode="HTML"
+    )
+
+    data[sent_key] = True
+    data[message_key] = sent.message_id
+
+
 async def force_close_phone_keyboard(message: Message):
     """
     טריק לטלגרם iPhone/Android:
@@ -1999,12 +2050,7 @@ async def quantity_inline_action(callback: CallbackQuery):
     if action == "back_products":
         category = data.get("category")
         data["step"] = "product_select"
-        data.pop("selected_product", None)
-        data.pop("selected_qty", None)
-        data.pop("qty_manual_message_id", None)
-        data.pop("qty_manual_lock", None)
-        data.pop("qty_invalid_warning_sent", None)
-        data.pop("qty_invalid_warning_message_id", None)
+        await clear_qty_runtime_state(callback.message.bot, uid, data)
 
         products = get_active_products().get(category, [])
 
@@ -2039,8 +2085,7 @@ async def quantity_inline_action(callback: CallbackQuery):
     fresh_product = get_product_by_name(product["name"])
     if not fresh_product or int(fresh_product.get("active", 0)) != 1:
         data["step"] = None
-        data.pop("selected_product", None)
-        data.pop("selected_qty", None)
+        await clear_qty_runtime_state(callback.message.bot, uid, data)
         await callback.answer("המוצר לא זמין כרגע.", show_alert=True)
         return
 
@@ -2054,8 +2099,7 @@ async def quantity_inline_action(callback: CallbackQuery):
 
     if available_left <= 0:
         data["step"] = None
-        data.pop("selected_product", None)
-        data.pop("selected_qty", None)
+        await clear_qty_runtime_state(callback.message.bot, uid, data)
         await callback.message.answer(
             rtl("<b>📦 כל המלאי הזמין של המוצר כבר נמצא אצלך בסל.</b>"),
             reply_markup=cart_keyboard(),
@@ -2135,8 +2179,22 @@ async def quantity_inline_action(callback: CallbackQuery):
             return
 
         data["step"] = "qty_manual"
-        data.pop("qty_invalid_warning_sent", None)
-        data.pop("qty_invalid_warning_message_id", None)
+
+        for warning_key in [
+            "qty_invalid_warning_message_id",
+            "qty_limit_warning_message_id",
+            "qty_stock_warning_message_id",
+            "qty_zero_warning_message_id",
+        ]:
+            await delete_state_message(callback.message.bot, uid, data, warning_key)
+
+        for warning_flag in [
+            "qty_invalid_warning_sent",
+            "qty_limit_warning_sent",
+            "qty_stock_warning_sent",
+            "qty_zero_warning_sent",
+        ]:
+            data.pop(warning_flag, None)
 
         old_manual_message_id = data.get("qty_manual_message_id")
         if old_manual_message_id:
@@ -2187,10 +2245,7 @@ async def quantity_inline_action(callback: CallbackQuery):
         })
 
         data["step"] = None
-        data.pop("selected_product", None)
-        data.pop("selected_qty", None)
-        data.pop("qty_manual_message_id", None)
-        data.pop("qty_manual_lock", None)
+        await clear_qty_runtime_state(callback.message.bot, uid, data)
 
         await delete_temp_bot_messages(callback.message.bot, uid)
 
@@ -3172,43 +3227,38 @@ async def handle_shop(message: Message):
             return
 
         if not txt.isdigit():
-            # מונע הצפה: הודעת אזהרה אחת בלבד במצב הזנת כמות ידנית.
-            try:
-                await message.delete()
-            except Exception:
-                pass
-
-            if data.get("qty_invalid_warning_sent"):
-                return
-
-            sent = await message.answer(
-                rtl("<b>⚠️ רשום את הכמות במספרים בלבד.</b>"),
-                reply_markup=ReplyKeyboardRemove(),
-                parse_mode="HTML"
+            await send_qty_warning_once(
+                message,
+                data,
+                "qty_invalid_warning_sent",
+                "qty_invalid_warning_message_id",
+                rtl("<b>⚠️ רשום את הכמות במספרים בלבד.</b>")
             )
-
-            data["qty_invalid_warning_sent"] = True
-            data["qty_invalid_warning_message_id"] = sent.message_id
             return
 
         selected_qty = int(txt)
 
-        warning_message_id = data.pop("qty_invalid_warning_message_id", None)
-        data.pop("qty_invalid_warning_sent", None)
-        if warning_message_id:
-            try:
-                await message.bot.delete_message(uid, warning_message_id)
-            except Exception:
-                pass
+        for warning_key in [
+            "qty_invalid_warning_message_id",
+            "qty_limit_warning_message_id",
+            "qty_stock_warning_message_id",
+            "qty_zero_warning_message_id",
+        ]:
+            await delete_state_message(message.bot, uid, data, warning_key)
+
+        for warning_flag in [
+            "qty_invalid_warning_sent",
+            "qty_limit_warning_sent",
+            "qty_stock_warning_sent",
+            "qty_zero_warning_sent",
+        ]:
+            data.pop(warning_flag, None)
 
         fresh_product = get_product_by_name(product["name"])
 
         if not fresh_product or int(fresh_product.get("active", 0)) != 1:
             data["step"] = None
-            data.pop("selected_product", None)
-            data.pop("selected_qty", None)
-            data.pop("qty_manual_message_id", None)
-            data.pop("qty_manual_lock", None)
+            await clear_qty_runtime_state(message.bot, uid, data)
 
             await message.answer(
                 rtl("<b>❌ המוצר לא זמין כרגע.</b>"),
@@ -3225,26 +3275,32 @@ async def handle_shop(message: Message):
         available_left = stock - already_in_cart
 
         if selected_qty <= 0:
-            await message.answer(
-                rtl("<b>⚠️ הכמות חייבת להיות גדולה מ־0.</b>"),
-                reply_markup=ReplyKeyboardRemove(),
-                parse_mode="HTML"
+            await send_qty_warning_once(
+                message,
+                data,
+                "qty_zero_warning_sent",
+                "qty_zero_warning_message_id",
+                rtl("<b>⚠️ הכמות חייבת להיות גדולה מ־0.</b>")
             )
             return
 
         if selected_qty > max_qty:
-            await message.answer(
-                large_quantity_contact_text(max_qty),
-                reply_markup=ReplyKeyboardRemove(),
-                parse_mode="HTML"
+            await send_qty_warning_once(
+                message,
+                data,
+                "qty_limit_warning_sent",
+                "qty_limit_warning_message_id",
+                large_quantity_contact_text(max_qty)
             )
             return
 
         if selected_qty > available_left:
-            await message.answer(
-                rtl("<b>⚠️ לא ניתן לבחור כמות מעבר למלאי הזמין.</b>"),
-                reply_markup=ReplyKeyboardRemove(),
-                parse_mode="HTML"
+            await send_qty_warning_once(
+                message,
+                data,
+                "qty_stock_warning_sent",
+                "qty_stock_warning_message_id",
+                rtl("<b>⚠️ לא ניתן לבחור כמות מעבר למלאי הזמין.</b>")
             )
             return
 
@@ -3262,11 +3318,7 @@ async def handle_shop(message: Message):
         })
 
         data["step"] = None
-        data.pop("selected_product", None)
-        data.pop("selected_qty", None)
-        data.pop("qty_manual_lock", None)
-        data.pop("qty_invalid_warning_sent", None)
-        data.pop("qty_invalid_warning_message_id", None)
+        await clear_qty_runtime_state(message.bot, uid, data)
 
         await consume_customer_click(message)
         await delete_temp_bot_messages(message.bot, uid)
