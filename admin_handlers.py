@@ -937,9 +937,6 @@ def is_admin_active_step(message: Message):
     if txt.startswith("/"):
         return False
 
-    if is_customer_navigation_button_for_admin_guard(txt):
-        return False
-
     state = admin_states.get(uid)
 
     if not state:
@@ -948,6 +945,18 @@ def is_admin_active_step(message: Message):
     step = state.get("step")
 
     if step == "admin":
+        return False
+
+    # חשוב: כפתורי פעולת הזמנה באדמין חופפים לכפתורי לקוח.
+    # כשהאדמין נמצא בכרטיס הזמנה, חייבים לתת עדיפות ל-admin_flow.
+    if step == "order_actions" and txt in ORDER_ACTION_BY_BUTTON:
+        return True
+
+    # גם בחירת קטגוריית הזמנות צריכה להישאר בתוך פאנל אדמין.
+    if step == "orders_section" and txt in ORDER_SECTION_BY_BUTTON:
+        return True
+
+    if is_customer_navigation_button_for_admin_guard(txt):
         return False
 
     return True
@@ -2516,6 +2525,11 @@ async def handle_photo(message: Message):
 
     await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
 
+
+
+@router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "order_actions" and clean_admin_text(message.text) in ORDER_ACTION_BY_BUTTON)
+async def admin_order_action_direct_guard(message: Message):
+    await admin_flow(message)
 
 
 @router.message(is_admin_active_step)
