@@ -570,6 +570,7 @@ def is_customer_system_button(text):
         "⬅️ חזרה לסיכום הזמנה",
         "⬅️ חזרה לסל",
         "⬅️ חזרה לבחירת משלוח / איסוף",
+        "⬅️ חזרה לשלב קודם",
         "❌ ביטול תשלום",
         "🔁 הזמן שוב",
         "⬅️ חזרה להזמנות שלי",
@@ -754,7 +755,7 @@ def confirm_keyboard():
         keyboard=[
             [KeyboardButton(text="✅ אשר הזמנה")],
             [KeyboardButton(text="✏️ שנה פרטים")],
-            [KeyboardButton(text="⬅️ חזרה לבחירת משלוח / איסוף")],
+            [KeyboardButton(text="⬅️ חזרה לשלב קודם")],
             [KeyboardButton(text="❌ בטל הזמנה")]
         ],
         resize_keyboard=True
@@ -1378,6 +1379,7 @@ async def use_saved_profile_flow(message: Message, data):
         return
 
     data["step"] = "confirm"
+    data["previous_step_before_confirm"] = "saved_profile_choice"
 
     await message.answer(
         build_order_summary(data),
@@ -1788,7 +1790,7 @@ async def submit_paid_order(message: Message, data):
 
 
 @router.message(F.text == "⬅️ חזרה לבחירת משלוח / איסוף")
-async def back_to_fulfillment_choice_from_summary(message: Message):
+async def back_to_fulfillment_choice(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
     data = users.get(uid)
@@ -1803,7 +1805,7 @@ async def back_to_fulfillment_choice_from_summary(message: Message):
 
     data["step"] = "fulfillment_choice"
 
-    # מנקים את פרטי הקבלה הקודמים כדי שהלקוח יבחר מחדש איסוף או משלוח.
+    # מנקים רק את פרטי הקבלה כדי לבחור מחדש משלוח או איסוף.
     for key in [
         "fulfillment_type",
         "order_type",
@@ -1813,7 +1815,68 @@ async def back_to_fulfillment_choice_from_summary(message: Message):
         "city",
         "street",
         "floor",
-        "apartment"
+        "apartment",
+        "previous_step_before_confirm"
+    ]:
+        data.pop(key, None)
+
+    await delete_temp_bot_messages(message.bot, uid)
+
+    await send_temp_message(
+        message,
+        rtl(
+            "<b>📦 איך תרצה לקבל את ההזמנה?</b>\n\n"
+            "בחר אחת מהאפשרויות:"
+        ),
+        reply_markup=fulfillment_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "⬅️ חזרה לשלב קודם")
+async def back_from_order_summary_to_previous_step(message: Message):
+    await consume_customer_click(message)
+    uid = message.from_user.id
+    data = users.get(uid)
+
+    if not data or not data.get("cart"):
+        await message.answer(
+            rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
+            reply_markup=main_keyboard(message.from_user.id),
+            parse_mode="HTML"
+        )
+        return
+
+    previous_step = data.get("previous_step_before_confirm")
+
+    if previous_step == "saved_profile_choice":
+        profile = data.get("saved_profile") or get_customer_profile(uid)
+
+        if profile:
+            data["saved_profile"] = profile
+            data["step"] = "saved_profile_choice"
+
+            await message.answer(
+                saved_profile_text(profile),
+                reply_markup=use_saved_details_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+    # אם אין שלב קודם ברור, נחזור לבחירת משלוח / איסוף.
+    data["step"] = "fulfillment_choice"
+
+    for key in [
+        "fulfillment_type",
+        "order_type",
+        "delivery_price",
+        "base_city",
+        "delivery_pending",
+        "city",
+        "street",
+        "floor",
+        "apartment",
+        "previous_step_before_confirm"
     ]:
         data.pop(key, None)
 
@@ -2428,6 +2491,7 @@ async def handle_shop(message: Message):
             if profile and profile.get("customer_name") and profile.get("phone") and profile.get("city"):
                 data["saved_profile"] = profile
                 data["step"] = "saved_profile_choice"
+                data["previous_step_before_confirm"] = "saved_profile_choice"
 
                 await message.answer(
                     saved_profile_text(profile),
@@ -3408,6 +3472,7 @@ async def handle_shop(message: Message):
 
         data["apartment"] = txt
         data["step"] = "confirm"
+        data["previous_step_before_confirm"] = "details_flow"
 
         await message.answer(
             build_order_summary(data),
