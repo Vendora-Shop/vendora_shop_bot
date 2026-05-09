@@ -3165,13 +3165,28 @@ async def handle_shop(message: Message):
             )
             return
 
+        if not txt.isdigit():
+            await message.answer(
+                rtl("<b>⚠️ רשום את הכמות במספרים בלבד.</b>"),
+                reply_markup=ReplyKeyboardRemove(),
+                parse_mode="HTML"
+            )
+            return
+
+        selected_qty = int(txt)
+
         fresh_product = get_product_by_name(product["name"])
+
         if not fresh_product or int(fresh_product.get("active", 0)) != 1:
             data["step"] = None
             data.pop("selected_product", None)
             data.pop("selected_qty", None)
+            data.pop("qty_manual_message_id", None)
+            data.pop("qty_manual_lock", None)
+
             await message.answer(
                 rtl("<b>❌ המוצר לא זמין כרגע.</b>"),
+                reply_markup=categories_keyboard(),
                 parse_mode="HTML"
             )
             return
@@ -3183,18 +3198,10 @@ async def handle_shop(message: Message):
         already_in_cart = product_qty_in_cart(data["cart"], product["name"])
         available_left = stock - already_in_cart
 
-        if not txt.isdigit():
-            await message.answer(
-                rtl("<b>⚠️ נא לרשום כמות במספרים בלבד.</b>"),
-                parse_mode="HTML"
-            )
-            return
-
-        selected_qty = int(txt)
-
         if selected_qty <= 0:
             await message.answer(
                 rtl("<b>⚠️ הכמות חייבת להיות גדולה מ־0.</b>"),
+                reply_markup=ReplyKeyboardRemove(),
                 parse_mode="HTML"
             )
             return
@@ -3202,48 +3209,48 @@ async def handle_shop(message: Message):
         if selected_qty > max_qty:
             await message.answer(
                 large_quantity_contact_text(max_qty),
-                reply_markup=quantity_inline_keyboard(int(data.get("selected_qty", 1))),
+                reply_markup=ReplyKeyboardRemove(),
                 parse_mode="HTML"
             )
-            data["step"] = "qty"
             return
 
         if selected_qty > available_left:
             await message.answer(
                 rtl("<b>⚠️ לא ניתן לבחור כמות מעבר למלאי הזמין.</b>"),
-                reply_markup=quantity_inline_keyboard(int(data.get("selected_qty", 1))),
+                reply_markup=ReplyKeyboardRemove(),
                 parse_mode="HTML"
             )
-            data["step"] = "qty"
             return
 
-        data["selected_qty"] = selected_qty
-        data["step"] = "qty"
-        data.pop("qty_manual_lock", None)
-
         old_manual_message_id = data.pop("qty_manual_message_id", None)
-        data.pop("qty_manual_lock", None)
         if old_manual_message_id:
             try:
                 await message.bot.delete_message(uid, old_manual_message_id)
             except Exception:
                 pass
 
-        await force_close_phone_keyboard(message)
+        data["cart"].append({
+            "name": fresh_product["name"],
+            "price": float(fresh_product["price"]),
+            "qty": selected_qty
+        })
 
-        await message.answer(
-            rtl(
-                "<b>🔢 בחירת כמות</b>\n\n"
-                f"{field('כמות נבחרת', selected_qty)}\n\n"
-                "בחר את הכמות הרצויה להזמנה.\n"
-                "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
-                "רק לאחר בחירת הכמות ולחיצה על 🛒 הוסף לסל,\n"
-                "המוצרים יתווספו לסל ותוכל להמשיך למשלוח או לאיסוף."
-            ),
-            reply_markup=quantity_inline_keyboard(selected_qty),
+        data["step"] = None
+        data.pop("selected_product", None)
+        data.pop("selected_qty", None)
+        data.pop("qty_manual_lock", None)
+
+        await consume_customer_click(message)
+        await delete_temp_bot_messages(message.bot, uid)
+
+        await send_temp_message(
+            message,
+            cart_text(data["cart"], title="✅ נוסף לסל"),
+            reply_markup=cart_keyboard(),
             parse_mode="HTML"
         )
         return
+
 
     if data.get("step") == "qty":
         product = data.get("selected_product")
