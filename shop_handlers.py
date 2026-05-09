@@ -700,6 +700,12 @@ def quantity_inline_keyboard(selected_qty):
             ],
             [
                 InlineKeyboardButton(text="🛒 הוסף לסל", callback_data="qty_action:add")
+            ],
+            [
+                InlineKeyboardButton(text="⬅️ חזרה למוצרים", callback_data="qty_action:back_products")
+            ],
+            [
+                InlineKeyboardButton(text="❌ בטל הזמנה", callback_data="qty_action:cancel")
             ]
         ]
     )
@@ -1057,7 +1063,7 @@ def fulfillment_keyboard():
             [KeyboardButton(text="❌ בטל הזמנה")]
         ],
         resize_keyboard=True,
-        one_time_keyboard=True
+        one_time_keyboard=False
     )
 
 
@@ -1786,6 +1792,41 @@ async def quantity_inline_action(callback: CallbackQuery):
     data["step"] = "qty"
 
     action = (callback.data or "").split(":", 1)[1]
+
+    if action == "back_products":
+        category = data.get("category")
+        data["step"] = "product_select"
+        data.pop("selected_product", None)
+        data.pop("selected_qty", None)
+
+        products = get_active_products().get(category, [])
+
+        await delete_temp_bot_messages(callback.message.bot, uid)
+
+        await callback.message.answer(
+            rtl("<b>בחר מוצר:</b>"),
+            reply_markup=products_keyboard(category),
+            parse_mode="HTML"
+        )
+        await callback.answer()
+        return
+
+    if action == "cancel":
+        users.pop(uid, None)
+
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+
+        await callback.message.answer(
+            rtl("<b>❌ ההזמנה בוטלה.</b>"),
+            reply_markup=main_keyboard(callback.from_user.id),
+            parse_mode="HTML"
+        )
+        await callback.answer()
+        return
+
     product = data.get("selected_product")
 
     fresh_product = get_product_by_name(product["name"])
