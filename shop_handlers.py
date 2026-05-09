@@ -1545,12 +1545,14 @@ async def clear_cart(message: Message):
 
 @router.message(F.text == "❌ בטל הזמנה")
 async def cancel_order(message: Message):
-    users.pop(message.from_user.id, None)
-    await message.answer(
-        rtl("<b>❌ ההזמנה בוטלה.</b>"),
-        reply_markup=main_keyboard(message.from_user.id),
-        parse_mode="HTML"
+    uid = message.from_user.id
+
+    await reset_customer_to_main_menu(
+        message,
+        "<b>❌ ההזמנה בוטלה.</b>"
     )
+
+    users.pop(uid, None)
 
 
 @router.message(F.text == "✏️ שנה פרטים")
@@ -1848,8 +1850,6 @@ async def quantity_inline_action(callback: CallbackQuery):
         return
 
     if action == "cancel":
-        users.pop(uid, None)
-
         try:
             await callback.message.delete()
         except Exception:
@@ -1859,6 +1859,9 @@ async def quantity_inline_action(callback: CallbackQuery):
             callback,
             "<b>❌ ההזמנה בוטלה.</b>"
         )
+
+        users.pop(uid, None)
+
         await callback.answer()
         return
 
@@ -2322,12 +2325,12 @@ async def handle_shop(message: Message):
 
     if data.get("step") == "fulfillment_choice":
         if txt == "❌ בטל הזמנה":
-            users.pop(uid, None)
-
             await reset_customer_to_main_menu(
                 message,
                 "<b>❌ ההזמנה בוטלה.</b>"
             )
+
+            users.pop(uid, None)
             return
 
         if txt in {"🚚 משלוח עד הבית", "🛍️ איסוף עצמי מהחנות"}:
