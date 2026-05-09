@@ -2003,6 +2003,7 @@ async def quantity_inline_action(callback: CallbackQuery):
         data["step"] = "product_select"
         data.pop("selected_product", None)
         data.pop("selected_qty", None)
+        data.pop("qty_manual_message_id", None)
 
         products = get_active_products().get(category, [])
 
@@ -2121,8 +2122,20 @@ async def quantity_inline_action(callback: CallbackQuery):
         return
 
     if action == "manual":
+        if data.get("step") == "qty_manual":
+            await callback.answer("כבר פתוחה הזנת כמות.", show_alert=False)
+            return
+
         data["step"] = "qty_manual"
-        await callback.message.answer(
+
+        old_manual_message_id = data.get("qty_manual_message_id")
+        if old_manual_message_id:
+            try:
+                await callback.message.bot.delete_message(uid, old_manual_message_id)
+            except Exception:
+                pass
+
+        sent = await callback.message.answer(
             rtl(
                 "<b>✏️ הזנת כמות</b>\n\n"
                 "רשום את הכמות הרצויה במספרים בלבד."
@@ -2130,6 +2143,9 @@ async def quantity_inline_action(callback: CallbackQuery):
             reply_markup=ReplyKeyboardRemove(),
             parse_mode="HTML"
         )
+
+        data["qty_manual_message_id"] = sent.message_id
+
         await callback.answer()
         return
 
@@ -3195,6 +3211,13 @@ async def handle_shop(message: Message):
         data["selected_qty"] = selected_qty
         data["step"] = "qty"
 
+        old_manual_message_id = data.pop("qty_manual_message_id", None)
+        if old_manual_message_id:
+            try:
+                await message.bot.delete_message(uid, old_manual_message_id)
+            except Exception:
+                pass
+
         await force_close_phone_keyboard(message)
 
         await message.answer(
@@ -3314,16 +3337,29 @@ async def handle_shop(message: Message):
             return
 
         if txt.startswith("כמות:"):
+            if data.get("step") == "qty_manual":
+                await delete_customer_message(message)
+                return
+
             data["step"] = "qty_manual"
-            await message.answer(
+
+            old_manual_message_id = data.get("qty_manual_message_id")
+            if old_manual_message_id:
+                try:
+                    await message.bot.delete_message(uid, old_manual_message_id)
+                except Exception:
+                    pass
+
+            sent = await message.answer(
                 rtl(
                     "<b>✏️ הזנת כמות</b>\n\n"
                     "רשום את הכמות הרצויה במספרים בלבד."
-                ,
-                reply_markup=ReplyKeyboardRemove()
-            ),
+                ),
+                reply_markup=ReplyKeyboardRemove(),
                 parse_mode="HTML"
             )
+
+            data["qty_manual_message_id"] = sent.message_id
             return
 
         if txt != "🛒 הוסף לסל":
