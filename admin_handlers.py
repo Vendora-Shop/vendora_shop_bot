@@ -46,6 +46,20 @@ from database import (
 )
 
 router = Router()
+@router.message(F.text == "⬅️ חזרה לניהול")
+async def admin_back_to_panel_global(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "admin"}
+
+    await message.answer(
+        rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
+        reply_markup=admin_keyboard(),
+        parse_mode="HTML"
+    )
+
+
 admin_states = {}
 
 
@@ -2112,18 +2126,6 @@ async def confirm_full_order_reset(message: Message):
     )
 
 
-@router.message(F.text == "⬅️ חזרה לניהול")
-async def back_admin(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-
-    admin_states[message.from_user.id] = {"step": "admin"}
-
-    await message.answer(
-        rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
-        reply_markup=admin_keyboard(),
-        parse_mode="HTML"
-    )
 
 @router.message(F.text == "📦 ניהול הזמנות")
 async def orders_management_start(message: Message):
