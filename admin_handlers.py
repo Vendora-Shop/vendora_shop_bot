@@ -51,7 +51,7 @@ async def admin_back_to_panel_global(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    admin_states[message.from_user.id] = {"step": "admin"}
+    reset_admin_state(message.from_user.id, "admin")
 
     await message.answer(
         rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
@@ -65,7 +65,7 @@ async def admin_back_to_panel_global_clean(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    admin_states[message.from_user.id] = {"step": "admin"}
+    reset_admin_state(message.from_user.id, "admin")
 
     await message.answer(
         rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
@@ -75,6 +75,31 @@ async def admin_back_to_panel_global_clean(message: Message):
 
 
 admin_states = {}
+
+
+def get_admin_state(user_id):
+    return admin_states.setdefault(user_id, {"step": "admin"})
+
+
+def admin_action_locked(user_id, key):
+    state = get_admin_state(user_id)
+
+    if state.get(key):
+        return True
+
+    state[key] = True
+    return False
+
+
+def admin_action_unlock(user_id, key):
+    state = admin_states.get(user_id)
+
+    if state:
+        state.pop(key, None)
+
+
+def reset_admin_state(user_id, step="admin"):
+    admin_states[user_id] = {"step": step}
 
 
 def support_reply_cancel_keyboard():
@@ -455,7 +480,7 @@ async def handle_broadcast_confirm_screen(message: Message):
         )
         return
 
-    if state.get("broadcast_sent"):
+    if state.get("broadcast_sent") or state.get("broadcast_sending_lock"):
         admin_states[uid] = {"step": "admin"}
         await message.answer(
             rtl(
@@ -482,6 +507,7 @@ async def handle_broadcast_confirm_screen(message: Message):
         )
         return
 
+    state["broadcast_sending_lock"] = True
     state["broadcast_sent"] = True
 
     sent_count = 0
@@ -1041,7 +1067,8 @@ def order_select_keyboard(orders, back_text="⬅️ חזרה לניהול הזמ
 def order_action_keyboard(order_status, pickup=False):
     if order_status in {"done", "cancelled"}:
         return ReplyKeyboardMarkup(
-            keyboard=[                [KeyboardButton(text="⬅️ חזרה לרשימת הזמנות")],
+            keyboard=[
+                [KeyboardButton(text="⬅️ חזרה לרשימת הזמנות")],
                 [KeyboardButton(text="⬅️ חזרה לניהול")]
             ],
             resize_keyboard=True
@@ -1345,16 +1372,24 @@ async def order_notification_action(callback: CallbackQuery):
 
     _, action, order_number = parts
 
+    lock_key = f"order_action_lock:{order_number}"
+    if admin_action_locked(callback.from_user.id, lock_key):
+        await callback.answer("הפעולה כבר בטיפול.", show_alert=False)
+        admin_action_unlock(callback.from_user.id, lock_key)
+        return
+
     order_before = get_order_by_number(order_number)
 
     if not order_before:
         await callback.answer("ההזמנה לא נמצאה במערכת.", show_alert=True)
+        admin_action_unlock(callback.from_user.id, lock_key)
         return
 
     current_status = order_before.get("status")
 
     if action not in NOTIFICATION_ACTION_BY_BUTTON:
         await callback.answer("פעולה לא תקינה.", show_alert=True)
+        admin_action_unlock(callback.from_user.id, lock_key)
         return
 
     new_status = NOTIFICATION_ACTION_BY_BUTTON[action]
@@ -1369,6 +1404,7 @@ async def order_notification_action(callback: CallbackQuery):
             .replace("\\n", "\n")
         )
         await callback.answer(clean_reason, show_alert=True)
+        admin_action_unlock(callback.from_user.id, lock_key)
         return
 
     ok = update_order_status(order_number, new_status)
@@ -1376,6 +1412,7 @@ async def order_notification_action(callback: CallbackQuery):
 
     if not ok or not order:
         await callback.answer("לא הצלחתי לעדכן את ההזמנה.", show_alert=True)
+        admin_action_unlock(callback.from_user.id, lock_key)
         return
 
     if is_order_pickup(order):
@@ -1421,6 +1458,7 @@ async def order_notification_action(callback: CallbackQuery):
             parse_mode="HTML"
         )
 
+    admin_action_unlock(callback.from_user.id, lock_key)
 
 
 
@@ -1870,6 +1908,7 @@ async def export_support_ticket_txt(message: Message):
     file_path = export_support_ticket_to_txt(ticket_number)
 
     if not file_path:
+        ticket = get_support_ticket(ticket_number)
         await message.answer(
             rtl("<b>⚠️ לא הצלחתי לייצא את הפנייה.</b>"),
             reply_markup=support_ticket_keyboard_by_status(ticket),
@@ -2018,7 +2057,8 @@ async def confirm_clear_all_orders(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    state = admin_states.get(message.from_user.id, {})
+    uid = message.from_user.id
+    state = admin_states.get(uid, {})
 
     if state.get("step") != "confirm_clear_all_orders":
         await message.answer(
@@ -2028,9 +2068,15 @@ async def confirm_clear_all_orders(message: Message):
         )
         return
 
-    deleted_count = clear_all_orders_for_testing()
+    if admin_action_locked(uid, "clear_all_orders_lock"):
+        return
 
-    admin_states[message.from_user.id] = {"step": "admin"}
+    try:
+        deleted_count = clear_all_orders_for_testing()
+    finally:
+        admin_action_unlock(uid, "clear_all_orders_lock")
+
+    reset_admin_state(uid, "admin")
 
     await message.answer(
         rtl(
@@ -2100,7 +2146,8 @@ async def confirm_full_order_reset(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    state = admin_states.get(message.from_user.id, {})
+    uid = message.from_user.id
+    state = admin_states.get(uid, {})
 
     if state.get("step") != "confirm_full_order_reset":
         await message.answer(
@@ -2110,9 +2157,15 @@ async def confirm_full_order_reset(message: Message):
         )
         return
 
-    reset_full_order_system()
+    if admin_action_locked(uid, "full_order_reset_lock"):
+        return
 
-    admin_states[message.from_user.id] = {"step": "admin"}
+    try:
+        reset_full_order_system()
+    finally:
+        admin_action_unlock(uid, "full_order_reset_lock")
+
+    reset_admin_state(uid, "admin")
 
     await message.answer(
         rtl(
