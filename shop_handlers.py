@@ -373,10 +373,7 @@ async def delete_temp_bot_messages(bot, user_id):
     if not data:
         return
 
-    message_ids = data.get("temp_bot_messages", [])
-
-    if not message_ids:
-        return
+    message_ids = list(data.get("temp_bot_messages", []))
 
     for message_id in message_ids:
         try:
@@ -385,6 +382,8 @@ async def delete_temp_bot_messages(bot, user_id):
             pass
 
     data["temp_bot_messages"] = []
+
+
 
 
 async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None):
@@ -437,6 +436,8 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
 
 
 async def reset_customer_to_main_menu(message, text):
+    await delete_temp_bot_messages(message.bot, message.from_user.id)
+
     try:
         await message.answer(
             " ",
@@ -453,6 +454,8 @@ async def reset_customer_to_main_menu(message, text):
 
 
 async def reset_callback_customer_to_main_menu(callback, text):
+    await delete_temp_bot_messages(callback.message.bot, callback.from_user.id)
+
     try:
         await callback.message.answer(
             " ",
