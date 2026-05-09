@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from aiogram.filters import CommandStart
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from html import escape
 
 from config import ADMIN_ID
@@ -433,6 +433,39 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
     users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
 
     return sent
+
+
+
+async def reset_customer_to_main_menu(message, text):
+    try:
+        await message.answer(
+            " ",
+            reply_markup=ReplyKeyboardRemove()
+        )
+    except Exception:
+        pass
+
+    await message.answer(
+        rtl(text),
+        reply_markup=main_keyboard(message.from_user.id),
+        parse_mode="HTML"
+    )
+
+
+async def reset_callback_customer_to_main_menu(callback, text):
+    try:
+        await callback.message.answer(
+            " ",
+            reply_markup=ReplyKeyboardRemove()
+        )
+    except Exception:
+        pass
+
+    await callback.message.answer(
+        rtl(text),
+        reply_markup=main_keyboard(callback.from_user.id),
+        parse_mode="HTML"
+    )
 
 
 def is_button_only_step_for_customer(step):
@@ -1819,10 +1852,9 @@ async def quantity_inline_action(callback: CallbackQuery):
         except Exception:
             pass
 
-        await callback.message.answer(
-            rtl("<b>❌ ההזמנה בוטלה.</b>"),
-            reply_markup=main_keyboard(callback.from_user.id),
-            parse_mode="HTML"
+        await reset_callback_customer_to_main_menu(
+            callback,
+            "<b>❌ ההזמנה בוטלה.</b>"
         )
         await callback.answer()
         return
@@ -2289,10 +2321,9 @@ async def handle_shop(message: Message):
         if txt == "❌ בטל הזמנה":
             users.pop(uid, None)
 
-            await message.answer(
-                rtl("<b>❌ ההזמנה בוטלה.</b>"),
-                reply_markup=main_keyboard(message.from_user.id),
-                parse_mode="HTML"
+            await reset_customer_to_main_menu(
+                message,
+                "<b>❌ ההזמנה בוטלה.</b>"
             )
             return
 
