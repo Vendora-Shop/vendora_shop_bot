@@ -2,6 +2,7 @@ from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from html import escape
+import asyncio
 
 from config import ADMIN_ID
 from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard, support_subject_keyboard
@@ -386,17 +387,18 @@ async def delete_temp_bot_messages(bot, user_id):
 
 
 
-async def force_close_android_keyboard(message: Message):
+async def force_close_phone_keyboard(message: Message):
     """
-    טריק עדין לטלגרם באנדרואיד:
-    שולח הסרת ReplyKeyboard ומוחק מיד את הודעת הניקוי.
-    זה עוזר לסגור מצב הקלדה לפני מסכי Inline.
+    טריק לטלגרם iPhone/Android:
+    שולח ReplyKeyboardRemove, ממתין רגע קצר כדי שהאפליקציה תסגור את המקלדת,
+    ורק אז מוחק את הודעת הניקוי.
     """
     try:
         sent = await message.answer(
             "\u2063",
             reply_markup=ReplyKeyboardRemove()
         )
+        await asyncio.sleep(0.45)
         try:
             await sent.delete()
         except Exception:
@@ -1244,9 +1246,20 @@ async def send_product_card(message: Message, product):
     image = product.get("image_file_id")
 
     if image:
-        await send_temp_photo(message, photo=image, caption=caption, parse_mode="HTML")
+        await send_temp_photo(
+            message,
+            photo=image,
+            caption=caption,
+            reply_markup=ReplyKeyboardRemove(),
+            parse_mode="HTML"
+        )
     else:
-        await send_temp_message(message, caption, parse_mode="HTML")
+        await send_temp_message(
+            message,
+            caption,
+            reply_markup=ReplyKeyboardRemove(),
+            parse_mode="HTML"
+        )
 
 
 def set_pickup_details(data):
@@ -2418,7 +2431,7 @@ async def handle_shop(message: Message):
             )
             return
 
-        await force_close_android_keyboard(message)
+        await force_close_phone_keyboard(message)
 
         await send_product_card(message, product)
 
@@ -3182,7 +3195,7 @@ async def handle_shop(message: Message):
         data["selected_qty"] = selected_qty
         data["step"] = "qty"
 
-        await force_close_android_keyboard(message)
+        await force_close_phone_keyboard(message)
 
         await message.answer(
             rtl(
