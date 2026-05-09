@@ -60,6 +60,20 @@ async def admin_back_to_panel_global(message: Message):
     )
 
 
+@router.message(lambda message: clean_admin_text(message.text) == "⬅️ חזרה לניהול")
+async def admin_back_to_panel_global_clean(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "admin"}
+
+    await message.answer(
+        rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
+        reply_markup=admin_keyboard(),
+        parse_mode="HTML"
+    )
+
+
 admin_states = {}
 
 
@@ -143,7 +157,8 @@ def is_valid_admin_button_text(text):
         "🛍️ מוכן לאיסוף",
         "✅ סמן כהושלם",
         "✅ סמן כנאסף",
-        "❌ בטל הזמנה",        "📋 רשימת לקוחות",
+        "❌ בטל הזמנה",
+        "📋 רשימת לקוחות",
         "🔎 חפש לקוח",
         "⬅️ חזרה ללקוחות",
         "⬅️ חזרה לרשימת לקוחות",
