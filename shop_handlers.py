@@ -30,6 +30,18 @@ from pdf_generator import create_invoice_pdf
 router = Router()
 
 
+def is_admin_panel_active_for_shop_guard(user_id):
+    if user_id != ADMIN_ID:
+        return False
+
+    try:
+        from admin_handlers import admin_states
+        state = admin_states.get(user_id)
+        return bool(state and state.get("step") and state.get("step") != "admin")
+    except Exception:
+        return False
+
+
 @router.message(F.text == "✅ הבעיה נפתרה")
 async def customer_close_support_ticket_button(message: Message):
     await close_customer_open_support_ticket(message)
@@ -1363,11 +1375,18 @@ def fill_saved_profile_into_data(data, profile):
 
     delivery_price, base_city, status = get_delivery_price(profile["city"])
 
-    if status == "city_not_found" or status == "no_delivery_price":
-        return False
+    if status == "ok" and delivery_price is not None:
+        data["delivery_price"] = float(delivery_price)
+        data["base_city"] = base_city or profile["city"]
+        data["delivery_pending"] = False
+    else:
+        # לקוח עם פרטים שמורים לא צריך להזין עיר מחדש.
+        # אם אין מחיר משלוח אוטומטי — ממשיכים עם הפרטים השמורים,
+        # והמשלוח יסוכם מול נציג.
+        data["delivery_price"] = 0
+        data["base_city"] = base_city or "לתיאום מול נציג"
+        data["delivery_pending"] = True
 
-    data["delivery_price"] = float(delivery_price)
-    data["base_city"] = base_city
     return True
 
 
@@ -1605,6 +1624,9 @@ async def clear_cart(message: Message):
 
 @router.message(F.text == "❌ בטל הזמנה")
 async def cancel_order(message: Message):
+    if is_admin_panel_active_for_shop_guard(message.from_user.id):
+        return
+
     uid = message.from_user.id
 
     await reset_customer_to_main_menu(
@@ -1926,7 +1948,10 @@ async def back_from_order_summary_to_previous_step(message: Message):
     )
 
 
-@router.message(F.text == "✅ אשר הזמנה")
+@router.message(
+    F.text == "✅ אשר הזמנה",
+    lambda message: not is_admin_panel_active_for_shop_guard(message.from_user.id)
+)
 async def confirm_order(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
