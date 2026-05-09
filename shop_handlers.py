@@ -1461,14 +1461,22 @@ async def use_saved_profile_flow(message: Message, data):
         await message.answer(
             rtl(
                 "<b>⚠️ לא ניתן לחשב משלוח לפי הפרטים השמורים.</b>\n\n"
-                "יש להזין פרטים חדשים כדי להמשיך."
+                "נא להזין עיר חדשה לצורך חישוב משלוח."
             ),
             parse_mode="HTML"
         )
-        data["step"] = "name"
+
+        data["step"] = "city"
+
         await message.answer(
-            rtl("<b>📝 פרטי הזמנה חדשים</b>\n\nרשום את השם המלא שלך:"),
-            reply_markup=manual_details_keyboard(),
+            rtl("<b>🏙️ עיר / יישוב</b>\n\nרשום את העיר או היישוב שלך:"),
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(text="⬅️ חזרה לבחירת משלוח / איסוף")],
+                    [KeyboardButton(text="❌ בטל הזמנה")]
+                ],
+                resize_keyboard=True
+            ),
             parse_mode="HTML"
         )
         return
