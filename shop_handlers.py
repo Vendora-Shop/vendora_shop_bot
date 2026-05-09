@@ -438,6 +438,7 @@ def is_free_text_step_for_customer(step):
         "apartment",
         "qty_manual",
         "support",
+        "support_faq",
         "support_phone",
         "support_chat",
         "add_address_label",
@@ -457,6 +458,29 @@ def is_customer_system_button(text):
         "🏠 הכתובות שלי",
         "👤 הפרטים שלי",
         "📞 שירות לקוחות",
+        "⬅️ חזרה לנושאים",
+        "✍️ פנייה לנציג שירות",
+        "❓ הנושא שלי לא מופיע",
+        "☎️ למה צריך מספר טלפון?",
+        "✏️ איך מעדכנים פרטים בהזמנה חדשה?",
+        "🏠 איך רואים או מוסיפים כתובת?",
+        "👤 אילו פרטים שמורים אצלי?",
+        "🛒 איך מוסיפים עוד מוצר לסל?",
+        "🖼️ האם אפשר לראות תמונת מוצר?",
+        "🔢 למה יש הגבלת כמות?",
+        "🛍️ איך יודעים אם מוצר במלאי?",
+        "📄 האם מקבלים סיכום הזמנה?",
+        "⚠️ מה עושים אם התשלום לא הצליח?",
+        "✅ איך אדע שהתשלום עבר?",
+        "💳 איך מתבצע התשלום?",
+        "⏱️ מתי ההזמנה יוצאת למשלוח או מוכנה לאיסוף?",
+        "🔁 אפשר לשנות משלוח לאיסוף?",
+        "🛍️ איך עובד איסוף עצמי?",
+        "🚚 מה מצב המשלוח או האיסוף?",
+        "📄 איפה סיכום ההזמנה שלי?",
+        "✏️ אפשר לשנות פרטים אחרי הזמנה?",
+        "🔔 איך אדע כשהסטטוס משתנה?",
+        "📌 מה הסטטוס של ההזמנה האחרונה שלי?",
         "✅ הבעיה נפתרה",
         "❓ אחר",
         "📝 שינוי פרטים",
@@ -697,6 +721,294 @@ def manual_details_keyboard():
         resize_keyboard=True
     )
 
+
+
+
+SUPPORT_FAQ_BY_SUBJECT = {
+    "📦 שאלה על הזמנה קיימת": [
+        "📌 מה הסטטוס של ההזמנה האחרונה שלי?",
+        "🔔 איך אדע כשהסטטוס משתנה?",
+        "✏️ אפשר לשנות פרטים אחרי הזמנה?",
+        "📄 איפה סיכום ההזמנה שלי?",
+    ],
+    "🚚 משלוח / איסוף": [
+        "🚚 מה מצב המשלוח או האיסוף?",
+        "🛍️ איך עובד איסוף עצמי?",
+        "🔁 אפשר לשנות משלוח לאיסוף?",
+        "⏱️ מתי ההזמנה יוצאת למשלוח או מוכנה לאיסוף?",
+    ],
+    "💳 תשלום": [
+        "💳 איך מתבצע התשלום?",
+        "✅ איך אדע שהתשלום עבר?",
+        "⚠️ מה עושים אם התשלום לא הצליח?",
+        "📄 האם מקבלים סיכום הזמנה?",
+    ],
+    "🛍️ מוצר / מלאי": [
+        "🛍️ איך יודעים אם מוצר במלאי?",
+        "🔢 למה יש הגבלת כמות?",
+        "🖼️ האם אפשר לראות תמונת מוצר?",
+        "🛒 איך מוסיפים עוד מוצר לסל?",
+    ],
+    "📝 שינוי פרטים": [
+        "👤 אילו פרטים שמורים אצלי?",
+        "🏠 איך רואים או מוסיפים כתובת?",
+        "✏️ איך מעדכנים פרטים בהזמנה חדשה?",
+        "☎️ למה צריך מספר טלפון?",
+    ],
+    "❓ אחר": [
+        "❓ הנושא שלי לא מופיע",
+    ],
+}
+
+
+def support_faq_keyboard(subject):
+    questions = SUPPORT_FAQ_BY_SUBJECT.get(subject, SUPPORT_FAQ_BY_SUBJECT.get("❓ אחר", []))
+
+    keyboard = [[KeyboardButton(text=q)] for q in questions]
+    keyboard.append([KeyboardButton(text="✍️ פנייה לנציג שירות")])
+    keyboard.append([KeyboardButton(text="⬅️ חזרה לנושאים")])
+    keyboard.append([KeyboardButton(text="⬅️ חזרה לתפריט")])
+
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+
+def support_faq_after_answer_keyboard(subject):
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✍️ פנייה לנציג שירות")],
+            [KeyboardButton(text="⬅️ חזרה לנושאים")],
+            [KeyboardButton(text="⬅️ חזרה לתפריט")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def latest_customer_order(telegram_id):
+    try:
+        orders = get_orders_by_customer_telegram_id(telegram_id, 1)
+        return orders[0] if orders else None
+    except Exception:
+        return None
+
+
+def order_receive_type_text(order):
+    if not order:
+        return "-"
+
+    try:
+        if is_pickup_order(order):
+            return "🛍️ איסוף עצמי"
+    except Exception:
+        pass
+
+    base_city = str(order.get("base_city") or "")
+    city = str(order.get("city") or "")
+
+    if "איסוף" in base_city or "איסוף" in city:
+        return "🛍️ איסוף עצמי"
+
+    return "🚚 משלוח עד הבית"
+
+
+def dynamic_order_status_answer(user_id):
+    order = latest_customer_order(user_id)
+
+    if not order:
+        return rtl(
+            "<b>📦 סטטוס הזמנה</b>\n\n"
+            "לא נמצאה הזמנה קודמת בחשבון שלך.\n"
+            "אם ביצעת הזמנה ממספר Telegram אחר, ניתן לפתוח פנייה לנציג שירות."
+        )
+
+    return rtl(
+        "<b>📦 סטטוס ההזמנה האחרונה שלך</b>\n\n"
+        f"{field('מספר הזמנה', order.get('order_number') or '-')}\n"
+        f"{field('סטטוס נוכחי', translate_order_status(order.get('status')))}\n"
+        f"{field('סוג קבלה', order_receive_type_text(order))}\n"
+        f"{field('סה״כ לתשלום', money(order.get('final_total') or 0))}\n"
+        f"{field('תאריך הזמנה', order.get('created_at') or '-')}\n\n"
+        "חשוב לדעת: אין כרגע מעקב שליח בזמן אמת. עדכוני סטטוס נשלחים כאשר החנות מעדכנת את ההזמנה."
+    )
+
+
+def dynamic_customer_profile_answer(user_id):
+    profile = get_customer_profile(user_id)
+
+    if not profile:
+        return rtl(
+            "<b>👤 הפרטים השמורים שלך</b>\n\n"
+            "עדיין לא נמצאו פרטים שמורים בחשבון שלך.\n"
+            "הפרטים נשמרים לאחר ביצוע הזמנה או עדכון פרטים בבוט."
+        )
+
+    address = f"{profile.get('city') or '-'}, {profile.get('street') or '-'}, קומה {profile.get('floor') or '-'}, דירה {profile.get('apartment') or '-'}"
+
+    return rtl(
+        "<b>👤 הפרטים השמורים שלך</b>\n\n"
+        f"{field('שם', profile.get('customer_name') or '-')}\n"
+        f"{field('טלפון', profile.get('phone') or '-')}\n"
+        f"{field('כתובת', address)}"
+    )
+
+
+def dynamic_addresses_answer(user_id):
+    addresses = get_customer_addresses(user_id)
+
+    if not addresses:
+        return rtl(
+            "<b>🏠 כתובות שמורות</b>\n\n"
+            "אין כרגע כתובות שמורות בחשבון שלך.\n"
+            "אפשר להוסיף כתובת דרך הכפתור: 🏠 הכתובות שלי."
+        )
+
+    text = "<b>🏠 הכתובות השמורות שלך</b>\n\n"
+
+    for address in addresses[:5]:
+        text += (
+            f"<b>{h(address.get('label') or 'כתובת')}</b>\n"
+            f"{field('עיר / יישוב', address.get('city') or '-')}\n"
+            f"{field('רחוב', address.get('street') or '-')}\n"
+            f"{field('קומה', address.get('floor') or '-')}\n"
+            f"{field('דירה', address.get('apartment') or '-')}\n\n"
+        )
+
+    return rtl(text.strip())
+
+
+def support_faq_answer_text(user_id, subject, question):
+    if question in {
+        "📌 מה הסטטוס של ההזמנה האחרונה שלי?",
+        "🚚 מה מצב המשלוח או האיסוף?",
+    }:
+        return dynamic_order_status_answer(user_id)
+
+    if question == "🔔 איך אדע כשהסטטוס משתנה?":
+        return rtl(
+            "<b>🔔 עדכוני סטטוס הזמנה</b>\n\n"
+            "כאשר החנות מעדכנת את ההזמנה, הבוט שולח לך הודעה עם הסטטוס החדש.\n\n"
+            "הסטטוסים האפשריים הם:\n"
+            "🆕 התקבלה\n"
+            "✅ אושרה\n"
+            "📦 בטיפול\n"
+            "🚚 יצאה למשלוח / מוכנה לאיסוף\n"
+            "✅ הושלמה\n\n"
+            "אין כרגע מעקב שליח בזמן אמת."
+        )
+
+    if question == "✏️ אפשר לשנות פרטים אחרי הזמנה?":
+        return rtl(
+            "<b>✏️ שינוי פרטים אחרי הזמנה</b>\n\n"
+            "כרגע אין שינוי אוטומטי של הזמנה שכבר נשלחה.\n"
+            "אם צריך לעדכן טלפון, כתובת או פרט אחר — פתח פנייה לנציג שירות ונבדוק אם עדיין ניתן לעדכן."
+        )
+
+    if question in {"📄 איפה סיכום ההזמנה שלי?", "📄 האם מקבלים סיכום הזמנה?"}:
+        return rtl(
+            "<b>📄 סיכום הזמנה</b>\n\n"
+            "לאחר ביצוע הזמנה הבוט שולח סיכום הזמנה וקובץ PDF עם פרטי ההזמנה.\n"
+            "אם לא קיבלת את הסיכום, ניתן לפתוח פנייה לנציג שירות."
+        )
+
+    if question == "🛍️ איך עובד איסוף עצמי?":
+        return rtl(
+            "<b>🛍️ איסוף עצמי</b>\n\n"
+            "בעת ביצוע ההזמנה ניתן לבחור באפשרות איסוף עצמי.\n"
+            "לאחר שההזמנה תטופל, החנות תעדכן את הסטטוס ותשלח הודעה כשההזמנה מוכנה לאיסוף."
+        )
+
+    if question == "🔁 אפשר לשנות משלוח לאיסוף?":
+        return rtl(
+            "<b>🔁 שינוי משלוח / איסוף</b>\n\n"
+            "כרגע אין שינוי אוטומטי לאחר שליחת ההזמנה.\n"
+            "אם ההזמנה עדיין לא טופלה, אפשר לפתוח פנייה לנציג שירות ונבדוק אם ניתן לשנות."
+        )
+
+    if question == "⏱️ מתי ההזמנה יוצאת למשלוח או מוכנה לאיסוף?":
+        return rtl(
+            "<b>⏱️ זמני טיפול</b>\n\n"
+            "הבוט שולח עדכון כאשר החנות משנה את סטטוס ההזמנה.\n"
+            "כאשר ההזמנה תצא למשלוח או תהיה מוכנה לאיסוף — תקבל הודעה אוטומטית."
+        )
+
+    if question == "💳 איך מתבצע התשלום?":
+        return rtl(
+            "<b>💳 תשלום</b>\n\n"
+            "בשלב הנוכחי של הבוט התשלום מתבצע דרך מסך התשלום שמופיע בתהליך ההזמנה.\n"
+            "לאחר אישור התשלום, ההזמנה נשלחת לטיפול החנות."
+        )
+
+    if question == "✅ איך אדע שהתשלום עבר?":
+        return rtl(
+            "<b>✅ אישור תשלום</b>\n\n"
+            "לאחר אישור התשלום בבוט, תקבל סיכום הזמנה וההזמנה תועבר לחנות לטיפול.\n"
+            "אם נראה שהתשלום לא עבר או שלא התקבל סיכום — ניתן לפתוח פנייה לנציג שירות."
+        )
+
+    if question == "⚠️ מה עושים אם התשלום לא הצליח?":
+        return rtl(
+            "<b>⚠️ תשלום לא הצליח</b>\n\n"
+            "אם התשלום לא הושלם, ההזמנה לא תעבור לטיפול מלא.\n"
+            "אפשר לנסות שוב או לפתוח פנייה לנציג שירות לבדיקה."
+        )
+
+    if question == "🛍️ איך יודעים אם מוצר במלאי?":
+        return rtl(
+            "<b>🛍️ זמינות מוצר</b>\n\n"
+            "במסך המוצר מופיע האם המוצר במלאי או אזל מהמלאי.\n"
+            "מוצר שאזל מהמלאי לא אמור להיכנס להזמנה רגילה."
+        )
+
+    if question == "🔢 למה יש הגבלת כמות?":
+        return rtl(
+            "<b>🔢 הגבלת כמות</b>\n\n"
+            "בחלק מהמוצרים קיימת כמות מקסימלית להזמנה כדי למנוע הזמנות לא תקינות או חריגות.\n"
+            "אם צריך כמות גדולה יותר, ניתן לפתוח פנייה לנציג שירות."
+        )
+
+    if question == "🖼️ האם אפשר לראות תמונת מוצר?":
+        return rtl(
+            "<b>🖼️ תמונת מוצר</b>\n\n"
+            "אם הוגדרה תמונה למוצר, היא תופיע בכרטיס המוצר בחנות.\n"
+            "אם אין תמונה, יוצגו שם המוצר, תיאור, מחיר וסטטוס מלאי."
+        )
+
+    if question == "🛒 איך מוסיפים עוד מוצר לסל?":
+        return rtl(
+            "<b>🛒 הוספת מוצרים לסל</b>\n\n"
+            "לאחר הוספת מוצר לסל, ניתן ללחוץ על ➕ הוסף עוד מוצר ולבחור מוצרים נוספים.\n"
+            "בסיום ניתן להמשיך להזמנה מתוך הסל."
+        )
+
+    if question == "👤 אילו פרטים שמורים אצלי?":
+        return dynamic_customer_profile_answer(user_id)
+
+    if question == "🏠 איך רואים או מוסיפים כתובת?":
+        return dynamic_addresses_answer(user_id)
+
+    if question == "✏️ איך מעדכנים פרטים בהזמנה חדשה?":
+        return rtl(
+            "<b>✏️ עדכון פרטים בהזמנה חדשה</b>\n\n"
+            "במהלך ביצוע הזמנה ניתן להמשיך עם הפרטים השמורים או להזין פרטים חדשים.\n"
+            "הפרטים החדשים ישמשו להזמנה הנוכחית וניתן לשמור אותם להמשך."
+        )
+
+    if question == "☎️ למה צריך מספר טלפון?":
+        return rtl(
+            "<b>☎️ מספר טלפון</b>\n\n"
+            "מספר הטלפון נדרש כדי שנציג או שליח יוכל ליצור קשר במקרה הצורך,\n"
+            "וגם כדי לזהות פניות שירות בצורה ברורה יותר."
+        )
+
+    if question == "❓ הנושא שלי לא מופיע":
+        return rtl(
+            "<b>❓ נושא אחר</b>\n\n"
+            "אם לא מצאת תשובה מתאימה, אפשר לפתוח פנייה לנציג שירות ולכתוב את פרטי הבקשה."
+        )
+
+    return rtl(
+        "<b>📞 שירות לקוחות</b>\n\n"
+        "אם לא מצאת תשובה מתאימה, ניתן לפתוח פנייה לנציג שירות."
+    )
 
 
 def support_customer_keyboard(user_id=None):
@@ -2268,16 +2580,62 @@ async def handle_shop(message: Message):
             return
 
         data["support_subject"] = txt
-        data["step"] = "support_phone"
+        data["step"] = "support_faq"
 
         await message.answer(
             rtl(
                 "<b>📞 שירות לקוחות</b>\n\n"
                 f"{field('נושא הפנייה', txt)}\n\n"
-                "רשום מספר פלאפון תקין.\n"
-                "לדוגמה: 0547937503"
+                "בחר שאלה נפוצה או פתח פנייה לנציג שירות:"
             ),
-            reply_markup=support_customer_keyboard(message.from_user.id),
+            reply_markup=support_faq_keyboard(txt),
+            parse_mode="HTML"
+        )
+        return
+
+    if data.get("step") == "support_faq":
+        subject = data.get("support_subject") or "❓ אחר"
+
+        if txt == "⬅️ חזרה לנושאים":
+            data["step"] = "support_subject"
+
+            await message.answer(
+                rtl(
+                    "<b>📞 שירות לקוחות</b>\n\n"
+                    "בחר את נושא הפנייה:"
+                ),
+                reply_markup=support_subject_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        if txt == "✍️ פנייה לנציג שירות":
+            data["step"] = "support_phone"
+
+            await message.answer(
+                rtl(
+                    "<b>✍️ פנייה לנציג שירות</b>\n\n"
+                    f"{field('נושא הפנייה', subject)}\n\n"
+                    "רשום מספר פלאפון תקין.\n"
+                    "לדוגמה: 0547937503"
+                ),
+                reply_markup=support_customer_keyboard(message.from_user.id),
+                parse_mode="HTML"
+            )
+            return
+
+        valid_questions = SUPPORT_FAQ_BY_SUBJECT.get(subject, []) + SUPPORT_FAQ_BY_SUBJECT.get("❓ אחר", [])
+
+        if txt not in valid_questions:
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            return
+
+        await message.answer(
+            support_faq_answer_text(uid, subject, txt),
+            reply_markup=support_faq_after_answer_keyboard(subject),
             parse_mode="HTML"
         )
         return
