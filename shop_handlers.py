@@ -2003,6 +2003,8 @@ async def quantity_inline_action(callback: CallbackQuery):
         data.pop("selected_qty", None)
         data.pop("qty_manual_message_id", None)
         data.pop("qty_manual_lock", None)
+        data.pop("qty_invalid_warning_sent", None)
+        data.pop("qty_invalid_warning_message_id", None)
 
         products = get_active_products().get(category, [])
 
@@ -2133,6 +2135,8 @@ async def quantity_inline_action(callback: CallbackQuery):
             return
 
         data["step"] = "qty_manual"
+        data.pop("qty_invalid_warning_sent", None)
+        data.pop("qty_invalid_warning_message_id", None)
 
         old_manual_message_id = data.get("qty_manual_message_id")
         if old_manual_message_id:
@@ -3168,14 +3172,34 @@ async def handle_shop(message: Message):
             return
 
         if not txt.isdigit():
-            await message.answer(
+            # מונע הצפה: הודעת אזהרה אחת בלבד במצב הזנת כמות ידנית.
+            try:
+                await message.delete()
+            except Exception:
+                pass
+
+            if data.get("qty_invalid_warning_sent"):
+                return
+
+            sent = await message.answer(
                 rtl("<b>⚠️ רשום את הכמות במספרים בלבד.</b>"),
                 reply_markup=ReplyKeyboardRemove(),
                 parse_mode="HTML"
             )
+
+            data["qty_invalid_warning_sent"] = True
+            data["qty_invalid_warning_message_id"] = sent.message_id
             return
 
         selected_qty = int(txt)
+
+        warning_message_id = data.pop("qty_invalid_warning_message_id", None)
+        data.pop("qty_invalid_warning_sent", None)
+        if warning_message_id:
+            try:
+                await message.bot.delete_message(uid, warning_message_id)
+            except Exception:
+                pass
 
         fresh_product = get_product_by_name(product["name"])
 
@@ -3241,6 +3265,8 @@ async def handle_shop(message: Message):
         data.pop("selected_product", None)
         data.pop("selected_qty", None)
         data.pop("qty_manual_lock", None)
+        data.pop("qty_invalid_warning_sent", None)
+        data.pop("qty_invalid_warning_message_id", None)
 
         await consume_customer_click(message)
         await delete_temp_bot_messages(message.bot, uid)
