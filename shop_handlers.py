@@ -204,6 +204,35 @@ def clone_cart_from_order(order):
 
 
 
+
+async def notify_admin_new_support_ticket(bot, ticket_number, subject, phone, user_full_name=""):
+    try:
+        admin_text = rtl(
+            "<b>📩 פנייה חדשה התקבלה.</b>\n\n"
+            f"{field('מספר פנייה', ticket_number)}\n"
+            f"{field('נושא פנייה', h(subject or '-'))}\n"
+            f"{field('פלאפון', h(phone or '-'))}\n"
+            f"{field('לקוח', h(user_full_name or '-'))}"
+        )
+
+        try:
+            from keyboards import admin_keyboard
+            await bot.send_message(
+                ADMIN_ID,
+                admin_text,
+                reply_markup=admin_keyboard(),
+                parse_mode="HTML"
+            )
+        except Exception:
+            await bot.send_message(
+                ADMIN_ID,
+                admin_text,
+                parse_mode="HTML"
+            )
+    except Exception:
+        pass
+
+
 async def notify_admin_ticket_closed_by_customer(bot, ticket_number, user_full_name=""):
     try:
         admin_text = rtl(
@@ -2221,26 +2250,31 @@ async def handle_shop(message: Message):
 
         existing_ticket = get_open_support_ticket_by_user(uid)
 
-        if existing_ticket:
-            ticket_number = existing_ticket["ticket_number"]
-        else:
-            ticket_number = create_support_ticket(
-                telegram_id=uid,
-                telegram_name=message.from_user.full_name,
-                phone=phone,
-                subject=data.get("support_subject", "")
-            )
-
         data["step"] = "support_chat"
-        data["support_ticket_number"] = ticket_number
         data["support_phone"] = phone
+
+        if existing_ticket:
+            data["support_ticket_number"] = existing_ticket["ticket_number"]
+            data["support_subject"] = existing_ticket.get("subject") or data.get("support_subject", "")
+
+            await message.answer(
+                rtl(
+                    "<b>📞 שירות לקוחות</b>\n\n"
+                    f"{field('מספר פנייה', existing_ticket['ticket_number'])}\n"
+                    f"{field('נושא הפנייה', existing_ticket.get('subject') or 'ללא נושא')}\n"
+                    "יש לך פנייה פתוחה. כתוב את ההודעה שלך כאן והיא תועבר לנציג."
+                ),
+                reply_markup=support_customer_keyboard(message.from_user.id),
+                parse_mode="HTML"
+            )
+            return
 
         await message.answer(
             rtl(
-                "<b>✅ הפנייה נפתחה ונמצאת בטיפול.</b>\n\n"
-                f"{field('מספר פנייה', ticket_number)}\n"
+                "<b>📞 שירות לקוחות</b>\n\n"
                 f"{field('נושא הפנייה', data.get('support_subject', '-'))}\n"
-                "כתוב עכשיו את ההודעה שלך ונציג שירות יחזור אליך בהקדם."
+                f"{field('פלאפון', phone)}\n\n"
+                "כתוב עכשיו את ההודעה שלך ונעביר אותה לנציג שירות."
             ),
             reply_markup=support_customer_keyboard(message.from_user.id),
             parse_mode="HTML"
@@ -2299,16 +2333,22 @@ async def handle_shop(message: Message):
             return
 
         if not ticket_number:
-            data["step"] = "support_subject"
-            await message.answer(
-                rtl(
-                    "<b>📞 שירות לקוחות</b>\n\n"
-                    "בחר את נושא הפנייה:"
-                ),
-                reply_markup=support_subject_keyboard(),
-                parse_mode="HTML"
+            ticket_number = create_support_ticket(
+                telegram_id=uid,
+                telegram_name=message.from_user.full_name,
+                phone=data.get("support_phone", ""),
+                subject=data.get("support_subject", "")
             )
-            return
+
+            data["support_ticket_number"] = ticket_number
+
+            await notify_admin_new_support_ticket(
+                message.bot,
+                ticket_number,
+                data.get("support_subject", ""),
+                data.get("support_phone", ""),
+                message.from_user.full_name
+            )
 
         add_support_message(
             ticket_number,
@@ -2319,7 +2359,8 @@ async def handle_shop(message: Message):
 
         await message.answer(
             rtl(
-                "<b>✅ ההודעה התקבלה ונמצאת בטיפול.</b>\n"
+                "<b>✅ הפנייה נפתחה וההודעה התקבלה.</b>\n\n"
+                f"{field('מספר פנייה', ticket_number)}\n"
                 "נציג שירות יחזור אליך בהקדם האפשרי."
             ),
             reply_markup=support_customer_keyboard(message.from_user.id),
