@@ -2004,6 +2004,7 @@ async def quantity_inline_action(callback: CallbackQuery):
         data.pop("selected_product", None)
         data.pop("selected_qty", None)
         data.pop("qty_manual_message_id", None)
+        data.pop("qty_manual_lock", None)
 
         products = get_active_products().get(category, [])
 
@@ -2122,8 +2123,15 @@ async def quantity_inline_action(callback: CallbackQuery):
         return
 
     if action == "manual":
+        if data.get("qty_manual_lock"):
+            await callback.answer()
+            return
+
+        data["qty_manual_lock"] = True
+
         if data.get("step") == "qty_manual":
-            await callback.answer("כבר פתוחה הזנת כמות.", show_alert=False)
+            data["qty_manual_lock"] = False
+            await callback.answer()
             return
 
         data["step"] = "qty_manual"
@@ -2145,6 +2153,7 @@ async def quantity_inline_action(callback: CallbackQuery):
         )
 
         data["qty_manual_message_id"] = sent.message_id
+        data["qty_manual_lock"] = False
 
         await callback.answer()
         return
@@ -3210,8 +3219,10 @@ async def handle_shop(message: Message):
 
         data["selected_qty"] = selected_qty
         data["step"] = "qty"
+        data.pop("qty_manual_lock", None)
 
         old_manual_message_id = data.pop("qty_manual_message_id", None)
+        data.pop("qty_manual_lock", None)
         if old_manual_message_id:
             try:
                 await message.bot.delete_message(uid, old_manual_message_id)
