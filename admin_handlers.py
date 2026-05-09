@@ -36,8 +36,6 @@ from database import (
     get_customer_by_id,
     get_orders_by_customer_telegram_id,
     clear_all_orders_for_testing,
-    reset_customer_order_statistics,
-    reset_full_order_system,
     get_support_tickets_by_status,
     get_support_ticket,
     get_support_messages,
@@ -46,60 +44,7 @@ from database import (
 )
 
 router = Router()
-@router.message(F.text == "⬅️ חזרה לניהול")
-async def admin_back_to_panel_global(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-
-    reset_admin_state(message.from_user.id, "admin")
-
-    await message.answer(
-        rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
-        reply_markup=admin_keyboard(),
-        parse_mode="HTML"
-    )
-
-
-@router.message(lambda message: clean_admin_text(message.text) == "⬅️ חזרה לניהול")
-async def admin_back_to_panel_global_clean(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-
-    reset_admin_state(message.from_user.id, "admin")
-
-    await message.answer(
-        rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
-        reply_markup=admin_keyboard(),
-        parse_mode="HTML"
-    )
-
-
 admin_states = {}
-
-
-def get_admin_state(user_id):
-    return admin_states.setdefault(user_id, {"step": "admin"})
-
-
-def admin_action_locked(user_id, key):
-    state = get_admin_state(user_id)
-
-    if state.get(key):
-        return True
-
-    state[key] = True
-    return False
-
-
-def admin_action_unlock(user_id, key):
-    state = admin_states.get(user_id)
-
-    if state:
-        state.pop(key, None)
-
-
-def reset_admin_state(user_id, step="admin"):
-    admin_states[user_id] = {"step": step}
 
 
 def support_reply_cancel_keyboard():
@@ -183,6 +128,7 @@ def is_valid_admin_button_text(text):
         "✅ סמן כהושלם",
         "✅ סמן כנאסף",
         "❌ בטל הזמנה",
+        "👁️ צפייה בלבד",
         "📋 רשימת לקוחות",
         "🔎 חפש לקוח",
         "⬅️ חזרה ללקוחות",
@@ -480,7 +426,7 @@ async def handle_broadcast_confirm_screen(message: Message):
         )
         return
 
-    if state.get("broadcast_sent") or state.get("broadcast_sending_lock"):
+    if state.get("broadcast_sent"):
         admin_states[uid] = {"step": "admin"}
         await message.answer(
             rtl(
@@ -507,7 +453,6 @@ async def handle_broadcast_confirm_screen(message: Message):
         )
         return
 
-    state["broadcast_sending_lock"] = True
     state["broadcast_sent"] = True
 
     sent_count = 0
@@ -738,6 +683,11 @@ def order_notification_keyboard(order_number, status):
                 InlineKeyboardButton(text="❌ בטל", callback_data=f"order_action:cancel:{order_number}")
             ])
 
+    else:
+        buttons.append([
+            InlineKeyboardButton(text="👁️ צפייה בלבד", callback_data=f"order_action:view:{order_number}")
+        ])
+
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -951,12 +901,11 @@ def is_admin_active_step(message: Message):
     if step == "admin":
         return False
 
-    # חשוב: כפתורי פעולת הזמנה באדמין חופפים לכפתורי לקוח.
+    # כפתורי פעולת הזמנה באדמין חופפים לכפתורי לקוח.
     # כשהאדמין נמצא בכרטיס הזמנה, חייבים לתת עדיפות ל-admin_flow.
     if step == "order_actions" and txt in ORDER_ACTION_BY_BUTTON:
         return True
 
-    # גם בחירת קטגוריית הזמנות צריכה להישאר בתוך פאנל אדמין.
     if step == "orders_section" and txt in ORDER_SECTION_BY_BUTTON:
         return True
 
@@ -1081,6 +1030,7 @@ def order_action_keyboard(order_status, pickup=False):
     if order_status in {"done", "cancelled"}:
         return ReplyKeyboardMarkup(
             keyboard=[
+                [KeyboardButton(text="👁️ צפייה בלבד")],
                 [KeyboardButton(text="⬅️ חזרה לרשימת הזמנות")],
                 [KeyboardButton(text="⬅️ חזרה לניהול")]
             ],
@@ -1223,7 +1173,7 @@ def validate_status_change(current_status, new_status):
         return False, (
             "<b>🔒 לא ניתן לשנות סטטוס</b>\n\n"
             "ההזמנה נמצאת בסטטוס סופי ולכן נעולה לשינויים רגילים.\n"
-            "הזמנות שהושלמו או בוטלו נשמרות בארכיון."
+            "הזמנות שהושלמו או בוטלו נשמרות בארכיון לצפייה בלבד."
         )
 
     if new_status == "cancelled":
@@ -1385,24 +1335,20 @@ async def order_notification_action(callback: CallbackQuery):
 
     _, action, order_number = parts
 
-    lock_key = f"order_action_lock:{order_number}"
-    if admin_action_locked(callback.from_user.id, lock_key):
-        await callback.answer("הפעולה כבר בטיפול.", show_alert=False)
-        admin_action_unlock(callback.from_user.id, lock_key)
-        return
-
     order_before = get_order_by_number(order_number)
 
     if not order_before:
         await callback.answer("ההזמנה לא נמצאה במערכת.", show_alert=True)
-        admin_action_unlock(callback.from_user.id, lock_key)
         return
 
     current_status = order_before.get("status")
 
+    if action == "view":
+        await callback.answer("הזמנה זו לצפייה בלבד.", show_alert=True)
+        return
+
     if action not in NOTIFICATION_ACTION_BY_BUTTON:
         await callback.answer("פעולה לא תקינה.", show_alert=True)
-        admin_action_unlock(callback.from_user.id, lock_key)
         return
 
     new_status = NOTIFICATION_ACTION_BY_BUTTON[action]
@@ -1417,7 +1363,6 @@ async def order_notification_action(callback: CallbackQuery):
             .replace("\\n", "\n")
         )
         await callback.answer(clean_reason, show_alert=True)
-        admin_action_unlock(callback.from_user.id, lock_key)
         return
 
     ok = update_order_status(order_number, new_status)
@@ -1425,7 +1370,6 @@ async def order_notification_action(callback: CallbackQuery):
 
     if not ok or not order:
         await callback.answer("לא הצלחתי לעדכן את ההזמנה.", show_alert=True)
-        admin_action_unlock(callback.from_user.id, lock_key)
         return
 
     if is_order_pickup(order):
@@ -1471,7 +1415,6 @@ async def order_notification_action(callback: CallbackQuery):
             parse_mode="HTML"
         )
 
-    admin_action_unlock(callback.from_user.id, lock_key)
 
 
 
@@ -1525,7 +1468,7 @@ async def cancel_support_reply(message: Message):
 
             await message.answer(
                 support_ticket_text(ticket),
-                reply_markup=support_ticket_keyboard_by_status(ticket),
+                reply_markup=support_ticket_actions_keyboard(),
                 parse_mode="HTML"
             )
             return
@@ -1818,7 +1761,7 @@ async def support_ticket_reply_from_view(message: Message):
     if ticket.get("status") != "open":
         await message.answer(
             rtl("<b>⚠️ לא ניתן להשיב לפנייה סגורה.</b>"),
-            reply_markup=support_ticket_keyboard_by_status(ticket),
+            reply_markup=support_ticket_actions_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -1866,7 +1809,7 @@ async def send_support_ticket_reply(message: Message):
         }
         await message.answer(
             rtl("<b>⚠️ הפנייה כבר סגורה.</b>"),
-            reply_markup=support_ticket_keyboard_by_status(ticket),
+            reply_markup=support_ticket_actions_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -1921,10 +1864,9 @@ async def export_support_ticket_txt(message: Message):
     file_path = export_support_ticket_to_txt(ticket_number)
 
     if not file_path:
-        ticket = get_support_ticket(ticket_number)
         await message.answer(
             rtl("<b>⚠️ לא הצלחתי לייצא את הפנייה.</b>"),
-            reply_markup=support_ticket_keyboard_by_status(ticket),
+            reply_markup=support_ticket_actions_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -1953,65 +1895,39 @@ async def close_support_ticket_from_admin(message: Message):
         )
         return
 
-    latest_ticket = get_support_ticket(ticket_number)
-
-    if latest_ticket and latest_ticket.get("status") == "closed":
-        admin_states[message.from_user.id] = {
-            "step": "support_ticket_view",
-            "support_ticket_number": ticket_number
-        }
+    if ticket.get("status") == "closed":
+        admin_states[message.from_user.id] = {"step": "support_tickets_menu"}
 
         await message.answer(
             rtl(
                 "<b>ℹ️ הפנייה כבר סגורה.</b>\n\n"
                 f"{field('מספר פנייה', ticket_number)}"
             ),
-            reply_markup=closed_support_ticket_actions_keyboard(),
+            reply_markup=support_ticket_keyboard_by_status(ticket),
             parse_mode="HTML"
         )
         return
 
-    closed_ok = close_support_ticket(ticket_number)
+    ok = close_support_ticket(ticket_number)
 
-    if not closed_ok:
-        admin_states[message.from_user.id] = {
-            "step": "support_ticket_view",
-            "support_ticket_number": ticket_number
-        }
-
-        await message.answer(
-            rtl(
-                "<b>ℹ️ הפנייה כבר סגורה.</b>\n\n"
-                f"{field('מספר פנייה', ticket_number)}"
-            ),
-            reply_markup=closed_support_ticket_actions_keyboard(),
-            parse_mode="HTML"
+    if ok:
+        add_support_message(
+            ticket_number,
+            "admin",
+            message.from_user.full_name,
+            "הפנייה נסגרה על ידי שירות הלקוחות."
         )
-        return
 
-    add_support_message(
-        ticket_number,
-        "admin",
-        message.from_user.full_name,
-        "הפנייה נסגרה על ידי שירות הלקוחות."
-    )
+        try:
+            await message.bot.send_message(
+                int(ticket["telegram_id"]),
+                rtl("<b>✅ הפנייה נסגרה.</b>\nתודה שפנית אלינו."),
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
 
-    try:
-        await message.bot.send_message(
-            int(ticket["telegram_id"]),
-            rtl(
-                "<b>✅ הפנייה נסגרה.</b>\n"
-                "תודה שפנית לשירות הלקוחות של Vendora."
-            ),
-            parse_mode="HTML"
-        )
-    except Exception:
-        pass
-
-    admin_states[message.from_user.id] = {
-        "step": "support_ticket_view",
-        "support_ticket_number": ticket_number
-    }
+    admin_states[message.from_user.id] = {"step": "support_tickets_menu"}
 
     await message.answer(
         rtl(
@@ -2019,7 +1935,7 @@ async def close_support_ticket_from_admin(message: Message):
             f"{field('מספר פנייה', ticket_number)}\n"
             "הפנייה עברה לפניות סגורות."
         ),
-        reply_markup=closed_support_ticket_actions_keyboard(),
+        reply_markup=support_tickets_menu_keyboard(),
         parse_mode="HTML"
     )
 
@@ -2070,8 +1986,7 @@ async def confirm_clear_all_orders(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    uid = message.from_user.id
-    state = admin_states.get(uid, {})
+    state = admin_states.get(message.from_user.id, {})
 
     if state.get("step") != "confirm_clear_all_orders":
         await message.answer(
@@ -2081,15 +1996,9 @@ async def confirm_clear_all_orders(message: Message):
         )
         return
 
-    if admin_action_locked(uid, "clear_all_orders_lock"):
-        return
+    deleted_count = clear_all_orders_for_testing()
 
-    try:
-        deleted_count = clear_all_orders_for_testing()
-    finally:
-        admin_action_unlock(uid, "clear_all_orders_lock")
-
-    reset_admin_state(uid, "admin")
+    admin_states[message.from_user.id] = {"step": "admin"}
 
     await message.answer(
         rtl(
@@ -2102,98 +2011,18 @@ async def confirm_clear_all_orders(message: Message):
     )
 
 
-
-
-
-
-
-@router.message(F.text == "🧹 איפוס מערכת הזמנות")
-async def ask_full_order_reset(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-
-    admin_states[message.from_user.id] = {"step": "confirm_full_order_reset"}
-
-    await message.answer(
-        rtl(
-            "<b>⚠️ איפוס מערכת הזמנות</b>\n\n"
-            "הפעולה תבצע:\n"
-            "• מחיקת כל ההזמנות\n"
-            "• מחיקת כל פניות השירות\n"
-            "• איפוס סטטיסטיקות לקוחות\n\n"
-            "<b>לא יימחקו:</b>\n"
-            "• לקוחות\n"
-            "• כתובות\n"
-            "• מוצרים\n"
-            "• קטגוריות\n\n"
-            "לאישור לחץ על הכפתור למטה."
-        ),
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="✅ כן, אפס את מערכת ההזמנות")],
-                [KeyboardButton(text="❌ ביטול איפוס מערכת")],
-                [KeyboardButton(text="⬅️ חזרה לניהול")]
-            ],
-            resize_keyboard=True
-        ),
-        parse_mode="HTML"
-    )
-
-
-@router.message(F.text == "❌ ביטול איפוס מערכת")
-async def cancel_full_order_reset(message: Message):
+@router.message(F.text == "⬅️ חזרה לניהול")
+async def back_admin(message: Message):
     if not is_admin(message.from_user.id):
         return
 
     admin_states[message.from_user.id] = {"step": "admin"}
 
     await message.answer(
-        rtl("<b>✅ האיפוס בוטל.</b>"),
+        rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
         reply_markup=admin_keyboard(),
         parse_mode="HTML"
     )
-
-
-@router.message(F.text == "✅ כן, אפס את מערכת ההזמנות")
-async def confirm_full_order_reset(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-
-    uid = message.from_user.id
-    state = admin_states.get(uid, {})
-
-    if state.get("step") != "confirm_full_order_reset":
-        await message.answer(
-            rtl("<b>⚠️ יש להתחיל מהכפתור: 🧹 איפוס מערכת הזמנות.</b>"),
-            reply_markup=admin_keyboard(),
-            parse_mode="HTML"
-        )
-        return
-
-    if admin_action_locked(uid, "full_order_reset_lock"):
-        return
-
-    try:
-        reset_full_order_system()
-    finally:
-        admin_action_unlock(uid, "full_order_reset_lock")
-
-    reset_admin_state(uid, "admin")
-
-    await message.answer(
-        rtl(
-            "<b>✅ מערכת ההזמנות אופסה בהצלחה.</b>\n\n"
-            "נמחקו:\n"
-            "• כל ההזמנות\n"
-            "• כל פניות השירות\n"
-            "• כל סטטיסטיקות הלקוחות\n\n"
-            "לקוחות, כתובות ומוצרים נשארו במערכת."
-        ),
-        reply_markup=admin_keyboard(),
-        parse_mode="HTML"
-    )
-
-
 
 @router.message(F.text == "📦 ניהול הזמנות")
 async def orders_management_start(message: Message):
@@ -3089,6 +2918,22 @@ async def admin_flow(message: Message):
                 reply_markup=order_select_keyboard(orders),
                 parse_mode="HTML"
             )
+            return
+
+        if txt == "👁️ צפייה בלבד":
+            order_number = state.get("order_number")
+            order = get_order_by_number(order_number)
+
+            if order:
+                await message.answer(
+                    rtl(
+                        "<b>👁️ צפייה בלבד</b>\n\n"
+                        "הזמנה זו נמצאת בסטטוס סופי ונשמרת בארכיון.\n"
+                        "לא ניתן לשנות אותה מכאן."
+                    ),
+                    reply_markup=order_action_keyboard(order.get("status"), is_order_pickup(order)),
+                    parse_mode="HTML"
+                )
             return
 
         if txt not in ORDER_ACTION_BY_BUTTON:
