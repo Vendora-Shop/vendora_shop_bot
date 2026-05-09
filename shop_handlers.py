@@ -569,6 +569,7 @@ def is_customer_system_button(text):
         "✅ סימולציית תשלום הצליחה",
         "⬅️ חזרה לסיכום הזמנה",
         "⬅️ חזרה לסל",
+        "⬅️ חזרה לבחירת משלוח / איסוף",
         "❌ ביטול תשלום",
         "🔁 הזמן שוב",
         "⬅️ חזרה להזמנות שלי",
@@ -753,6 +754,7 @@ def confirm_keyboard():
         keyboard=[
             [KeyboardButton(text="✅ אשר הזמנה")],
             [KeyboardButton(text="✏️ שנה פרטים")],
+            [KeyboardButton(text="⬅️ חזרה לבחירת משלוח / איסוף")],
             [KeyboardButton(text="❌ בטל הזמנה")]
         ],
         resize_keyboard=True
@@ -1779,6 +1781,49 @@ async def submit_paid_order(message: Message, data):
     await message.answer(
         rtl(customer_success_text),
         reply_markup=main_keyboard(message.from_user.id),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "⬅️ חזרה לבחירת משלוח / איסוף")
+async def back_to_fulfillment_choice_from_summary(message: Message):
+    await consume_customer_click(message)
+    uid = message.from_user.id
+    data = users.get(uid)
+
+    if not data or not data.get("cart"):
+        await message.answer(
+            rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
+            reply_markup=main_keyboard(message.from_user.id),
+            parse_mode="HTML"
+        )
+        return
+
+    data["step"] = "fulfillment_choice"
+
+    # מנקים את פרטי הקבלה הקודמים כדי שהלקוח יבחר מחדש איסוף או משלוח.
+    for key in [
+        "fulfillment_type",
+        "order_type",
+        "delivery_price",
+        "base_city",
+        "delivery_pending",
+        "city",
+        "street",
+        "floor",
+        "apartment"
+    ]:
+        data.pop(key, None)
+
+    await delete_temp_bot_messages(message.bot, uid)
+
+    await send_temp_message(
+        message,
+        rtl(
+            "<b>📦 איך תרצה לקבל את ההזמנה?</b>\n\n"
+            "בחר אחת מהאפשרויות:"
+        ),
+        reply_markup=fulfillment_keyboard(),
         parse_mode="HTML"
     )
 
