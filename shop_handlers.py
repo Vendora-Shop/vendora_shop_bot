@@ -1994,8 +1994,6 @@ async def quantity_inline_action(callback: CallbackQuery):
         await callback.answer("אין מוצר פעיל לבחירת כמות.", show_alert=True)
         return
 
-    data["step"] = "qty"
-
     action = (callback.data or "").split(":", 1)[1]
 
     if action == "back_products":
@@ -2143,17 +2141,19 @@ async def quantity_inline_action(callback: CallbackQuery):
             except Exception:
                 pass
 
-        sent = await callback.message.answer(
-            rtl(
-                "<b>✏️ הזנת כמות</b>\n\n"
-                "רשום את הכמות הרצויה במספרים בלבד."
-            ),
-            reply_markup=ReplyKeyboardRemove(),
-            parse_mode="HTML"
-        )
+        try:
+            sent = await callback.message.answer(
+                rtl(
+                    "<b>✏️ הזנת כמות</b>\n\n"
+                    "רשום את הכמות הרצויה במספרים בלבד."
+                ),
+                reply_markup=ReplyKeyboardRemove(),
+                parse_mode="HTML"
+            )
 
-        data["qty_manual_message_id"] = sent.message_id
-        data["qty_manual_lock"] = False
+            data["qty_manual_message_id"] = sent.message_id
+        finally:
+            data["qty_manual_lock"] = False
 
         await callback.answer()
         return
@@ -2185,6 +2185,8 @@ async def quantity_inline_action(callback: CallbackQuery):
         data["step"] = None
         data.pop("selected_product", None)
         data.pop("selected_qty", None)
+        data.pop("qty_manual_message_id", None)
+        data.pop("qty_manual_lock", None)
 
         await delete_temp_bot_messages(callback.message.bot, uid)
 
