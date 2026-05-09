@@ -1,8 +1,7 @@
 from aiogram import Router, F
 from aiogram.filters import CommandStart
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from html import escape
-import asyncio
 
 from config import ADMIN_ID
 from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard, support_subject_keyboard
@@ -40,39 +39,6 @@ def is_admin_panel_active_for_shop_guard(user_id):
         return bool(state and state.get("step") and state.get("step") != "admin")
     except Exception:
         return False
-
-
-@router.message(F.text == "✅ הבעיה נפתרה")
-async def customer_close_support_ticket_button(message: Message):
-    await close_customer_open_support_ticket(message)
-
-@router.message(F.text == "❌ ביטול תשלום")
-async def customer_cancel_payment_button(message: Message):
-    uid = message.from_user.id
-    data = users.get(uid, {})
-
-    try:
-        await message.delete()
-    except Exception:
-        pass
-
-    if data.get("step") == "payment_simulation":
-        data["step"] = "confirm"
-
-        await message.answer(
-            build_order_summary(data),
-            reply_markup=confirm_order_keyboard(),
-            parse_mode="HTML",
-            disable_web_page_preview=True
-        )
-        return
-
-    await message.answer(
-        rtl("<b>ℹ️ אין תשלום פעיל לביטול.</b>"),
-        reply_markup=main_keyboard(message.from_user.id),
-        parse_mode="HTML"
-    )
-
 
 
 # ================== SAVED ADDRESSES UI ==================
@@ -249,115 +215,6 @@ def clone_cart_from_order(order):
 
 
 
-
-
-async def notify_admin_new_support_ticket(bot, ticket_number, subject, phone, user_full_name=""):
-    try:
-        admin_text = rtl(
-            "<b>📩 פנייה חדשה התקבלה.</b>\n\n"
-            f"{field('מספר פנייה', ticket_number)}\n"
-            f"{field('נושא פנייה', h(subject or '-'))}\n"
-            f"{field('פלאפון', h(phone or '-'))}\n"
-            f"{field('לקוח', h(user_full_name or '-'))}"
-        )
-
-        try:
-            from keyboards import admin_keyboard
-            await bot.send_message(
-                ADMIN_ID,
-                admin_text,
-                reply_markup=admin_keyboard(),
-                parse_mode="HTML"
-            )
-        except Exception:
-            await bot.send_message(
-                ADMIN_ID,
-                admin_text,
-                parse_mode="HTML"
-            )
-    except Exception:
-        pass
-
-
-
-async def close_customer_open_support_ticket(message: Message, data=None):
-    uid = message.from_user.id
-
-    ticket = get_open_support_ticket_by_user(uid)
-
-    if not ticket:
-        users.pop(uid, None)
-
-        await message.answer(
-            rtl(
-                "<b>ℹ️ אין פנייה פתוחה לסגירה.</b>\n"
-                "חזרת לתפריט הראשי."
-            ),
-            reply_markup=main_keyboard(message.from_user.id),
-            parse_mode="HTML"
-        )
-        return True
-
-    ticket_number = ticket["ticket_number"]
-
-    closed_ok = close_support_ticket(ticket_number)
-
-    users.pop(uid, None)
-
-    if not closed_ok:
-        await message.answer(
-            rtl(
-                "<b>ℹ️ הפנייה כבר סגורה.</b>\n"
-                "חזרת לתפריט הראשי."
-            ),
-            reply_markup=main_keyboard(message.from_user.id),
-            parse_mode="HTML"
-        )
-        return True
-
-    add_support_message(
-        ticket_number,
-        "customer",
-        message.from_user.full_name,
-        "הלקוח סימן שהבעיה נפתרה."
-    )
-
-    await notify_admin_ticket_closed_by_customer(
-        message.bot,
-        ticket_number,
-        message.from_user.full_name
-    )
-
-    await message.answer(
-        rtl(
-            "<b>✅ הפנייה נסגרה.</b>\n"
-            "תודה שפנית לשירות הלקוחות של Vendora."
-        ),
-        reply_markup=main_keyboard(message.from_user.id),
-        parse_mode="HTML"
-    )
-    return True
-
-
-
-async def notify_admin_ticket_closed_by_customer(bot, ticket_number, user_full_name=""):
-    try:
-        admin_text = rtl(
-            "<b>✅ לקוח סגר פנייה.</b>\n\n"
-            f"{field('מספר פנייה', ticket_number)}\n"
-            f"{field('לקוח', h(user_full_name or '-'))}\n"
-            "הפנייה עברה לפניות סגורות."
-        )
-
-        await bot.send_message(
-            ADMIN_ID,
-            admin_text,
-            parse_mode="HTML"
-        )
-    except Exception:
-        pass
-
-
 users = {}
 
 RTL = "\u200F"
@@ -371,188 +228,6 @@ async def delete_customer_message(message: Message):
         await message.delete()
     except Exception:
         pass
-
-
-async def consume_customer_click(message: Message):
-    try:
-        await message.delete()
-    except Exception:
-        pass
-
-
-async def delete_temp_bot_messages(bot, user_id):
-    data = users.get(user_id)
-
-    if not data:
-        return
-
-    message_ids = list(data.get("temp_bot_messages", []))
-
-    for message_id in message_ids:
-        try:
-            await bot.delete_message(user_id, message_id)
-        except Exception:
-            pass
-
-    data["temp_bot_messages"] = []
-
-
-
-
-async def delete_state_message(bot, user_id, data, key):
-    message_id = data.pop(key, None)
-
-    if message_id:
-        try:
-            await bot.delete_message(user_id, message_id)
-        except Exception:
-            pass
-
-
-async def clear_qty_runtime_state(bot, user_id, data):
-    for message_key in [
-        "qty_manual_message_id",
-        "qty_invalid_warning_message_id",
-        "qty_limit_warning_message_id",
-        "qty_stock_warning_message_id",
-        "qty_zero_warning_message_id",
-    ]:
-        await delete_state_message(bot, user_id, data, message_key)
-
-    for key in [
-        "selected_product",
-        "selected_qty",
-        "qty_manual_lock",
-        "qty_invalid_warning_sent",
-        "qty_limit_warning_sent",
-        "qty_stock_warning_sent",
-        "qty_zero_warning_sent",
-    ]:
-        data.pop(key, None)
-
-
-async def send_qty_warning_once(message: Message, data, sent_key, message_key, text):
-    try:
-        await message.delete()
-    except Exception:
-        pass
-
-    if data.get(sent_key):
-        return
-
-    sent = await message.answer(
-        text,
-        reply_markup=ReplyKeyboardRemove(),
-        parse_mode="HTML"
-    )
-
-    data[sent_key] = True
-    data[message_key] = sent.message_id
-
-
-async def force_close_phone_keyboard(message: Message):
-    """
-    טריק לטלגרם iPhone/Android:
-    שולח ReplyKeyboardRemove, ממתין רגע קצר כדי שהאפליקציה תסגור את המקלדת,
-    ורק אז מוחק את הודעת הניקוי.
-    """
-    try:
-        sent = await message.answer(
-            "\u2063",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        await asyncio.sleep(0.45)
-        try:
-            await sent.delete()
-        except Exception:
-            pass
-    except Exception:
-        pass
-
-
-async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None):
-    uid = message.from_user.id
-
-    if uid not in users:
-        users[uid] = {"cart": []}
-
-    if clear_previous:
-        await delete_temp_bot_messages(message.bot, uid)
-
-    kwargs = {
-        "reply_markup": reply_markup,
-        "parse_mode": parse_mode
-    }
-
-    if disable_web_page_preview is not None:
-        kwargs["disable_web_page_preview"] = disable_web_page_preview
-
-    sent = await message.answer(
-        text,
-        **kwargs
-    )
-
-    users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
-
-    return sent
-
-
-async def send_temp_photo(message: Message, photo, caption=None, reply_markup=None, parse_mode="HTML", clear_previous=True):
-    uid = message.from_user.id
-
-    if uid not in users:
-        users[uid] = {"cart": []}
-
-    if clear_previous:
-        await delete_temp_bot_messages(message.bot, uid)
-
-    sent = await message.answer_photo(
-        photo=photo,
-        caption=caption,
-        reply_markup=reply_markup,
-        parse_mode=parse_mode
-    )
-
-    users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
-
-    return sent
-
-
-
-async def reset_customer_to_main_menu(message, text):
-    await delete_temp_bot_messages(message.bot, message.from_user.id)
-
-    try:
-        await message.answer(
-            " ",
-            reply_markup=ReplyKeyboardRemove()
-        )
-    except Exception:
-        pass
-
-    await message.answer(
-        rtl(text),
-        reply_markup=main_keyboard(message.from_user.id),
-        parse_mode="HTML"
-    )
-
-
-async def reset_callback_customer_to_main_menu(callback, text):
-    await delete_temp_bot_messages(callback.message.bot, callback.from_user.id)
-
-    try:
-        await callback.message.answer(
-            " ",
-            reply_markup=ReplyKeyboardRemove()
-        )
-    except Exception:
-        pass
-
-    await callback.message.answer(
-        rtl(text),
-        reply_markup=main_keyboard(callback.from_user.id),
-        parse_mode="HTML"
-    )
 
 
 def is_button_only_step_for_customer(step):
@@ -586,7 +261,6 @@ def is_free_text_step_for_customer(step):
         "apartment",
         "qty_manual",
         "support",
-        "support_faq",
         "support_phone",
         "support_chat",
         "add_address_label",
@@ -606,29 +280,6 @@ def is_customer_system_button(text):
         "🏠 הכתובות שלי",
         "👤 הפרטים שלי",
         "📞 שירות לקוחות",
-        "⬅️ חזרה לנושאים",
-        "✍️ פנייה לנציג שירות",
-        "❓ הנושא שלי לא מופיע",
-        "☎️ למה צריך מספר טלפון?",
-        "✏️ איך מעדכנים פרטים בהזמנה חדשה?",
-        "🏠 איך רואים או מוסיפים כתובת?",
-        "👤 אילו פרטים שמורים אצלי?",
-        "🛒 איך מוסיפים עוד מוצר לסל?",
-        "🖼️ האם אפשר לראות תמונת מוצר?",
-        "🔢 למה יש הגבלת כמות?",
-        "🛍️ איך יודעים אם מוצר במלאי?",
-        "📄 האם מקבלים סיכום הזמנה?",
-        "⚠️ מה עושים אם התשלום לא הצליח?",
-        "✅ איך אדע שהתשלום עבר?",
-        "💳 איך מתבצע התשלום?",
-        "⏱️ מתי ההזמנה יוצאת למשלוח או מוכנה לאיסוף?",
-        "🔁 אפשר לשנות משלוח לאיסוף?",
-        "🛍️ איך עובד איסוף עצמי?",
-        "🚚 מה מצב המשלוח או האיסוף?",
-        "📄 איפה סיכום ההזמנה שלי?",
-        "✏️ אפשר לשנות פרטים אחרי הזמנה?",
-        "🔔 איך אדע כשהסטטוס משתנה?",
-        "📌 מה הסטטוס של ההזמנה האחרונה שלי?",
         "✅ הבעיה נפתרה",
         "❓ אחר",
         "📝 שינוי פרטים",
@@ -652,9 +303,6 @@ def is_customer_system_button(text):
         "✏️ הזן פרטים חדשים",
         "✅ סימולציית תשלום הצליחה",
         "⬅️ חזרה לסיכום הזמנה",
-        "⬅️ חזרה לסל",
-        "⬅️ חזרה לבחירת משלוח / איסוף",
-        "⬅️ חזרה לשלב קודם",
         "❌ ביטול תשלום",
         "🔁 הזמן שוב",
         "⬅️ חזרה להזמנות שלי",
@@ -698,7 +346,7 @@ STORE_CONTACT_PHONE = "054-7937503"
 STORE_CONTACT_TELEGRAM = "@Vendora"
 
 
-
+#קעקרערעק
 
 def h(text):
     return escape(str(text))
@@ -823,12 +471,6 @@ def quantity_inline_keyboard(selected_qty):
             ],
             [
                 InlineKeyboardButton(text="🛒 הוסף לסל", callback_data="qty_action:add")
-            ],
-            [
-                InlineKeyboardButton(text="⬅️ חזרה למוצרים", callback_data="qty_action:back_products")
-            ],
-            [
-                InlineKeyboardButton(text="❌ בטל הזמנה", callback_data="qty_action:cancel")
             ]
         ]
     )
@@ -839,7 +481,6 @@ def confirm_keyboard():
         keyboard=[
             [KeyboardButton(text="✅ אשר הזמנה")],
             [KeyboardButton(text="✏️ שנה פרטים")],
-            [KeyboardButton(text="⬅️ חזרה לשלב קודם")],
             [KeyboardButton(text="❌ בטל הזמנה")]
         ],
         resize_keyboard=True
@@ -863,7 +504,6 @@ def use_saved_details_keyboard():
         keyboard=[
             [KeyboardButton(text="✅ המשך עם הפרטים השמורים")],
             [KeyboardButton(text="✏️ הזן פרטים חדשים")],
-            [KeyboardButton(text="⬅️ חזרה לבחירת משלוח / איסוף")],
             [KeyboardButton(text="❌ בטל הזמנה")]
         ],
         resize_keyboard=True
@@ -875,300 +515,11 @@ def manual_details_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="✅ חזור לפרטים השמורים")],
-            [KeyboardButton(text="⬅️ חזרה לבחירת משלוח / איסוף")],
             [KeyboardButton(text="❌ בטל הזמנה")]
         ],
         resize_keyboard=True
     )
 
-
-
-
-SUPPORT_FAQ_BY_SUBJECT = {
-    "📦 שאלה על הזמנה קיימת": [
-        "📌 מה הסטטוס של ההזמנה האחרונה שלי?",
-        "🔔 איך אדע כשהסטטוס משתנה?",
-        "✏️ אפשר לשנות פרטים אחרי הזמנה?",
-        "📄 איפה סיכום ההזמנה שלי?",
-    ],
-    "🚚 משלוח / איסוף": [
-        "🚚 מה מצב המשלוח או האיסוף?",
-        "🛍️ איך עובד איסוף עצמי?",
-        "🔁 אפשר לשנות משלוח לאיסוף?",
-        "⏱️ מתי ההזמנה יוצאת למשלוח או מוכנה לאיסוף?",
-    ],
-    "💳 תשלום": [
-        "💳 איך מתבצע התשלום?",
-        "✅ איך אדע שהתשלום עבר?",
-        "⚠️ מה עושים אם התשלום לא הצליח?",
-        "📄 האם מקבלים סיכום הזמנה?",
-    ],
-    "🛍️ מוצר / מלאי": [
-        "🛍️ איך יודעים אם מוצר במלאי?",
-        "🔢 למה יש הגבלת כמות?",
-        "🖼️ האם אפשר לראות תמונת מוצר?",
-        "🛒 איך מוסיפים עוד מוצר לסל?",
-    ],
-    "📝 שינוי פרטים": [
-        "👤 אילו פרטים שמורים אצלי?",
-        "🏠 איך רואים או מוסיפים כתובת?",
-        "✏️ איך מעדכנים פרטים בהזמנה חדשה?",
-        "☎️ למה צריך מספר טלפון?",
-    ],
-    "❓ אחר": [
-        "❓ הנושא שלי לא מופיע",
-    ],
-}
-
-
-def support_faq_keyboard(subject):
-    questions = SUPPORT_FAQ_BY_SUBJECT.get(subject, SUPPORT_FAQ_BY_SUBJECT.get("❓ אחר", []))
-
-    keyboard = [[KeyboardButton(text=q)] for q in questions]
-    keyboard.append([KeyboardButton(text="✍️ פנייה לנציג שירות")])
-    keyboard.append([KeyboardButton(text="⬅️ חזרה לנושאים")])
-    keyboard.append([KeyboardButton(text="⬅️ חזרה לתפריט")])
-
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
-
-
-def support_faq_after_answer_keyboard(subject):
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="✍️ פנייה לנציג שירות")],
-            [KeyboardButton(text="⬅️ חזרה לנושאים")],
-            [KeyboardButton(text="⬅️ חזרה לתפריט")]
-        ],
-        resize_keyboard=True
-    )
-
-
-def latest_customer_order(telegram_id):
-    try:
-        orders = get_orders_by_customer_telegram_id(telegram_id, 1)
-        return orders[0] if orders else None
-    except Exception:
-        return None
-
-
-def order_receive_type_text(order):
-    if not order:
-        return "-"
-
-    try:
-        if is_pickup_order(order):
-            return "🛍️ איסוף עצמי"
-    except Exception:
-        pass
-
-    base_city = str(order.get("base_city") or "")
-    city = str(order.get("city") or "")
-
-    if "איסוף" in base_city or "איסוף" in city:
-        return "🛍️ איסוף עצמי"
-
-    return "🚚 משלוח עד הבית"
-
-
-def dynamic_order_status_answer(user_id):
-    order = latest_customer_order(user_id)
-
-    if not order:
-        return rtl(
-            "<b>📦 סטטוס הזמנה</b>\n\n"
-            "לא נמצאה הזמנה קודמת בחשבון שלך.\n"
-            "אם ביצעת הזמנה ממספר Telegram אחר, ניתן לפתוח פנייה לנציג שירות."
-        )
-
-    return rtl(
-        "<b>📦 סטטוס ההזמנה האחרונה שלך</b>\n\n"
-        f"{field('מספר הזמנה', order.get('order_number') or '-')}\n"
-        f"{field('סטטוס נוכחי', translate_order_status(order.get('status')))}\n"
-        f"{field('סוג קבלה', order_receive_type_text(order))}\n"
-        f"{field('סה״כ לתשלום', money(order.get('final_total') or 0))}\n"
-        f"{field('תאריך הזמנה', order.get('created_at') or '-')}\n\n"
-        "חשוב לדעת: אין כרגע מעקב שליח בזמן אמת. עדכוני סטטוס נשלחים כאשר החנות מעדכנת את ההזמנה."
-    )
-
-
-def dynamic_customer_profile_answer(user_id):
-    profile = get_customer_profile(user_id)
-
-    if not profile:
-        return rtl(
-            "<b>👤 הפרטים השמורים שלך</b>\n\n"
-            "עדיין לא נמצאו פרטים שמורים בחשבון שלך.\n"
-            "הפרטים נשמרים לאחר ביצוע הזמנה או עדכון פרטים בבוט."
-        )
-
-    address = f"{profile.get('city') or '-'}, {profile.get('street') or '-'}, קומה {profile.get('floor') or '-'}, דירה {profile.get('apartment') or '-'}"
-
-    return rtl(
-        "<b>👤 הפרטים השמורים שלך</b>\n\n"
-        f"{field('שם', profile.get('customer_name') or '-')}\n"
-        f"{field('טלפון', profile.get('phone') or '-')}\n"
-        f"{field('כתובת', address)}"
-    )
-
-
-def dynamic_addresses_answer(user_id):
-    addresses = get_customer_addresses(user_id)
-
-    if not addresses:
-        return rtl(
-            "<b>🏠 כתובות שמורות</b>\n\n"
-            "אין כרגע כתובות שמורות בחשבון שלך.\n"
-            "אפשר להוסיף כתובת דרך הכפתור: 🏠 הכתובות שלי."
-        )
-
-    text = "<b>🏠 הכתובות השמורות שלך</b>\n\n"
-
-    for address in addresses[:5]:
-        text += (
-            f"<b>{h(address.get('label') or 'כתובת')}</b>\n"
-            f"{field('עיר / יישוב', address.get('city') or '-')}\n"
-            f"{field('רחוב', address.get('street') or '-')}\n"
-            f"{field('קומה', address.get('floor') or '-')}\n"
-            f"{field('דירה', address.get('apartment') or '-')}\n\n"
-        )
-
-    return rtl(text.strip())
-
-
-def support_faq_answer_text(user_id, subject, question):
-    if question in {
-        "📌 מה הסטטוס של ההזמנה האחרונה שלי?",
-        "🚚 מה מצב המשלוח או האיסוף?",
-    }:
-        return dynamic_order_status_answer(user_id)
-
-    if question == "🔔 איך אדע כשהסטטוס משתנה?":
-        return rtl(
-            "<b>🔔 עדכוני סטטוס הזמנה</b>\n\n"
-            "כאשר החנות מעדכנת את ההזמנה, הבוט שולח לך הודעה עם הסטטוס החדש.\n\n"
-            "הסטטוסים האפשריים הם:\n"
-            "🆕 התקבלה\n"
-            "✅ אושרה\n"
-            "📦 בטיפול\n"
-            "🚚 יצאה למשלוח / מוכנה לאיסוף\n"
-            "✅ הושלמה\n\n"
-            "אין כרגע מעקב שליח בזמן אמת."
-        )
-
-    if question == "✏️ אפשר לשנות פרטים אחרי הזמנה?":
-        return rtl(
-            "<b>✏️ שינוי פרטים אחרי הזמנה</b>\n\n"
-            "כרגע אין שינוי אוטומטי של הזמנה שכבר נשלחה.\n"
-            "אם צריך לעדכן טלפון, כתובת או פרט אחר — פתח פנייה לנציג שירות ונבדוק אם עדיין ניתן לעדכן."
-        )
-
-    if question in {"📄 איפה סיכום ההזמנה שלי?", "📄 האם מקבלים סיכום הזמנה?"}:
-        return rtl(
-            "<b>📄 סיכום הזמנה</b>\n\n"
-            "לאחר ביצוע הזמנה הבוט שולח סיכום הזמנה וקובץ PDF עם פרטי ההזמנה.\n"
-            "אם לא קיבלת את הסיכום, ניתן לפתוח פנייה לנציג שירות."
-        )
-
-    if question == "🛍️ איך עובד איסוף עצמי?":
-        return rtl(
-            "<b>🛍️ איסוף עצמי</b>\n\n"
-            "בעת ביצוע ההזמנה ניתן לבחור באפשרות איסוף עצמי.\n"
-            "לאחר שההזמנה תטופל, החנות תעדכן את הסטטוס ותשלח הודעה כשההזמנה מוכנה לאיסוף."
-        )
-
-    if question == "🔁 אפשר לשנות משלוח לאיסוף?":
-        return rtl(
-            "<b>🔁 שינוי משלוח / איסוף</b>\n\n"
-            "כרגע אין שינוי אוטומטי לאחר שליחת ההזמנה.\n"
-            "אם ההזמנה עדיין לא טופלה, אפשר לפתוח פנייה לנציג שירות ונבדוק אם ניתן לשנות."
-        )
-
-    if question == "⏱️ מתי ההזמנה יוצאת למשלוח או מוכנה לאיסוף?":
-        return rtl(
-            "<b>⏱️ זמני טיפול</b>\n\n"
-            "הבוט שולח עדכון כאשר החנות משנה את סטטוס ההזמנה.\n"
-            "כאשר ההזמנה תצא למשלוח או תהיה מוכנה לאיסוף — תקבל הודעה אוטומטית."
-        )
-
-    if question == "💳 איך מתבצע התשלום?":
-        return rtl(
-            "<b>💳 תשלום</b>\n\n"
-            "בשלב הנוכחי של הבוט התשלום מתבצע דרך מסך התשלום שמופיע בתהליך ההזמנה.\n"
-            "לאחר אישור התשלום, ההזמנה נשלחת לטיפול החנות."
-        )
-
-    if question == "✅ איך אדע שהתשלום עבר?":
-        return rtl(
-            "<b>✅ אישור תשלום</b>\n\n"
-            "לאחר אישור התשלום בבוט, תקבל סיכום הזמנה וההזמנה תועבר לחנות לטיפול.\n"
-            "אם נראה שהתשלום לא עבר או שלא התקבל סיכום — ניתן לפתוח פנייה לנציג שירות."
-        )
-
-    if question == "⚠️ מה עושים אם התשלום לא הצליח?":
-        return rtl(
-            "<b>⚠️ תשלום לא הצליח</b>\n\n"
-            "אם התשלום לא הושלם, ההזמנה לא תעבור לטיפול מלא.\n"
-            "אפשר לנסות שוב או לפתוח פנייה לנציג שירות לבדיקה."
-        )
-
-    if question == "🛍️ איך יודעים אם מוצר במלאי?":
-        return rtl(
-            "<b>🛍️ זמינות מוצר</b>\n\n"
-            "במסך המוצר מופיע האם המוצר במלאי או אזל מהמלאי.\n"
-            "מוצר שאזל מהמלאי לא אמור להיכנס להזמנה רגילה."
-        )
-
-    if question == "🔢 למה יש הגבלת כמות?":
-        return rtl(
-            "<b>🔢 הגבלת כמות</b>\n\n"
-            "בחלק מהמוצרים קיימת כמות מקסימלית להזמנה כדי למנוע הזמנות לא תקינות או חריגות.\n"
-            "אם צריך כמות גדולה יותר, ניתן לפתוח פנייה לנציג שירות."
-        )
-
-    if question == "🖼️ האם אפשר לראות תמונת מוצר?":
-        return rtl(
-            "<b>🖼️ תמונת מוצר</b>\n\n"
-            "אם הוגדרה תמונה למוצר, היא תופיע בכרטיס המוצר בחנות.\n"
-            "אם אין תמונה, יוצגו שם המוצר, תיאור, מחיר וסטטוס מלאי."
-        )
-
-    if question == "🛒 איך מוסיפים עוד מוצר לסל?":
-        return rtl(
-            "<b>🛒 הוספת מוצרים לסל</b>\n\n"
-            "לאחר הוספת מוצר לסל, ניתן ללחוץ על ➕ הוסף עוד מוצר ולבחור מוצרים נוספים.\n"
-            "בסיום ניתן להמשיך להזמנה מתוך הסל."
-        )
-
-    if question == "👤 אילו פרטים שמורים אצלי?":
-        return dynamic_customer_profile_answer(user_id)
-
-    if question == "🏠 איך רואים או מוסיפים כתובת?":
-        return dynamic_addresses_answer(user_id)
-
-    if question == "✏️ איך מעדכנים פרטים בהזמנה חדשה?":
-        return rtl(
-            "<b>✏️ עדכון פרטים בהזמנה חדשה</b>\n\n"
-            "במהלך ביצוע הזמנה ניתן להמשיך עם הפרטים השמורים או להזין פרטים חדשים.\n"
-            "הפרטים החדשים ישמשו להזמנה הנוכחית וניתן לשמור אותם להמשך."
-        )
-
-    if question == "☎️ למה צריך מספר טלפון?":
-        return rtl(
-            "<b>☎️ מספר טלפון</b>\n\n"
-            "מספר הטלפון נדרש כדי שנציג או שליח יוכל ליצור קשר במקרה הצורך,\n"
-            "וגם כדי לזהות פניות שירות בצורה ברורה יותר."
-        )
-
-    if question == "❓ הנושא שלי לא מופיע":
-        return rtl(
-            "<b>❓ נושא אחר</b>\n\n"
-            "אם לא מצאת תשובה מתאימה, אפשר לפתוח פנייה לנציג שירות ולכתוב את פרטי הבקשה."
-        )
-
-    return rtl(
-        "<b>📞 שירות לקוחות</b>\n\n"
-        "אם לא מצאת תשובה מתאימה, ניתן לפתוח פנייה לנציג שירות."
-    )
 
 
 def support_customer_keyboard(user_id=None):
@@ -1186,11 +537,9 @@ def fulfillment_keyboard():
         keyboard=[
             [KeyboardButton(text="🚚 משלוח עד הבית")],
             [KeyboardButton(text="🛍️ איסוף עצמי מהחנות")],
-            [KeyboardButton(text="⬅️ חזרה לסל")],
             [KeyboardButton(text="❌ בטל הזמנה")]
         ],
-        resize_keyboard=True,
-        one_time_keyboard=False
+        resize_keyboard=True
     )
 
 
@@ -1309,20 +658,9 @@ async def send_product_card(message: Message, product):
     image = product.get("image_file_id")
 
     if image:
-        await send_temp_photo(
-            message,
-            photo=image,
-            caption=caption,
-            reply_markup=ReplyKeyboardRemove(),
-            parse_mode="HTML"
-        )
+        await message.answer_photo(photo=image, caption=caption, parse_mode="HTML")
     else:
-        await send_temp_message(
-            message,
-            caption,
-            reply_markup=ReplyKeyboardRemove(),
-            parse_mode="HTML"
-        )
+        await message.answer(caption, parse_mode="HTML")
 
 
 def set_pickup_details(data):
@@ -1461,28 +799,19 @@ async def use_saved_profile_flow(message: Message, data):
         await message.answer(
             rtl(
                 "<b>⚠️ לא ניתן לחשב משלוח לפי הפרטים השמורים.</b>\n\n"
-                "נא להזין עיר חדשה לצורך חישוב משלוח."
+                "יש להזין פרטים חדשים כדי להמשיך."
             ),
             parse_mode="HTML"
         )
-
-        data["step"] = "city"
-
+        data["step"] = "name"
         await message.answer(
-            rtl("<b>🏙️ עיר / יישוב</b>\n\nרשום את העיר או היישוב שלך:"),
-            reply_markup=ReplyKeyboardMarkup(
-                keyboard=[
-                    [KeyboardButton(text="⬅️ חזרה לבחירת משלוח / איסוף")],
-                    [KeyboardButton(text="❌ בטל הזמנה")]
-                ],
-                resize_keyboard=True
-            ),
+            rtl("<b>📝 פרטי הזמנה חדשים</b>\n\nרשום את השם המלא שלך:"),
+            reply_markup=manual_details_keyboard(),
             parse_mode="HTML"
         )
         return
 
     data["step"] = "confirm"
-    data["previous_step_before_confirm"] = "saved_profile_choice"
 
     await message.answer(
         build_order_summary(data),
@@ -1534,7 +863,6 @@ async def my_details(message: Message):
 
 @router.message(F.text == "🛒 חנות")
 async def shop(message: Message):
-    await consume_customer_click(message)
     uid = message.from_user.id
 
     if uid not in users:
@@ -1554,8 +882,7 @@ async def shop(message: Message):
         )
         return
 
-    await send_temp_message(
-        message,
+    await message.answer(
         rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
@@ -1580,40 +907,21 @@ async def back_to_admin_panel_from_shop(message: Message):
 
 @router.message(F.text == "⬅️ חזרה")
 async def back_main(message: Message):
-    await consume_customer_click(message)
-    uid = message.from_user.id
-    data = users.get(uid)
+    users.pop(message.from_user.id, None)
 
-    if data and data.get("cart"):
-        data["step"] = None
-
-        await delete_temp_bot_messages(message.bot, uid)
-
-        await send_temp_message(
-            message,
-            cart_text(data.get("cart", []), title="🛒 הסל שלך"),
-            reply_markup=cart_keyboard(),
-            parse_mode="HTML"
-        )
-        return
-
-    users.pop(uid, None)
-
-    await send_temp_message(
-        message,
+    await message.answer(
         rtl("<b>↩️ חזרת לתפריט הראשי</b>"),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
+
 @router.message(F.text == "⬅️ חזרה לקטגוריות")
 async def back_categories(message: Message):
-    await consume_customer_click(message)
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
     users[uid]["step"] = "browse_products"
-    await send_temp_message(
-        message,
+    await message.answer(
         rtl("<b>📂 קטגוריות</b>\n\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
@@ -1622,12 +930,10 @@ async def back_categories(message: Message):
 
 @router.message(F.text == "➕ הוסף עוד מוצר")
 async def add_more(message: Message):
-    await consume_customer_click(message)
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
     users[uid]["step"] = "browse_products"
-    await send_temp_message(
-        message,
+    await message.answer(
         rtl("<b>➕ הוספת מוצר</b>\n\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
@@ -1636,11 +942,9 @@ async def add_more(message: Message):
 
 @router.message(F.text == "🛒 הסל שלי")
 async def show_cart(message: Message):
-    await consume_customer_click(message)
     uid = message.from_user.id
     data = users.setdefault(uid, {"cart": [], "step": None})
-    await send_temp_message(
-        message,
+    await message.answer(
         cart_text(data["cart"]),
         reply_markup=cart_keyboard(),
         parse_mode="HTML"
@@ -1649,26 +953,21 @@ async def show_cart(message: Message):
 
 @router.message(F.text == "🧹 רוקן סל")
 async def clear_cart(message: Message):
-    await consume_customer_click(message)
     uid = message.from_user.id
     data = users.get(uid)
 
-    await delete_temp_bot_messages(message.bot, uid)
-
     if not data or not data.get("cart"):
         users[uid] = {"cart": [], "step": "browse_products"}
-        await send_temp_message(
-            message,
-            rtl("<b>🛒 הסל שלך כבר ריק.</b>\n\nבחר מוצר:"),
+        await message.answer(
+            rtl("<b>🛒 הסל שלך כבר ריק.</b>"),
             reply_markup=categories_keyboard(),
             parse_mode="HTML"
         )
         return
 
     users[uid] = {"cart": [], "step": "browse_products"}
-    await send_temp_message(
-        message,
-        rtl("<b>🧹 הסל התרוקן בהצלחה.</b>\n\nבחר מוצר:"),
+    await message.answer(
+        rtl("<b>🧹 הסל התרוקן בהצלחה.</b>"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
@@ -1679,14 +978,12 @@ async def cancel_order(message: Message):
     if is_admin_panel_active_for_shop_guard(message.from_user.id):
         return
 
-    uid = message.from_user.id
-
-    await reset_customer_to_main_menu(
-        message,
-        "<b>❌ ההזמנה בוטלה.</b>"
+    users.pop(message.from_user.id, None)
+    await message.answer(
+        rtl("<b>❌ ההזמנה בוטלה.</b>"),
+        reply_markup=main_keyboard(message.from_user.id),
+        parse_mode="HTML"
     )
-
-    users.pop(uid, None)
 
 
 @router.message(F.text == "✏️ שנה פרטים")
@@ -1703,18 +1000,14 @@ async def edit_details(message: Message):
         return
 
     data["step"] = "name"
-    data["editing_details"] = True
-
     await message.answer(
         rtl("<b>✏️ עדכון פרטים</b>\n\nרשום את השם המלא שלך:"),
-        reply_markup=ReplyKeyboardRemove(),
-                parse_mode="HTML"
+        parse_mode="HTML"
     )
 
 
 @router.message(F.text == "✅ המשך להזמנה")
 async def checkout(message: Message):
-    await consume_customer_click(message)
     uid = message.from_user.id
     data = users.get(uid)
 
@@ -1725,13 +1018,10 @@ async def checkout(message: Message):
         )
         return
 
-    await delete_temp_bot_messages(message.bot, uid)
-
     data["step"] = "fulfillment_choice"
     data["saved_profile"] = get_customer_profile(uid)
 
-    await send_temp_message(
-        message,
+    await message.answer(
         rtl(
             "<b>📦 איך תרצה לקבל את ההזמנה?</b>\n\n"
             "בחר אחת מהאפשרויות:"
@@ -1896,116 +1186,11 @@ async def submit_paid_order(message: Message, data):
     )
 
 
-@router.message(F.text == "⬅️ חזרה לבחירת משלוח / איסוף")
-async def back_to_fulfillment_choice(message: Message):
-    await consume_customer_click(message)
-    uid = message.from_user.id
-    data = users.get(uid)
-
-    if not data or not data.get("cart"):
-        await message.answer(
-            rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard(message.from_user.id),
-            parse_mode="HTML"
-        )
-        return
-
-    data["step"] = "fulfillment_choice"
-
-    # מנקים רק את פרטי הקבלה כדי לבחור מחדש משלוח או איסוף.
-    for key in [
-        "fulfillment_type",
-        "order_type",
-        "delivery_price",
-        "base_city",
-        "delivery_pending",
-        "city",
-        "street",
-        "floor",
-        "apartment",
-        "previous_step_before_confirm"
-    ]:
-        data.pop(key, None)
-
-    await delete_temp_bot_messages(message.bot, uid)
-
-    await send_temp_message(
-        message,
-        rtl(
-            "<b>📦 איך תרצה לקבל את ההזמנה?</b>\n\n"
-            "בחר אחת מהאפשרויות:"
-        ),
-        reply_markup=fulfillment_keyboard(),
-        parse_mode="HTML"
-    )
-
-
-@router.message(F.text == "⬅️ חזרה לשלב קודם")
-async def back_from_order_summary_to_previous_step(message: Message):
-    await consume_customer_click(message)
-    uid = message.from_user.id
-    data = users.get(uid)
-
-    if not data or not data.get("cart"):
-        await message.answer(
-            rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard(message.from_user.id),
-            parse_mode="HTML"
-        )
-        return
-
-    previous_step = data.get("previous_step_before_confirm")
-
-    if previous_step == "saved_profile_choice":
-        profile = data.get("saved_profile") or get_customer_profile(uid)
-
-        if profile:
-            data["saved_profile"] = profile
-            data["step"] = "saved_profile_choice"
-
-            await message.answer(
-                saved_profile_text(profile),
-                reply_markup=use_saved_details_keyboard(),
-                parse_mode="HTML"
-            )
-            return
-
-    # אם אין שלב קודם ברור, נחזור לבחירת משלוח / איסוף.
-    data["step"] = "fulfillment_choice"
-
-    for key in [
-        "fulfillment_type",
-        "order_type",
-        "delivery_price",
-        "base_city",
-        "delivery_pending",
-        "city",
-        "street",
-        "floor",
-        "apartment",
-        "previous_step_before_confirm"
-    ]:
-        data.pop(key, None)
-
-    await delete_temp_bot_messages(message.bot, uid)
-
-    await send_temp_message(
-        message,
-        rtl(
-            "<b>📦 איך תרצה לקבל את ההזמנה?</b>\n\n"
-            "בחר אחת מהאפשרויות:"
-        ),
-        reply_markup=fulfillment_keyboard(),
-        parse_mode="HTML"
-    )
-
-
 @router.message(
     F.text == "✅ אשר הזמנה",
     lambda message: not is_admin_panel_active_for_shop_guard(message.from_user.id)
 )
 async def confirm_order(message: Message):
-    await consume_customer_click(message)
     uid = message.from_user.id
     data = users.get(uid)
 
@@ -2041,8 +1226,6 @@ async def confirm_order(message: Message):
     delivery_price = float(data["delivery_price"])
     final_total = products_total + delivery_price
 
-    await delete_temp_bot_messages(message.bot, uid)
-
     data["step"] = "payment_simulation"
 
     order_type_text = "🛍️ איסוף עצמי" if is_pickup_order(data) else "🚚 משלוח עד הבית"
@@ -2071,47 +1254,16 @@ async def quantity_inline_action(callback: CallbackQuery):
         await callback.answer("אין מוצר פעיל לבחירת כמות.", show_alert=True)
         return
 
+    data["step"] = "qty"
+
     action = (callback.data or "").split(":", 1)[1]
-
-    if action == "back_products":
-        category = data.get("category")
-        data["step"] = "product_select"
-        await clear_qty_runtime_state(callback.message.bot, uid, data)
-
-        products = get_active_products().get(category, [])
-
-        await delete_temp_bot_messages(callback.message.bot, uid)
-
-        await callback.message.answer(
-            rtl("<b>בחר מוצר:</b>"),
-            reply_markup=products_keyboard(category),
-            parse_mode="HTML"
-        )
-        await callback.answer()
-        return
-
-    if action == "cancel":
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
-
-        await reset_callback_customer_to_main_menu(
-            callback,
-            "<b>❌ ההזמנה בוטלה.</b>"
-        )
-
-        users.pop(uid, None)
-
-        await callback.answer()
-        return
-
     product = data.get("selected_product")
 
     fresh_product = get_product_by_name(product["name"])
     if not fresh_product or int(fresh_product.get("active", 0)) != 1:
         data["step"] = None
-        await clear_qty_runtime_state(callback.message.bot, uid, data)
+        data.pop("selected_product", None)
+        data.pop("selected_qty", None)
         await callback.answer("המוצר לא זמין כרגע.", show_alert=True)
         return
 
@@ -2125,7 +1277,8 @@ async def quantity_inline_action(callback: CallbackQuery):
 
     if available_left <= 0:
         data["step"] = None
-        await clear_qty_runtime_state(callback.message.bot, uid, data)
+        data.pop("selected_product", None)
+        data.pop("selected_qty", None)
         await callback.message.answer(
             rtl("<b>📦 כל המלאי הזמין של המוצר כבר נמצא אצלך בסל.</b>"),
             reply_markup=cart_keyboard(),
@@ -2193,56 +1346,14 @@ async def quantity_inline_action(callback: CallbackQuery):
         return
 
     if action == "manual":
-        if data.get("qty_manual_lock"):
-            await callback.answer()
-            return
-
-        data["qty_manual_lock"] = True
-
-        if data.get("step") == "qty_manual":
-            data["qty_manual_lock"] = False
-            await callback.answer()
-            return
-
         data["step"] = "qty_manual"
-
-        for warning_key in [
-            "qty_invalid_warning_message_id",
-            "qty_limit_warning_message_id",
-            "qty_stock_warning_message_id",
-            "qty_zero_warning_message_id",
-        ]:
-            await delete_state_message(callback.message.bot, uid, data, warning_key)
-
-        for warning_flag in [
-            "qty_invalid_warning_sent",
-            "qty_limit_warning_sent",
-            "qty_stock_warning_sent",
-            "qty_zero_warning_sent",
-        ]:
-            data.pop(warning_flag, None)
-
-        old_manual_message_id = data.get("qty_manual_message_id")
-        if old_manual_message_id:
-            try:
-                await callback.message.bot.delete_message(uid, old_manual_message_id)
-            except Exception:
-                pass
-
-        try:
-            sent = await callback.message.answer(
-                rtl(
-                    "<b>✏️ הזנת כמות</b>\n\n"
-                    "רשום את הכמות הרצויה במספרים בלבד."
-                ),
-                reply_markup=ReplyKeyboardRemove(),
-                parse_mode="HTML"
-            )
-
-            data["qty_manual_message_id"] = sent.message_id
-        finally:
-            data["qty_manual_lock"] = False
-
+        await callback.message.answer(
+            rtl(
+                "<b>✏️ הזנת כמות</b>\n\n"
+                "רשום את הכמות הרצויה במספרים בלבד."
+            ),
+            parse_mode="HTML"
+        )
         await callback.answer()
         return
 
@@ -2271,17 +1382,14 @@ async def quantity_inline_action(callback: CallbackQuery):
         })
 
         data["step"] = None
-        await clear_qty_runtime_state(callback.message.bot, uid, data)
+        data.pop("selected_product", None)
+        data.pop("selected_qty", None)
 
-        await delete_temp_bot_messages(callback.message.bot, uid)
-
-        sent = await callback.message.answer(
+        await callback.message.answer(
             cart_text(data["cart"], title="✅ נוסף לסל"),
             reply_markup=cart_keyboard(),
             parse_mode="HTML"
         )
-        users.setdefault(uid, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
-
         await callback.answer("המוצר נוסף לסל.")
         return
 
@@ -2388,12 +1496,12 @@ async def back_to_main_menu(message: Message):
 
     users[uid]["step"] = "main"
 
-    await send_temp_message(
-        message,
+    await message.answer(
         rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט למטה."),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
+
 
 @router.message(F.text == "🏠 הכתובות שלי")
 async def my_addresses(message: Message):
@@ -2458,7 +1566,6 @@ async def add_address_start(message: Message):
         parse_mode="HTML"
     )
 
-
 @router.message()
 async def handle_shop(message: Message):
     uid = message.from_user.id
@@ -2489,9 +1596,7 @@ async def handle_shop(message: Message):
     if txt in products:
         users.setdefault(uid, {"cart": [], "step": None})
         users[uid]["step"] = "product_select"
-        await consume_customer_click(message)
-        await send_temp_message(
-            message,
+        await message.answer(
             rtl(f"<b>📂 {h(txt)}</b>\n\nבחר מוצר:"),
             reply_markup=products_keyboard(txt),
             parse_mode="HTML"
@@ -2501,8 +1606,6 @@ async def handle_shop(message: Message):
     product = find_product(txt)
 
     if product:
-        await consume_customer_click(message)
-
         users.setdefault(uid, {"cart": [], "step": None})
         data = users[uid]
 
@@ -2543,8 +1646,6 @@ async def handle_shop(message: Message):
             )
             return
 
-        await force_close_phone_keyboard(message)
-
         await send_product_card(message, product)
 
         data["selected_product"] = product
@@ -2552,8 +1653,7 @@ async def handle_shop(message: Message):
 
         data["selected_qty"] = 1
 
-        await send_temp_message(
-            message,
+        await message.answer(
             rtl(
                 "<b>🔢 בחירת כמות</b>\n\n"
                 f"{field('כמות נבחרת', data['selected_qty'])}\n\n"
@@ -2563,8 +1663,7 @@ async def handle_shop(message: Message):
                 "המוצרים יתווספו לסל ותוכל להמשיך למשלוח או לאיסוף."
             ),
             reply_markup=quantity_inline_keyboard(data["selected_qty"]),
-            parse_mode="HTML",
-            clear_previous=False
+            parse_mode="HTML"
         )
         return
 
@@ -2572,9 +1671,6 @@ async def handle_shop(message: Message):
         return
 
     if data.get("step") == "payment_simulation":
-        if txt in {"✅ סימולציית תשלום הצליחה", "⬅️ חזרה לסיכום הזמנה", "❌ ביטול תשלום"}:
-            await consume_customer_click(message)
-
         if txt == "✅ סימולציית תשלום הצליחה":
             await submit_paid_order(message, data)
             return
@@ -2606,32 +1702,6 @@ async def handle_shop(message: Message):
         return
 
     if data.get("step") == "fulfillment_choice":
-        if txt == "⬅️ חזרה לסל":
-            data["step"] = None
-
-            await delete_temp_bot_messages(message.bot, uid)
-
-            await send_temp_message(
-                message,
-                cart_text(data.get("cart", []), title="🛒 הסל שלך"),
-                reply_markup=cart_keyboard(),
-                parse_mode="HTML"
-            )
-            return
-
-        if txt == "❌ בטל הזמנה":
-            await reset_customer_to_main_menu(
-                message,
-                "<b>❌ ההזמנה בוטלה.</b>"
-            )
-
-            users.pop(uid, None)
-            return
-
-        if txt in {"🚚 משלוח עד הבית", "🛍️ איסוף עצמי מהחנות"}:
-            await consume_customer_click(message)
-            await delete_temp_bot_messages(message.bot, uid)
-
         if txt == "🚚 משלוח עד הבית":
             data["fulfillment_type"] = "delivery"
             profile = data.get("saved_profile") or get_customer_profile(uid)
@@ -2639,7 +1709,6 @@ async def handle_shop(message: Message):
             if profile and profile.get("customer_name") and profile.get("phone") and profile.get("city"):
                 data["saved_profile"] = profile
                 data["step"] = "saved_profile_choice"
-                data["previous_step_before_confirm"] = "saved_profile_choice"
 
                 await message.answer(
                     saved_profile_text(profile),
@@ -2651,7 +1720,6 @@ async def handle_shop(message: Message):
             data["step"] = "name"
             await message.answer(
                 rtl("<b>📝 פרטי הזמנה</b>\n\nרשום את השם המלא שלך:"),
-                reply_markup=ReplyKeyboardRemove(),
                 parse_mode="HTML"
             )
             return
@@ -2665,8 +1733,6 @@ async def handle_shop(message: Message):
             if profile and profile.get("customer_name") and profile.get("phone"):
                 data["name"] = profile["customer_name"]
                 data["phone"] = profile["phone"]
-                await delete_temp_bot_messages(message.bot, uid)
-
                 data["step"] = "confirm"
 
                 await message.answer(
@@ -2684,11 +1750,8 @@ async def handle_shop(message: Message):
                     f"{pickup_text()}\n\n"
                     "<b>📝 פרטי לקוח</b>\n"
                     "רשום את השם המלא שלך:"
-                ,
-                reply_markup=ReplyKeyboardRemove()
-            ),
-                parse_mode="HTML",
-                disable_web_page_preview=True
+                ),
+                parse_mode="HTML"
             )
             return
 
@@ -2845,8 +1908,7 @@ async def handle_shop(message: Message):
 
         await message.answer(
             rtl("<b>📍 עיר / יישוב</b>\n\nרשום את שם העיר או היישוב."),
-            reply_markup=ReplyKeyboardRemove(),
-                parse_mode="HTML"
+            parse_mode="HTML"
         )
         return
 
@@ -2933,8 +1995,7 @@ async def handle_shop(message: Message):
                 data["step"] = "name"
                 await message.answer(
                     rtl("<b>⚠️ לא נמצאו פרטים שמורים.</b>\n\nרשום את השם המלא שלך:"),
-                    reply_markup=ReplyKeyboardRemove(),
-                parse_mode="HTML"
+                    parse_mode="HTML"
                 )
                 return
 
@@ -2979,7 +2040,13 @@ async def handle_shop(message: Message):
 
     if data.get("step") == "support_subject":
         if txt == "✅ הבעיה נפתרה":
-            await close_customer_open_support_ticket(message, data)
+            users.pop(uid, None)
+
+            await message.answer(
+                rtl("<b>✅ הפנייה בוטלה.</b>\nחזרת לתפריט הראשי."),
+                reply_markup=main_keyboard(message.from_user.id),
+                parse_mode="HTML"
+            )
             return
 
         support_subjects = {
@@ -2999,64 +2066,16 @@ async def handle_shop(message: Message):
             return
 
         data["support_subject"] = txt
-        data["step"] = "support_faq"
+        data["step"] = "support_phone"
 
         await message.answer(
             rtl(
                 "<b>📞 שירות לקוחות</b>\n\n"
                 f"{field('נושא הפנייה', txt)}\n\n"
-                "בחר שאלה נפוצה או פתח פנייה לנציג שירות:"
+                "רשום מספר פלאפון תקין.\n"
+                "לדוגמה: 0547937503"
             ),
-            reply_markup=support_faq_keyboard(txt),
-            parse_mode="HTML"
-        )
-        return
-
-    if data.get("step") == "support_faq":
-        subject = data.get("support_subject") or "❓ אחר"
-
-        if txt == "⬅️ חזרה לנושאים":
-            data["step"] = "support_subject"
-
-            await message.answer(
-                rtl(
-                    "<b>📞 שירות לקוחות</b>\n\n"
-                    "בחר את נושא הפנייה:"
-                ),
-                reply_markup=support_subject_keyboard(),
-                parse_mode="HTML"
-            )
-            return
-
-        if txt == "✍️ פנייה לנציג שירות":
-            data["step"] = "support_phone"
-
-            await message.answer(
-                rtl(
-                    "<b>✍️ פנייה לנציג שירות</b>\n\n"
-                    f"{field('נושא הפנייה', subject)}\n\n"
-                    "רשום מספר פלאפון תקין.\n"
-                    "לדוגמה: 0547937503"
-                ,
-                reply_markup=ReplyKeyboardRemove()
-            ),
-                reply_markup=support_customer_keyboard(message.from_user.id),
-                parse_mode="HTML"
-            )
-            return
-
-        valid_questions = SUPPORT_FAQ_BY_SUBJECT.get(subject, []) + SUPPORT_FAQ_BY_SUBJECT.get("❓ אחר", [])
-
-        if txt not in valid_questions:
-            try:
-                await message.delete()
-            except Exception:
-                pass
-            return
-
-        await message.answer(
-            support_faq_answer_text(uid, subject, txt),
-            reply_markup=support_faq_after_answer_keyboard(subject),
+            reply_markup=support_customer_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -3090,33 +2109,26 @@ async def handle_shop(message: Message):
 
         existing_ticket = get_open_support_ticket_by_user(uid)
 
-        data["step"] = "support_chat"
-        data["support_phone"] = phone
-
         if existing_ticket:
-            data["support_ticket_number"] = existing_ticket["ticket_number"]
-            data["support_subject"] = existing_ticket.get("subject") or data.get("support_subject", "")
-
-            await message.answer(
-                rtl(
-                    "<b>📞 שירות לקוחות</b>\n\n"
-                    f"{field('מספר פנייה', existing_ticket['ticket_number'])}\n"
-                    f"{field('נושא הפנייה', existing_ticket.get('subject') or 'ללא נושא')}\n"
-                    "יש לך פנייה פתוחה. כתוב את ההודעה שלך כאן והיא תועבר לנציג."
-                ),
-                reply_markup=support_customer_keyboard(message.from_user.id),
-                parse_mode="HTML"
+            ticket_number = existing_ticket["ticket_number"]
+        else:
+            ticket_number = create_support_ticket(
+                telegram_id=uid,
+                telegram_name=message.from_user.full_name,
+                phone=phone,
+                subject=data.get("support_subject", "")
             )
-            return
+
+        data["step"] = "support_chat"
+        data["support_ticket_number"] = ticket_number
+        data["support_phone"] = phone
 
         await message.answer(
             rtl(
-                "<b>📞 שירות לקוחות</b>\n\n"
+                "<b>✅ הפנייה נפתחה ונמצאת בטיפול.</b>\n\n"
+                f"{field('מספר פנייה', ticket_number)}\n"
                 f"{field('נושא הפנייה', data.get('support_subject', '-'))}\n"
-                f"{field('פלאפון', phone)}\n\n"
-                "כתוב עכשיו את ההודעה שלך ונעביר אותה לנציג שירות."
-            ,
-                reply_markup=ReplyKeyboardRemove()
+                "כתוב עכשיו את ההודעה שלך ונציג שירות יחזור אליך בהקדם."
             ),
             reply_markup=support_customer_keyboard(message.from_user.id),
             parse_mode="HTML"
@@ -3135,27 +2147,8 @@ async def handle_shop(message: Message):
             ticket_number = data.get("support_ticket_number")
 
         if txt == "✅ הבעיה נפתרה":
-            await close_customer_open_support_ticket(message, data)
-            return
-
-            latest_ticket = get_support_ticket(ticket_number)
-
-            if latest_ticket and latest_ticket.get("status") == "closed":
-                users.pop(uid, None)
-
-                await message.answer(
-                    rtl(
-                        "<b>ℹ️ הפנייה כבר סגורה.</b>\n"
-                        "חזרת לתפריט הראשי."
-                    ),
-                    reply_markup=main_keyboard(message.from_user.id),
-                    parse_mode="HTML"
-                )
-                return
-
-            closed_ok = close_support_ticket(ticket_number)
-
-            if closed_ok:
+            if ticket_number:
+                close_support_ticket(ticket_number)
                 add_support_message(
                     ticket_number,
                     "customer",
@@ -3163,28 +2156,10 @@ async def handle_shop(message: Message):
                     "הלקוח סימן שהבעיה נפתרה."
                 )
 
-                await notify_admin_ticket_closed_by_customer(
-                    message.bot,
-                    ticket_number,
-                    message.from_user.full_name
-                )
-
-                users.pop(uid, None)
-
-                await message.answer(
-                    rtl("<b>✅ הפנייה נסגרה.</b>\nתודה שפנית לשירות הלקוחות של Vendora."),
-                    reply_markup=main_keyboard(message.from_user.id),
-                    parse_mode="HTML"
-                )
-                return
-
             users.pop(uid, None)
 
             await message.answer(
-                rtl(
-                    "<b>ℹ️ הפנייה כבר סגורה.</b>\n"
-                    "חזרת לתפריט הראשי."
-                ),
+                rtl("<b>✅ הפנייה נסגרה.</b>\nתודה שפנית לשירות הלקוחות של Vendora."),
                 reply_markup=main_keyboard(message.from_user.id),
                 parse_mode="HTML"
             )
@@ -3206,22 +2181,16 @@ async def handle_shop(message: Message):
             return
 
         if not ticket_number:
-            ticket_number = create_support_ticket(
-                telegram_id=uid,
-                telegram_name=message.from_user.full_name,
-                phone=data.get("support_phone", ""),
-                subject=data.get("support_subject", "")
+            data["step"] = "support_subject"
+            await message.answer(
+                rtl(
+                    "<b>📞 שירות לקוחות</b>\n\n"
+                    "בחר את נושא הפנייה:"
+                ),
+                reply_markup=support_subject_keyboard(),
+                parse_mode="HTML"
             )
-
-            data["support_ticket_number"] = ticket_number
-
-            await notify_admin_new_support_ticket(
-                message.bot,
-                ticket_number,
-                data.get("support_subject", ""),
-                data.get("support_phone", ""),
-                message.from_user.full_name
-            )
+            return
 
         add_support_message(
             ticket_number,
@@ -3232,8 +2201,7 @@ async def handle_shop(message: Message):
 
         await message.answer(
             rtl(
-                "<b>✅ הפנייה נפתחה וההודעה התקבלה.</b>\n\n"
-                f"{field('מספר פנייה', ticket_number)}\n"
+                "<b>✅ ההודעה התקבלה ונמצאת בטיפול.</b>\n"
                 "נציג שירות יחזור אליך בהקדם האפשרי."
             ),
             reply_markup=support_customer_keyboard(message.from_user.id),
@@ -3252,43 +2220,13 @@ async def handle_shop(message: Message):
             )
             return
 
-        if not txt.isdigit():
-            await send_qty_warning_once(
-                message,
-                data,
-                "qty_invalid_warning_sent",
-                "qty_invalid_warning_message_id",
-                rtl("<b>⚠️ רשום את הכמות במספרים בלבד.</b>")
-            )
-            return
-
-        selected_qty = int(txt)
-
-        for warning_key in [
-            "qty_invalid_warning_message_id",
-            "qty_limit_warning_message_id",
-            "qty_stock_warning_message_id",
-            "qty_zero_warning_message_id",
-        ]:
-            await delete_state_message(message.bot, uid, data, warning_key)
-
-        for warning_flag in [
-            "qty_invalid_warning_sent",
-            "qty_limit_warning_sent",
-            "qty_stock_warning_sent",
-            "qty_zero_warning_sent",
-        ]:
-            data.pop(warning_flag, None)
-
         fresh_product = get_product_by_name(product["name"])
-
         if not fresh_product or int(fresh_product.get("active", 0)) != 1:
             data["step"] = None
-            await clear_qty_runtime_state(message.bot, uid, data)
-
+            data.pop("selected_product", None)
+            data.pop("selected_qty", None)
             await message.answer(
                 rtl("<b>❌ המוצר לא זמין כרגע.</b>"),
-                reply_markup=categories_keyboard(),
                 parse_mode="HTML"
             )
             return
@@ -3300,63 +2238,56 @@ async def handle_shop(message: Message):
         already_in_cart = product_qty_in_cart(data["cart"], product["name"])
         available_left = stock - already_in_cart
 
+        if not txt.isdigit():
+            await message.answer(
+                rtl("<b>⚠️ נא לרשום כמות במספרים בלבד.</b>"),
+                parse_mode="HTML"
+            )
+            return
+
+        selected_qty = int(txt)
+
         if selected_qty <= 0:
-            await send_qty_warning_once(
-                message,
-                data,
-                "qty_zero_warning_sent",
-                "qty_zero_warning_message_id",
-                rtl("<b>⚠️ הכמות חייבת להיות גדולה מ־0.</b>")
+            await message.answer(
+                rtl("<b>⚠️ הכמות חייבת להיות גדולה מ־0.</b>"),
+                parse_mode="HTML"
             )
             return
 
         if selected_qty > max_qty:
-            await send_qty_warning_once(
-                message,
-                data,
-                "qty_limit_warning_sent",
-                "qty_limit_warning_message_id",
-                large_quantity_contact_text(max_qty)
+            await message.answer(
+                large_quantity_contact_text(max_qty),
+                reply_markup=quantity_inline_keyboard(int(data.get("selected_qty", 1))),
+                parse_mode="HTML"
             )
+            data["step"] = "qty"
             return
 
         if selected_qty > available_left:
-            await send_qty_warning_once(
-                message,
-                data,
-                "qty_stock_warning_sent",
-                "qty_stock_warning_message_id",
-                rtl("<b>⚠️ לא ניתן לבחור כמות מעבר למלאי הזמין.</b>")
+            await message.answer(
+                rtl("<b>⚠️ לא ניתן לבחור כמות מעבר למלאי הזמין.</b>"),
+                reply_markup=quantity_inline_keyboard(int(data.get("selected_qty", 1))),
+                parse_mode="HTML"
             )
+            data["step"] = "qty"
             return
 
-        old_manual_message_id = data.pop("qty_manual_message_id", None)
-        if old_manual_message_id:
-            try:
-                await message.bot.delete_message(uid, old_manual_message_id)
-            except Exception:
-                pass
+        data["selected_qty"] = selected_qty
+        data["step"] = "qty"
 
-        data["cart"].append({
-            "name": fresh_product["name"],
-            "price": float(fresh_product["price"]),
-            "qty": selected_qty
-        })
-
-        data["step"] = None
-        await clear_qty_runtime_state(message.bot, uid, data)
-
-        await consume_customer_click(message)
-        await delete_temp_bot_messages(message.bot, uid)
-
-        await send_temp_message(
-            message,
-            cart_text(data["cart"], title="✅ נוסף לסל"),
-            reply_markup=cart_keyboard(),
+        await message.answer(
+            rtl(
+                "<b>🔢 בחירת כמות</b>\n\n"
+                f"{field('כמות נבחרת', selected_qty)}\n\n"
+                "בחר את הכמות הרצויה להזמנה.\n"
+                "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
+                "רק לאחר בחירת הכמות ולחיצה על 🛒 הוסף לסל,\n"
+                "המוצרים יתווספו לסל ותוכל להמשיך למשלוח או לאיסוף."
+            ),
+            reply_markup=quantity_inline_keyboard(selected_qty),
             parse_mode="HTML"
         )
         return
-
 
     if data.get("step") == "qty":
         product = data.get("selected_product")
@@ -3461,29 +2392,14 @@ async def handle_shop(message: Message):
             return
 
         if txt.startswith("כמות:"):
-            if data.get("step") == "qty_manual":
-                await delete_customer_message(message)
-                return
-
             data["step"] = "qty_manual"
-
-            old_manual_message_id = data.get("qty_manual_message_id")
-            if old_manual_message_id:
-                try:
-                    await message.bot.delete_message(uid, old_manual_message_id)
-                except Exception:
-                    pass
-
-            sent = await message.answer(
+            await message.answer(
                 rtl(
                     "<b>✏️ הזנת כמות</b>\n\n"
                     "רשום את הכמות הרצויה במספרים בלבד."
                 ),
-                reply_markup=ReplyKeyboardRemove(),
                 parse_mode="HTML"
             )
-
-            data["qty_manual_message_id"] = sent.message_id
             return
 
         if txt != "🛒 הוסף לסל":
@@ -3526,11 +2442,7 @@ async def handle_shop(message: Message):
         data.pop("selected_product", None)
         data.pop("selected_qty", None)
 
-        await consume_customer_click(message)
-        await delete_temp_bot_messages(message.bot, uid)
-
-        await send_temp_message(
-            message,
+        await message.answer(
             cart_text(data["cart"], title="✅ נוסף לסל"),
             reply_markup=cart_keyboard(),
             parse_mode="HTML"
@@ -3549,8 +2461,7 @@ async def handle_shop(message: Message):
         data["step"] = "phone"
         await message.answer(
             rtl("<b>📞 מספר פלאפון</b>\n\nרשום מספר פלאפון תקין.\nלדוגמה: 0547937503"),
-            reply_markup=ReplyKeyboardRemove(),
-                parse_mode="HTML"
+            parse_mode="HTML"
         )
         return
 
@@ -3566,12 +2477,8 @@ async def handle_shop(message: Message):
 
         data["phone"] = phone
 
-        order_type = str(data.get("order_type") or data.get("fulfillment_type") or data.get("receive_type") or "")
-
-        if is_pickup_order(data) and "משלוח" not in order_type and order_type != "delivery":
+        if is_pickup_order(data):
             set_pickup_details(data)
-            await delete_temp_bot_messages(message.bot, uid)
-
             data["step"] = "confirm"
 
             await message.answer(
@@ -3589,8 +2496,6 @@ async def handle_shop(message: Message):
                 "<b>📍 עיר / יישוב למשלוח</b>\n\n"
                 "רשום את שם העיר, המושב או הקיבוץ למשלוח.\n"
                 "לדוגמה: אשדוד"
-            ,
-                reply_markup=ReplyKeyboardRemove()
             ),
             parse_mode="HTML"
         )
@@ -3637,8 +2542,6 @@ async def handle_shop(message: Message):
                 delivery_message
                 + "<b>📍 כתובת למשלוח</b>\n"
                 "רשום רחוב ומספר בית."
-            ,
-                reply_markup=ReplyKeyboardRemove()
             ),
             parse_mode="HTML"
         )
@@ -3656,8 +2559,7 @@ async def handle_shop(message: Message):
         data["step"] = "floor"
         await message.answer(
             rtl("<b>🏢 קומה</b>\n\nאיזו קומה?\nאם זה קרקע, רשום 0."),
-            reply_markup=ReplyKeyboardRemove(),
-                parse_mode="HTML"
+            parse_mode="HTML"
         )
         return
 
@@ -3673,8 +2575,7 @@ async def handle_shop(message: Message):
         data["step"] = "apartment"
         await message.answer(
             rtl("<b>🚪 דירה</b>\n\nמספר דירה?\nאם אין דירה, רשום 0."),
-            reply_markup=ReplyKeyboardRemove(),
-                parse_mode="HTML"
+            parse_mode="HTML"
         )
         return
 
@@ -3682,14 +2583,12 @@ async def handle_shop(message: Message):
         if not txt.isdigit():
             await message.answer(
                 rtl("<b>⚠️ נא לרשום מספר דירה במספרים בלבד.</b>"),
-                reply_markup=ReplyKeyboardRemove(),
                 parse_mode="HTML"
             )
             return
 
         data["apartment"] = txt
         data["step"] = "confirm"
-        data["previous_step_before_confirm"] = "details_flow"
 
         await message.answer(
             build_order_summary(data),
