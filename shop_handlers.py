@@ -386,6 +386,25 @@ async def delete_temp_bot_messages(bot, user_id):
 
 
 
+async def force_close_android_keyboard(message: Message):
+    """
+    טריק עדין לטלגרם באנדרואיד:
+    שולח הסרת ReplyKeyboard ומוחק מיד את הודעת הניקוי.
+    זה עוזר לסגור מצב הקלדה לפני מסכי Inline.
+    """
+    try:
+        sent = await message.answer(
+            "\u2063",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        try:
+            await sent.delete()
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
 async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None):
     uid = message.from_user.id
 
@@ -2399,6 +2418,8 @@ async def handle_shop(message: Message):
             )
             return
 
+        await force_close_android_keyboard(message)
+
         await send_product_card(message, product)
 
         data["selected_product"] = product
@@ -3160,6 +3181,8 @@ async def handle_shop(message: Message):
 
         data["selected_qty"] = selected_qty
         data["step"] = "qty"
+
+        await force_close_android_keyboard(message)
 
         await message.answer(
             rtl(
