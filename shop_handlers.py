@@ -1149,7 +1149,8 @@ async def send_product_card(message: Message, product):
     if image:
         await send_temp_photo(message, photo=image, caption=caption, parse_mode="HTML")
     else:
-        await send_temp_message(message, caption, parse_mode="HTML")
+        await send_temp_message(message, caption, parse_mode="HTML",
+                disable_web_page_preview=True)
 
 
 def set_pickup_details(data):
