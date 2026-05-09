@@ -692,6 +692,59 @@ def admin_new_order_keyboard(order_number):
     )
 
 
+
+def categories_inline_keyboard():
+    products = get_active_products()
+    keyboard = []
+
+    for index, category in enumerate(products.keys()):
+        keyboard.append([
+            InlineKeyboardButton(
+                text=str(category),
+                callback_data=f"shop_cat:{index}"
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(text="🛒 הסל שלי", callback_data="shop_cart")
+    ])
+    keyboard.append([
+        InlineKeyboardButton(text="⬅️ חזרה", callback_data="shop_back_main")
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def products_inline_keyboard(category):
+    products = get_active_products()
+    items = products.get(category, [])
+    keyboard = []
+
+    for index, product in enumerate(items):
+        stock = int(product.get("stock", 0))
+
+        if stock <= 0:
+            text = f"❌ {product['name']} - אזל מהמלאי"
+        else:
+            text = str(product["name"])
+
+        keyboard.append([
+            InlineKeyboardButton(
+                text=text,
+                callback_data=f"shop_prod:{index}"
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(text="🛒 הסל שלי", callback_data="shop_cart")
+    ])
+    keyboard.append([
+        InlineKeyboardButton(text="⬅️ חזרה לקטגוריות", callback_data="shop_back_categories")
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
 def categories_keyboard():
     products = get_active_products()
 
@@ -1486,7 +1539,7 @@ async def shop(message: Message):
     await send_temp_message(
         message,
         rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"),
-        reply_markup=categories_keyboard(),
+        reply_markup=categories_inline_keyboard(),
         parse_mode="HTML"
     )
 
@@ -1544,7 +1597,7 @@ async def back_categories(message: Message):
     await send_temp_message(
         message,
         rtl("<b>📂 קטגוריות</b>\n\nבחר קטגוריה:"),
-        reply_markup=categories_keyboard(),
+        reply_markup=categories_inline_keyboard(),
         parse_mode="HTML"
     )
 
@@ -1558,7 +1611,7 @@ async def add_more(message: Message):
     await send_temp_message(
         message,
         rtl("<b>➕ הוספת מוצר</b>\n\nבחר קטגוריה:"),
-        reply_markup=categories_keyboard(),
+        reply_markup=categories_inline_keyboard(),
         parse_mode="HTML"
     )
 
@@ -1985,6 +2038,206 @@ async def confirm_order(message: Message):
 
 
 
+
+@router.callback_query(F.data.startswith("shop_cat:"))
+async def shop_category_inline_select(callback: CallbackQuery):
+    uid = callback.from_user.id
+    data = users.setdefault(uid, {"cart": [], "step": None})
+
+    try:
+        category_index = int((callback.data or "").split(":", 1)[1])
+    except Exception:
+        await callback.answer("פעולה לא תקינה.", show_alert=True)
+        return
+
+    products = get_active_products()
+    categories = list(products.keys())
+
+    if category_index < 0 or category_index >= len(categories):
+        await callback.answer("הקטגוריה לא נמצאה.", show_alert=True)
+        return
+
+    category = categories[category_index]
+
+    data["step"] = "product_select"
+    data["category"] = category
+
+    try:
+        await callback.message.edit_text(
+            rtl(f"<b>📂 {h(category)}</b>\n\nבחר מוצר:"),
+            reply_markup=products_inline_keyboard(category),
+            parse_mode="HTML"
+        )
+    except Exception:
+        await callback.message.answer(
+            rtl(f"<b>📂 {h(category)}</b>\n\nבחר מוצר:"),
+            reply_markup=products_inline_keyboard(category),
+            parse_mode="HTML"
+        )
+
+    await callback.answer()
+
+
+@router.callback_query(F.data == "shop_back_categories")
+async def shop_back_categories_inline(callback: CallbackQuery):
+    uid = callback.from_user.id
+    data = users.setdefault(uid, {"cart": [], "step": None})
+    data["step"] = "browse_products"
+    data.pop("category", None)
+    data.pop("selected_product", None)
+    data.pop("selected_qty", None)
+
+    try:
+        await callback.message.edit_text(
+            rtl("<b>📂 קטגוריות</b>\n\nבחר קטגוריה:"),
+            reply_markup=categories_inline_keyboard(),
+            parse_mode="HTML"
+        )
+    except Exception:
+        await callback.message.answer(
+            rtl("<b>📂 קטגוריות</b>\n\nבחר קטגוריה:"),
+            reply_markup=categories_inline_keyboard(),
+            parse_mode="HTML"
+        )
+
+    await callback.answer()
+
+
+@router.callback_query(F.data == "shop_cart")
+async def shop_cart_inline(callback: CallbackQuery):
+    uid = callback.from_user.id
+    data = users.setdefault(uid, {"cart": [], "step": None})
+
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    await callback.message.answer(
+        cart_text(data.get("cart", [])),
+        reply_markup=cart_keyboard(),
+        parse_mode="HTML"
+    )
+
+    await callback.answer()
+
+
+@router.callback_query(F.data == "shop_back_main")
+async def shop_back_main_inline(callback: CallbackQuery):
+    uid = callback.from_user.id
+    data = users.get(uid)
+
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    if data and data.get("cart"):
+        data["step"] = None
+
+        await callback.message.answer(
+            cart_text(data.get("cart", []), title="🛒 הסל שלך"),
+            reply_markup=cart_keyboard(),
+            parse_mode="HTML"
+        )
+    else:
+        users.pop(uid, None)
+
+        await callback.message.answer(
+            rtl("<b>↩️ חזרת לתפריט הראשי</b>"),
+            reply_markup=main_keyboard(callback.from_user.id),
+            parse_mode="HTML"
+        )
+
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("shop_prod:"))
+async def shop_product_inline_select(callback: CallbackQuery):
+    uid = callback.from_user.id
+    data = users.setdefault(uid, {"cart": [], "step": None})
+
+    category = data.get("category")
+
+    if not category:
+        await callback.answer("בחר קטגוריה מחדש.", show_alert=True)
+        return
+
+    try:
+        product_index = int((callback.data or "").split(":", 1)[1])
+    except Exception:
+        await callback.answer("פעולה לא תקינה.", show_alert=True)
+        return
+
+    products = get_active_products()
+    items = products.get(category, [])
+
+    if product_index < 0 or product_index >= len(items):
+        await callback.answer("המוצר לא נמצא.", show_alert=True)
+        return
+
+    product = dict(items[product_index])
+
+    await callback.answer()
+
+    fresh_product = get_product_by_name(product["name"])
+    if fresh_product:
+        product.update(fresh_product)
+
+    stock = int(product.get("stock", 0))
+
+    if stock <= 0:
+        await callback.answer("המוצר אזל מהמלאי.", show_alert=True)
+        return
+
+    already_in_cart = product_qty_in_cart(data.get("cart", []), product["name"])
+    available_left = stock - already_in_cart
+
+    if available_left <= 0:
+        data["step"] = None
+        data.pop("selected_product", None)
+
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+
+        await callback.message.answer(
+            rtl(
+                "<b>📦 כל המלאי הזמין של המוצר כבר נמצא אצלך בסל.</b>\n\n"
+                "אפשר להמשיך להזמנה או לבחור מוצר אחר."
+            ),
+            reply_markup=cart_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    # חשוב: בחירת מוצר נעשית מ-Inline, לכן אין ReplyKeyboard שמקפיץ מקלדת רגילה.
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    await send_product_card(callback.message, product)
+
+    data["selected_product"] = product
+    data["step"] = "qty"
+    data["selected_qty"] = 1
+
+    await callback.message.answer(
+        rtl(
+            "<b>🔢 בחירת כמות</b>\n\n"
+            f"{field('כמות נבחרת', data['selected_qty'])}\n\n"
+            "בחר את הכמות הרצויה להזמנה.\n"
+            "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
+            "רק לאחר בחירת הכמות ולחיצה על 🛒 הוסף לסל,\n"
+            "המוצרים יתווספו לסל ותוכל להמשיך למשלוח או לאיסוף."
+        ),
+        reply_markup=quantity_inline_keyboard(data["selected_qty"]),
+        parse_mode="HTML"
+    )
+
+
 @router.callback_query(F.data.startswith("qty_action:"))
 async def quantity_inline_action(callback: CallbackQuery):
     uid = callback.from_user.id
@@ -2010,7 +2263,7 @@ async def quantity_inline_action(callback: CallbackQuery):
 
         await callback.message.answer(
             rtl("<b>בחר מוצר:</b>"),
-            reply_markup=products_keyboard(category),
+            reply_markup=products_inline_keyboard(category),
             parse_mode="HTML"
         )
         await callback.answer()
