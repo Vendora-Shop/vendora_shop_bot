@@ -44,7 +44,7 @@ def admin_keyboard():
             [KeyboardButton(text="👥 לקוחות")],
             [KeyboardButton(text=support_tickets_button_text())],
             [KeyboardButton(text="🔄 עדכן סטטוס הזמנה")],
-            [KeyboardButton(text="🧹 מחק את כל ההזמנות")],
+            [KeyboardButton(text="🧹 איפוס מערכת הזמנות")],
             [KeyboardButton(text="➕ הוסף מוצר"), KeyboardButton(text="📦 רשימת מוצרים")],
             [KeyboardButton(text="✏️ שנה מחיר"), KeyboardButton(text="📝 שנה תיאור")],
             [KeyboardButton(text="✏️ אפס והגדר מלאי חדש"), KeyboardButton(text="➕ הגדל מלאי קיים")],
