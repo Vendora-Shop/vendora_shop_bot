@@ -30,6 +30,18 @@ from pdf_generator import create_invoice_pdf
 router = Router()
 
 
+def is_admin_panel_active_for_shop_guard(user_id):
+    if user_id != ADMIN_ID:
+        return False
+
+    try:
+        from admin_handlers import admin_states
+        state = admin_states.get(user_id)
+        return bool(state and state.get("step") and state.get("step") != "admin")
+    except Exception:
+        return False
+
+
 @router.message(F.text == "✅ הבעיה נפתרה")
 async def customer_close_support_ticket_button(message: Message):
     await close_customer_open_support_ticket(message)
@@ -1656,6 +1668,9 @@ async def clear_cart(message: Message):
 
 @router.message(F.text == "❌ בטל הזמנה")
 async def cancel_order(message: Message):
+    if is_admin_panel_active_for_shop_guard(message.from_user.id):
+        return
+
     uid = message.from_user.id
 
     await reset_customer_to_main_menu(
@@ -1979,6 +1994,9 @@ async def back_from_order_summary_to_previous_step(message: Message):
 
 @router.message(F.text == "✅ אשר הזמנה")
 async def confirm_order(message: Message):
+    if is_admin_panel_active_for_shop_guard(message.from_user.id):
+        return
+
     await consume_customer_click(message)
     uid = message.from_user.id
     data = users.get(uid)
