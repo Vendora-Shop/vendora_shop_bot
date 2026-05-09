@@ -1056,7 +1056,8 @@ def fulfillment_keyboard():
             [KeyboardButton(text="🛍️ איסוף עצמי מהחנות")],
             [KeyboardButton(text="❌ בטל הזמנה")]
         ],
-        resize_keyboard=True
+        resize_keyboard=True,
+        one_time_keyboard=True
     )
 
 
@@ -2244,6 +2245,16 @@ async def handle_shop(message: Message):
         return
 
     if data.get("step") == "fulfillment_choice":
+        if txt == "❌ בטל הזמנה":
+            users.pop(uid, None)
+
+            await message.answer(
+                rtl("<b>❌ ההזמנה בוטלה.</b>"),
+                reply_markup=main_keyboard(message.from_user.id),
+                parse_mode="HTML"
+            )
+            return
+
         if txt in {"🚚 משלוח עד הבית", "🛍️ איסוף עצמי מהחנות"}:
             await consume_customer_click(message)
             await delete_temp_bot_messages(message.bot, uid)
@@ -2298,10 +2309,9 @@ async def handle_shop(message: Message):
                     f"{pickup_text()}\n\n"
                     "<b>📝 פרטי לקוח</b>\n"
                     "רשום את השם המלא שלך:"
-                ,
+                ),
+                parse_mode="HTML",
                 disable_web_page_preview=True
-            ),
-                parse_mode="HTML"
             )
             return
 
