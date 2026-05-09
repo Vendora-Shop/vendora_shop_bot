@@ -1472,7 +1472,23 @@ async def back_to_admin_panel_from_shop(message: Message):
 @router.message(F.text == "⬅️ חזרה")
 async def back_main(message: Message):
     await consume_customer_click(message)
-    users.pop(message.from_user.id, None)
+    uid = message.from_user.id
+    data = users.get(uid)
+
+    if data and data.get("cart"):
+        data["step"] = None
+
+        await delete_temp_bot_messages(message.bot, uid)
+
+        await send_temp_message(
+            message,
+            cart_text(data.get("cart", []), title="🛒 הסל שלך"),
+            reply_markup=cart_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    users.pop(uid, None)
 
     await send_temp_message(
         message,
