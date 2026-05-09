@@ -1601,7 +1601,8 @@ async def edit_details(message: Message):
 
     await message.answer(
         rtl("<b>✏️ עדכון פרטים</b>\n\nרשום את השם המלא שלך:"),
-        parse_mode="HTML"
+        reply_markup=ReplyKeyboardRemove(),
+                parse_mode="HTML"
     )
 
 
@@ -2094,6 +2095,7 @@ async def quantity_inline_action(callback: CallbackQuery):
                 "<b>✏️ הזנת כמות</b>\n\n"
                 "רשום את הכמות הרצויה במספרים בלבד."
             ),
+            reply_markup=ReplyKeyboardRemove(),
             parse_mode="HTML"
         )
         await callback.answer()
@@ -2503,6 +2505,7 @@ async def handle_shop(message: Message):
             data["step"] = "name"
             await message.answer(
                 rtl("<b>📝 פרטי הזמנה</b>\n\nרשום את השם המלא שלך:"),
+                reply_markup=ReplyKeyboardRemove(),
                 parse_mode="HTML"
             )
             return
@@ -2535,7 +2538,9 @@ async def handle_shop(message: Message):
                     f"{pickup_text()}\n\n"
                     "<b>📝 פרטי לקוח</b>\n"
                     "רשום את השם המלא שלך:"
-                ),
+                ,
+                reply_markup=ReplyKeyboardRemove()
+            ),
                 parse_mode="HTML",
                 disable_web_page_preview=True
             )
@@ -2694,7 +2699,8 @@ async def handle_shop(message: Message):
 
         await message.answer(
             rtl("<b>📍 עיר / יישוב</b>\n\nרשום את שם העיר או היישוב."),
-            parse_mode="HTML"
+            reply_markup=ReplyKeyboardRemove(),
+                parse_mode="HTML"
         )
         return
 
@@ -2781,7 +2787,8 @@ async def handle_shop(message: Message):
                 data["step"] = "name"
                 await message.answer(
                     rtl("<b>⚠️ לא נמצאו פרטים שמורים.</b>\n\nרשום את השם המלא שלך:"),
-                    parse_mode="HTML"
+                    reply_markup=ReplyKeyboardRemove(),
+                parse_mode="HTML"
                 )
                 return
 
@@ -2884,7 +2891,9 @@ async def handle_shop(message: Message):
                     f"{field('נושא הפנייה', subject)}\n\n"
                     "רשום מספר פלאפון תקין.\n"
                     "לדוגמה: 0547937503"
-                ),
+                ,
+                reply_markup=ReplyKeyboardRemove()
+            ),
                 reply_markup=support_customer_keyboard(message.from_user.id),
                 parse_mode="HTML"
             )
@@ -2960,6 +2969,8 @@ async def handle_shop(message: Message):
                 f"{field('נושא הפנייה', data.get('support_subject', '-'))}\n"
                 f"{field('פלאפון', phone)}\n\n"
                 "כתוב עכשיו את ההודעה שלך ונעביר אותה לנציג שירות."
+            ,
+                reply_markup=ReplyKeyboardRemove()
             ),
             reply_markup=support_customer_keyboard(message.from_user.id),
             parse_mode="HTML"
@@ -3272,7 +3283,9 @@ async def handle_shop(message: Message):
                 rtl(
                     "<b>✏️ הזנת כמות</b>\n\n"
                     "רשום את הכמות הרצויה במספרים בלבד."
-                ),
+                ,
+                reply_markup=ReplyKeyboardRemove()
+            ),
                 parse_mode="HTML"
             )
             return
@@ -3340,7 +3353,8 @@ async def handle_shop(message: Message):
         data["step"] = "phone"
         await message.answer(
             rtl("<b>📞 מספר פלאפון</b>\n\nרשום מספר פלאפון תקין.\nלדוגמה: 0547937503"),
-            parse_mode="HTML"
+            reply_markup=ReplyKeyboardRemove(),
+                parse_mode="HTML"
         )
         return
 
@@ -3379,6 +3393,8 @@ async def handle_shop(message: Message):
                 "<b>📍 עיר / יישוב למשלוח</b>\n\n"
                 "רשום את שם העיר, המושב או הקיבוץ למשלוח.\n"
                 "לדוגמה: אשדוד"
+            ,
+                reply_markup=ReplyKeyboardRemove()
             ),
             parse_mode="HTML"
         )
@@ -3425,6 +3441,8 @@ async def handle_shop(message: Message):
                 delivery_message
                 + "<b>📍 כתובת למשלוח</b>\n"
                 "רשום רחוב ומספר בית."
+            ,
+                reply_markup=ReplyKeyboardRemove()
             ),
             parse_mode="HTML"
         )
@@ -3442,7 +3460,8 @@ async def handle_shop(message: Message):
         data["step"] = "floor"
         await message.answer(
             rtl("<b>🏢 קומה</b>\n\nאיזו קומה?\nאם זה קרקע, רשום 0."),
-            parse_mode="HTML"
+            reply_markup=ReplyKeyboardRemove(),
+                parse_mode="HTML"
         )
         return
 
@@ -3458,7 +3477,8 @@ async def handle_shop(message: Message):
         data["step"] = "apartment"
         await message.answer(
             rtl("<b>🚪 דירה</b>\n\nמספר דירה?\nאם אין דירה, רשום 0."),
-            parse_mode="HTML"
+            reply_markup=ReplyKeyboardRemove(),
+                parse_mode="HTML"
         )
         return
 
@@ -3466,6 +3486,7 @@ async def handle_shop(message: Message):
         if not txt.isdigit():
             await message.answer(
                 rtl("<b>⚠️ נא לרשום מספר דירה במספרים בלבד.</b>"),
+                reply_markup=ReplyKeyboardRemove(),
                 parse_mode="HTML"
             )
             return
