@@ -2294,19 +2294,36 @@ async def handle_shop(message: Message):
 
         if txt == "✅ הבעיה נפתרה":
             if ticket_number:
-                close_support_ticket(ticket_number)
-                add_support_message(
-                    ticket_number,
-                    "customer",
-                    message.from_user.full_name,
-                    "הלקוח סימן שהבעיה נפתרה."
-                )
+                latest_ticket = get_support_ticket(ticket_number)
 
-                await notify_admin_ticket_closed_by_customer(
-                    message.bot,
-                    ticket_number,
-                    message.from_user.full_name
-                )
+                if latest_ticket and latest_ticket.get("status") == "closed":
+                    users.pop(uid, None)
+
+                    await message.answer(
+                        rtl(
+                            "<b>ℹ️ הפנייה כבר סגורה.</b>\n"
+                            "חזרת לתפריט הראשי."
+                        ),
+                        reply_markup=main_keyboard(message.from_user.id),
+                        parse_mode="HTML"
+                    )
+                    return
+
+                closed_ok = close_support_ticket(ticket_number)
+
+                if closed_ok:
+                    add_support_message(
+                        ticket_number,
+                        "customer",
+                        message.from_user.full_name,
+                        "הלקוח סימן שהבעיה נפתרה."
+                    )
+
+                    await notify_admin_ticket_closed_by_customer(
+                        message.bot,
+                        ticket_number,
+                        message.from_user.full_name
+                    )
 
             users.pop(uid, None)
 
