@@ -684,9 +684,9 @@ def order_notification_keyboard(order_number, status):
             ])
 
     else:
-        buttons.append([
-            InlineKeyboardButton(text="👁️ צפייה בלבד", callback_data=f"order_action:view:{order_number}")
-        ])
+        # בסטטוס סופי אין צורך בכפתור "צפייה בלבד".
+        # ההזמנה נשארת מוצגת כהודעה רגילה ללא כפתורים.
+        return None
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
