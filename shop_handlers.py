@@ -568,6 +568,7 @@ def is_customer_system_button(text):
         "✏️ הזן פרטים חדשים",
         "✅ סימולציית תשלום הצליחה",
         "⬅️ חזרה לסיכום הזמנה",
+        "⬅️ חזרה לסל",
         "❌ ביטול תשלום",
         "🔁 הזמן שוב",
         "⬅️ חזרה להזמנות שלי",
@@ -1096,6 +1097,7 @@ def fulfillment_keyboard():
         keyboard=[
             [KeyboardButton(text="🚚 משלוח עד הבית")],
             [KeyboardButton(text="🛍️ איסוף עצמי מהחנות")],
+            [KeyboardButton(text="⬅️ חזרה לסל")],
             [KeyboardButton(text="❌ בטל הזמנה")]
         ],
         resize_keyboard=True,
@@ -2330,6 +2332,19 @@ async def handle_shop(message: Message):
         return
 
     if data.get("step") == "fulfillment_choice":
+        if txt == "⬅️ חזרה לסל":
+            data["step"] = None
+
+            await delete_temp_bot_messages(message.bot, uid)
+
+            await send_temp_message(
+                message,
+                cart_text(data.get("cart", []), title="🛒 הסל שלך"),
+                reply_markup=cart_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
         if txt == "❌ בטל הזמנה":
             await reset_customer_to_main_menu(
                 message,
