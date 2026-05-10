@@ -3274,13 +3274,8 @@ async def add_address_start(message: Message):
         message,
         rtl(
             "<b>➕ הוספת כתובת חדשה</b>\n\n"
-            "רשום שם קצר שיעזור לך לזהות את הכתובת.\n\n"
-            "לדוגמה:\n"
-            "🏠 בית\n"
-            "🏢 עבודה\n"
-            "👨‍👩‍👧 הורים\n"
-            "📦 מחסן\n\n"
-            "השם יופיע ברשימת הכתובות השמורות שלך."
+            "רשום שם לכתובת.\n"
+            "לדוגמה: בית / עבודה / הורים"
         ),
         reply_markup=add_address_cancel_keyboard(),
         parse_mode="HTML"
@@ -3783,17 +3778,33 @@ async def handle_shop(message: Message):
 
         if len(street) < 2 or not street_status.get("ok"):
             await delete_customer_message(message)
+
+            # לא משכפלים את מסך הרחוב ואת כפתורי החזרה.
+            # נשארים באותו שלב, מציגים אזהרה אחת בלבד, והלקוח יכול לנסות שוב.
             if not data.get("address_street_warning_sent"):
                 if street_status.get("reason") == "missing_number":
-                    warning_text = "<b>⚠️ נא לרשום רחוב ומספר בית.</b>\nלדוגמה: הרצל 10"
+                    warning_text = (
+                        "<b>⚠️ נא לרשום רחוב ומספר בית.</b>\n\n"
+                        "לדוגמה: הרצל 10"
+                    )
                 elif street_status.get("reason") == "not_found":
-                    warning_text = "<b>⚠️ לא נמצאה כתובת כזאת בעיר שבחרת.</b>\nבדוק את שם הרחוב ומספר הבית ונסה שוב."
+                    warning_text = (
+                        "<b>⚠️ הכתובת לא נמצאה בעיר שבחרת.</b>\n\n"
+                        "בדוק:\n"
+                        "• שם רחוב\n"
+                        "• מספר בית\n"
+                        "• שגיאות כתיב\n\n"
+                        "ונסה שוב."
+                    )
                 else:
-                    warning_text = "<b>⚠️ כתובת לא תקינה.</b>\nנא לרשום רחוב ומספר בית. לדוגמה: הרצל 10"
+                    warning_text = (
+                        "<b>⚠️ כתובת לא תקינה.</b>\n\n"
+                        "נא לרשום רחוב ומספר בית.\n"
+                        "לדוגמה: הרצל 10"
+                    )
 
                 sent = await message.answer(
                     rtl(warning_text),
-                    reply_markup=add_address_street_keyboard(),
                     parse_mode="HTML"
                 )
                 data["address_street_warning_sent"] = True
