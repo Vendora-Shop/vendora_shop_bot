@@ -1687,6 +1687,12 @@ def my_orders_keyboard():
     ]))
 
 
+def back_only_main_keyboard():
+    return _inline(_wide_buttons([
+        _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
+    ]))
+
+
 def reorder_select_keyboard(orders):
     rows = []
     for order in orders:
@@ -1915,8 +1921,14 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         elif raw == "ui:saved:continue": text = "✅ המשך עם הפרטים השמורים"
         elif raw == "ui:saved:new": text = "✏️ הזן פרטים חדשים"
 
-        elif raw == "ui:orders:reorder": text = "🔁 הזמן שוב"
-        elif raw == "ui:orders:back_my_orders": text = "⬅️ חזרה להזמנות שלי"
+        elif raw == "ui:orders:reorder":
+            await _dispatch_customer_inline(callback, "🔁 הזמן שוב")
+            await callback.answer()
+            return
+        elif raw == "ui:orders:back_my_orders":
+            await _dispatch_customer_inline(callback, "📦 ההזמנות שלי")
+            await callback.answer()
+            return
 
         elif raw == "ui:addr:show": text = "📋 הצג כתובות"
         elif raw == "ui:addr:add": text = "➕ הוסף כתובת"
@@ -2028,18 +2040,24 @@ async def my_details(message: Message):
     profile = get_customer_profile(uid)
 
     if not profile:
-        await message.answer(
+        await send_temp_message(
+            message,
             rtl(
                 "<b>👤 הפרטים שלי</b>\n\n"
                 "אין פרטים שמורים עדיין.\n"
                 "אחרי ההזמנה הראשונה, הבוט ישמור את הפרטים שלך להזמנות הבאות."
             ),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=back_only_main_keyboard(),
             parse_mode="HTML"
         )
         return
 
-    await message.answer(saved_profile_text(profile), reply_markup=main_keyboard(message.from_user.id), parse_mode="HTML")
+    await send_temp_message(
+        message,
+        saved_profile_text(profile),
+        reply_markup=back_only_main_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "🛒 חנות")
@@ -2875,7 +2893,8 @@ async def my_orders(message: Message):
 
     users[uid]["step"] = "my_orders"
 
-    await message.answer(
+    await send_temp_message(
+        message,
         customer_orders_text(orders),
         reply_markup=my_orders_keyboard(),
         parse_mode="HTML"
@@ -2904,7 +2923,8 @@ async def reorder_choose_order(message: Message):
 
     users[uid]["step"] = "reorder_select"
 
-    await message.answer(
+    await send_temp_message(
+        message,
         reorder_orders_list_text(orders),
         reply_markup=reorder_select_keyboard(orders),
         parse_mode="HTML"
