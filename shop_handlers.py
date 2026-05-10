@@ -25,7 +25,7 @@ from database import (
     get_support_ticket,
     close_support_ticket,
 )
-from delivery import get_delivery_price
+from delivery_regions import get_delivery_price, normalize_israel_location, suggest_israel_locations
 from pdf_generator import create_invoice_pdf
 
 router = Router()
@@ -1762,6 +1762,90 @@ def address_actions_keyboard():
     ]))
 
 
+def add_address_cancel_keyboard():
+    return _inline(_wide_buttons([
+        _btn("⬅️ חזרה לכתובות", "ui:addr:cancel_add"),
+        _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
+    ]))
+
+
+def city_suggestions_keyboard(suggestions, mode="address"):
+    rows = []
+
+    for index, city in enumerate((suggestions or [])[:6]):
+        rows.append([_btn(f"📍 {city}", f"ui:city:{index}")])
+
+    if mode == "order":
+        rows.append([_btn("❌ בטל הזמנה", "ui:nav:cancel")])
+    else:
+        rows.append([_btn("⬅️ חזרה לכתובות", "ui:addr:cancel_add")])
+
+    rows.append([_btn("⬅️ חזרה לתפריט", "ui:nav:main")])
+
+    return _inline(rows)
+
+
+async def delete_city_warning_message(bot, data):
+    message_id = data.pop("city_warning_message_id", None)
+
+    if not message_id:
+        return
+
+    try:
+        await bot.delete_message(data.get("telegram_id"), message_id)
+    except Exception:
+        pass
+
+
+async def send_city_not_found_message(message, data, raw_city, mode="address"):
+    suggestions = suggest_israel_locations(raw_city, limit=6)
+    data["city_suggestions"] = suggestions
+
+    query_key = str(raw_city or "").strip()
+    last_query = data.get("last_city_suggestion_query")
+
+    # לא מציפים את הלקוח באותה הודעה שוב ושוב.
+    if data.get("city_warning_sent") and last_query == query_key:
+        return
+
+    data["city_warning_sent"] = True
+    data["last_city_suggestion_query"] = query_key
+
+    old_message_id = data.pop("city_warning_message_id", None)
+    if old_message_id:
+        try:
+            await message.bot.delete_message(message.from_user.id, old_message_id)
+        except Exception:
+            pass
+
+    if suggestions:
+        body = (
+            "<b>⚠️ אין עיר/יישוב כזה.</b>\n"
+            "בחר מהרשימה או רשום שם מלא של עיר, מושב, קיבוץ או יישוב בישראל."
+        )
+    else:
+        body = (
+            "<b>⚠️ אין עיר/יישוב כזה.</b>\n"
+            "נא לרשום שם מלא של עיר, מושב, קיבוץ או יישוב בישראל."
+        )
+
+    sent = await message.answer(
+        rtl(body),
+        reply_markup=city_suggestions_keyboard(suggestions, mode),
+        parse_mode="HTML"
+    )
+
+    data["city_warning_message_id"] = sent.message_id
+    data.setdefault("temp_bot_messages", []).append(sent.message_id)
+
+
+def clear_city_autocomplete_state(data):
+    data.pop("city_warning_sent", None)
+    data.pop("last_city_suggestion_query", None)
+    data.pop("city_suggestions", None)
+    data.pop("address_city_warning_sent", None)
+
+
 def support_subject_keyboard():
     subjects = [
         "📦 שאלה על הזמנה קיימת",
@@ -2052,8 +2136,15 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         elif raw == "ui:addr:menu": text = "⬅️ חזרה לכתובות"
         elif raw == "ui:addr:delete": text = "🗑️ מחק כתובת"
         elif raw == "ui:addr:back_list": text = "⬅️ חזרה לרשימת כתובות"
+        elif raw == "ui:addr:cancel_add": text = "⬅️ חזרה לכתובות"
         elif raw.startswith("ui:addr:id:"):
             text = f"🏠 {parts[-1]}"
+
+        elif raw.startswith("ui:city:"):
+            suggestions = data.get("city_suggestions") or []
+            idx = int(parts[-1])
+            if 0 <= idx < len(suggestions):
+                text = suggestions[idx]
 
         elif raw.startswith("ui:cat:"):
             products = get_active_products()
@@ -3150,6 +3241,7 @@ async def add_address_start(message: Message):
             "רשום שם לכתובת.\n"
             "לדוגמה: בית / עבודה / הורים"
         ),
+        reply_markup=add_address_cancel_keyboard(),
         parse_mode="HTML"
     )
 
@@ -3266,6 +3358,21 @@ async def handle_shop(message: Message):
         return
 
     if not data:
+        return
+
+    if data.get("step") in {"add_address_label", "add_address_city", "add_address_street", "add_address_floor", "add_address_apartment"} and txt in {"⬅️ חזרה לכתובות", "❌ ביטול הוספת כתובת"}:
+        data.pop("new_address", None)
+        clear_city_autocomplete_state(data)
+        data.pop("city_warning_message_id", None)
+        data["step"] = "addresses_menu"
+
+        await delete_temp_bot_messages(message.bot, uid)
+        await send_temp_message(
+            message,
+            rtl("<b>🏠 הכתובות שלי</b>\n\nבחר פעולה מהתפריט."),
+            reply_markup=addresses_menu_keyboard(),
+            parse_mode="HTML"
+        )
         return
 
     if data.get("step") == "payment_simulation":
@@ -3541,26 +3648,38 @@ async def handle_shop(message: Message):
 
         await message.answer(
             rtl("<b>📍 עיר / יישוב</b>\n\nרשום את שם העיר או היישוב."),
-            reply_markup=ReplyKeyboardRemove(),
-                parse_mode="HTML"
+            reply_markup=add_address_cancel_keyboard(),
+            parse_mode="HTML"
         )
         return
 
     if data.get("step") == "add_address_city":
         city = txt.strip()
+        normalized_city = normalize_israel_location(city)
 
-        if len(city) < 2:
-            await message.answer(
-                rtl("<b>⚠️ שם עיר/יישוב קצר מדי.</b>"),
-                parse_mode="HTML"
-            )
+        if len(city) < 2 or has_digit(city) or not normalized_city:
+            await delete_customer_message(message)
+            await send_city_not_found_message(message, data, city, mode="address")
             return
+
+        old_warning_id = data.pop("city_warning_message_id", None)
+        if old_warning_id:
+            try:
+                await message.bot.delete_message(uid, old_warning_id)
+            except Exception:
+                pass
+
+        clear_city_autocomplete_state(data)
+
+        # שומרים את שם היישוב כפי שהוא מופיע במאגר הרשמי.
+        city = normalized_city
 
         data["new_address"]["city"] = city
         data["step"] = "add_address_street"
 
         await message.answer(
             rtl("<b>🏠 רחוב ומספר בית</b>\n\nלדוגמה: הרצל 10"),
+            reply_markup=add_address_cancel_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -3571,6 +3690,7 @@ async def handle_shop(message: Message):
         if len(street) < 2:
             await message.answer(
                 rtl("<b>⚠️ כתובת קצרה מדי.</b>"),
+                reply_markup=add_address_cancel_keyboard(),
                 parse_mode="HTML"
             )
             return
@@ -3580,6 +3700,7 @@ async def handle_shop(message: Message):
 
         await message.answer(
             rtl("<b>קומה</b>\n\nאם אין, רשום 0."),
+            reply_markup=add_address_cancel_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -3590,6 +3711,7 @@ async def handle_shop(message: Message):
 
         await message.answer(
             rtl("<b>דירה</b>\n\nאם אין, רשום 0."),
+            reply_markup=add_address_cancel_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -4299,25 +4421,28 @@ async def handle_shop(message: Message):
         return
 
     if data.get("step") == "city":
-        if len(txt) < 2 or has_digit(txt):
-            await message.answer(
-                rtl("<b>⚠️ נא לרשום שם יישוב תקין.</b>"),
-                parse_mode="HTML"
-            )
+        normalized_city = normalize_israel_location(txt)
+
+        if len(txt) < 2 or has_digit(txt) or not normalized_city:
+            await delete_customer_message(message)
+            await send_city_not_found_message(message, data, txt, mode="order")
             return
 
-        delivery_price, base_city, status = get_delivery_price(txt)
+        old_warning_id = data.pop("city_warning_message_id", None)
+        if old_warning_id:
+            try:
+                await message.bot.delete_message(uid, old_warning_id)
+            except Exception:
+                pass
 
-        if status == "city_not_found":
-            await message.answer(
-                rtl("<b>⚠️ היישוב לא נמצא במאגר.</b>\nנא לרשום יישוב תקין."),
-                parse_mode="HTML"
-            )
-            return
+        clear_city_autocomplete_state(data)
 
-        data["city"] = txt
+        city = normalized_city
+        delivery_price, base_city, status = get_delivery_price(city)
 
-        if status == "no_delivery_price" or delivery_price is None:
+        data["city"] = city
+
+        if status == "no_delivery_price" or status == "city_not_found" or delivery_price is None:
             data["delivery_price"] = 0
             data["base_city"] = base_city or "לתיאום מול נציג"
             data["delivery_pending"] = True
