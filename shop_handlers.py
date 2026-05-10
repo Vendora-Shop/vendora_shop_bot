@@ -42,6 +42,28 @@ def is_admin_panel_active_for_shop_guard(user_id):
         return False
 
 
+async def safe_send_order_pdf(message, order_id):
+    try:
+        pdf_path = create_order_pdf(order_id)
+
+        if not pdf_path:
+            return False
+
+        from aiogram.types import FSInputFile
+        await message.answer_document(
+            FSInputFile(pdf_path),
+            caption=rtl(f"<b>📄 סיכום הזמנה {h(order_id)}</b>"),
+            parse_mode="HTML",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return True
+
+    except Exception:
+        # לא מפילים את ההזמנה בגלל תקלה רגעית ביצירת PDF.
+        return False
+
+
+
 @router.message(F.text == "✅ הבעיה נפתרה")
 async def customer_close_support_ticket_button(message: Message):
     await close_customer_open_support_ticket(message)
@@ -2038,7 +2060,8 @@ async def submit_paid_order(message: Message, data):
         except Exception:
             await message.answer(
                 rtl("<b>⚠️ ההזמנה נשמרה, אבל לא הצלחתי ליצור PDF כרגע.</b>"),
-                parse_mode="HTML"
+                parse_mode="HTML",
+                reply_markup=ReplyKeyboardRemove()
             )
 
     users.pop(uid, None)
