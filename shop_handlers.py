@@ -1817,6 +1817,63 @@ async def _dispatch_customer_inline(callback: CallbackQuery, text: str):
     return await handle_shop(proxy)
 
 
+
+async def restore_reorder_from_inline(callback: CallbackQuery, order_number: str):
+    """שחזור הזמנה חוזרת בלי לעבור דרך טקסט מדומה — מונע שגיאות callback ומחזיר flow נקי."""
+    uid = callback.from_user.id
+    data = users.setdefault(uid, {"cart": [], "step": None})
+
+    order = get_order_by_number(order_number)
+
+    if not order or int(order.get("telegram_id") or 0) != uid:
+        await delete_temp_bot_messages(callback.message.bot, uid)
+        sent = await callback.message.answer(
+            widen_inline_screen_text(rtl("<b>⚠️ ההזמנה לא נמצאה או אינה שייכת לחשבון שלך.</b>")),
+            reply_markup=my_orders_keyboard(),
+            parse_mode="HTML"
+        )
+        data.setdefault("temp_bot_messages", []).append(sent.message_id)
+        await callback.answer()
+        return
+
+    cloned_cart, unavailable_products = clone_cart_from_order(order)
+
+    if not cloned_cart:
+        await delete_temp_bot_messages(callback.message.bot, uid)
+        sent = await callback.message.answer(
+            widen_inline_screen_text(rtl("<b>⚠️ המוצר שבחרת אזל מהמלאי.</b>")),
+            reply_markup=my_orders_keyboard(),
+            parse_mode="HTML"
+        )
+        data.setdefault("temp_bot_messages", []).append(sent.message_id)
+        await callback.answer()
+        return
+
+    data["cart"] = cloned_cart
+    data["step"] = "cart"
+
+    await delete_temp_bot_messages(callback.message.bot, uid)
+
+    if unavailable_products:
+        warn = await callback.message.answer(
+            widen_inline_screen_text(rtl("<b>⚠️ חלק מהמוצרים אזלו מהמלאי ולא נוספו לסל.</b>")),
+            parse_mode="HTML"
+        )
+        data.setdefault("temp_bot_messages", []).append(warn.message_id)
+
+    sent = await callback.message.answer(
+        widen_inline_screen_text(rtl(
+            "<b>✅ ההזמנה שוחזרה לסל</b>\n\n"
+            f"{field('שוחזר מהזמנה', order_number)}\n\n"
+            "המוצרים הזמינים נוספו לסל הקניות שלך.\n"
+            "לאחר אישור ההזמנה ייווצר מספר הזמנה חדש."
+        )),
+        reply_markup=cart_keyboard(),
+        parse_mode="HTML"
+    )
+    data.setdefault("temp_bot_messages", []).append(sent.message_id)
+    await callback.answer()
+
 @router.callback_query(F.data.startswith("ui:"))
 async def customer_inline_ui_router(callback: CallbackQuery):
     uid = callback.from_user.id
@@ -1888,7 +1945,8 @@ async def customer_inline_ui_router(callback: CallbackQuery):
 
         elif raw.startswith("ui:reorder:"):
             order_number = raw.split(":", 2)[2]
-            text = f"🔁 {order_number}"
+            await restore_reorder_from_inline(callback, order_number)
+            return
 
         elif raw.startswith("ui:support:subject:"):
             subjects = ["📦 שאלה על הזמנה קיימת", "🚚 משלוח / איסוף", "💳 תשלום", "🛍️ מוצר / מלאי", "📝 שינוי פרטים", "❓ אחר"]
@@ -1927,10 +1985,19 @@ async def customer_inline_ui_router(callback: CallbackQuery):
 
 @router.message(CommandStart())
 async def start(message: Message):
-    users.pop(message.from_user.id, None)
-    users[message.from_user.id] = {
+    uid = message.from_user.id
+
+    # חשוב: קודם מוחקים מסכים קודמים ורק אחר כך מאפסים state.
+    # אם עושים users.pop לפני המחיקה — נאבד את temp_bot_messages ונשארים חלונות ישנים במסך.
+    try:
+        await delete_temp_bot_messages(message.bot, uid)
+    except Exception:
+        pass
+
+    users[uid] = {
         "cart": [],
-        "step": "start"
+        "step": "start",
+        "temp_bot_messages": []
     }
 
     customer_name = message.from_user.first_name or "לקוח יקר"
