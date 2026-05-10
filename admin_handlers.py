@@ -128,7 +128,6 @@ def is_valid_admin_button_text(text):
         "✅ סמן כהושלם",
         "✅ סמן כנאסף",
         "❌ בטל הזמנה",
-        "👁️ צפייה בלבד",
         "📋 רשימת לקוחות",
         "🔎 חפש לקוח",
         "⬅️ חזרה ללקוחות",
@@ -1030,7 +1029,6 @@ def order_action_keyboard(order_status, pickup=False):
     if order_status in {"done", "cancelled"}:
         return ReplyKeyboardMarkup(
             keyboard=[
-                [KeyboardButton(text="👁️ צפייה בלבד")],
                 [KeyboardButton(text="⬅️ חזרה לרשימת הזמנות")],
                 [KeyboardButton(text="⬅️ חזרה לניהול")]
             ],
