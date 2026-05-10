@@ -2622,6 +2622,14 @@ async def quantity_inline_action(callback: CallbackQuery):
             return
 
         data["step"] = "qty_manual"
+        data["qty_manual_invalid_warned"] = False
+
+        old_warning_message_id = data.pop("qty_manual_warning_message_id", None)
+        if old_warning_message_id:
+            try:
+                await callback.message.bot.delete_message(uid, old_warning_message_id)
+            except Exception:
+                pass
 
         old_manual_message_id = data.get("qty_manual_message_id")
         if old_manual_message_id:
@@ -3655,11 +3663,17 @@ async def handle_shop(message: Message):
             return
 
         if not txt.isdigit():
-            await message.answer(
-                rtl("<b>⚠️ רשום את הכמות במספרים בלבד.</b>"),
-                reply_markup=ReplyKeyboardRemove(),
-                parse_mode="HTML"
-            )
+            await delete_customer_message(message)
+
+            if not data.get("qty_manual_invalid_warned"):
+                data["qty_manual_invalid_warned"] = True
+                sent_warning = await message.answer(
+                    rtl("<b>⚠️ רשום את הכמות במספרים בלבד.</b>"),
+                    reply_markup=ReplyKeyboardRemove(),
+                    parse_mode="HTML"
+                )
+                data["qty_manual_warning_message_id"] = sent_warning.message_id
+
             return
 
         selected_qty = int(txt)
@@ -3672,6 +3686,13 @@ async def handle_shop(message: Message):
             data.pop("selected_qty", None)
             data.pop("qty_manual_message_id", None)
             data.pop("qty_manual_lock", None)
+            data.pop("qty_manual_invalid_warned", None)
+            old_warning_message_id = data.pop("qty_manual_warning_message_id", None)
+            if old_warning_message_id:
+                try:
+                    await message.bot.delete_message(uid, old_warning_message_id)
+                except Exception:
+                    pass
 
             await message.answer(
                 rtl("<b>❌ המוצר לא זמין כרגע.</b>"),
@@ -3717,6 +3738,15 @@ async def handle_shop(message: Message):
                 await message.bot.delete_message(uid, old_manual_message_id)
             except Exception:
                 pass
+
+        old_warning_message_id = data.pop("qty_manual_warning_message_id", None)
+        if old_warning_message_id:
+            try:
+                await message.bot.delete_message(uid, old_warning_message_id)
+            except Exception:
+                pass
+
+        data.pop("qty_manual_invalid_warned", None)
 
         data["cart"].append({
             "name": fresh_product["name"],
@@ -3849,6 +3879,14 @@ async def handle_shop(message: Message):
                 return
 
             data["step"] = "qty_manual"
+            data["qty_manual_invalid_warned"] = False
+
+            old_warning_message_id = data.pop("qty_manual_warning_message_id", None)
+            if old_warning_message_id:
+                try:
+                    await message.bot.delete_message(uid, old_warning_message_id)
+                except Exception:
+                    pass
 
             old_manual_message_id = data.get("qty_manual_message_id")
             if old_manual_message_id:
