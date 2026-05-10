@@ -25,7 +25,7 @@ from database import (
     get_support_ticket,
     close_support_ticket,
 )
-from delivery_regions import get_delivery_price, normalize_israel_location, suggest_israel_locations
+from delivery_regions import get_delivery_price, normalize_israel_location, suggest_israel_locations, validate_street_address
 from pdf_generator import create_invoice_pdf
 
 router = Router()
@@ -1769,6 +1769,30 @@ def add_address_cancel_keyboard():
     ]))
 
 
+def add_address_street_keyboard():
+    return _inline(_wide_buttons([
+        _btn("⬅️ חזרה לעיר / יישוב", "ui:addr:back_city"),
+        _btn("⬅️ חזרה לכתובות", "ui:addr:cancel_add"),
+        _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
+    ]))
+
+
+def add_address_floor_keyboard():
+    return _inline(_wide_buttons([
+        _btn("⬅️ חזרה לרחוב", "ui:addr:back_street"),
+        _btn("⬅️ חזרה לכתובות", "ui:addr:cancel_add"),
+        _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
+    ]))
+
+
+def add_address_apartment_keyboard():
+    return _inline(_wide_buttons([
+        _btn("⬅️ חזרה לקומה", "ui:addr:back_floor"),
+        _btn("⬅️ חזרה לכתובות", "ui:addr:cancel_add"),
+        _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
+    ]))
+
+
 def city_suggestions_keyboard(suggestions, mode="address"):
     rows = []
 
@@ -2137,6 +2161,9 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         elif raw == "ui:addr:delete": text = "🗑️ מחק כתובת"
         elif raw == "ui:addr:back_list": text = "⬅️ חזרה לרשימת כתובות"
         elif raw == "ui:addr:cancel_add": text = "⬅️ חזרה לכתובות"
+        elif raw == "ui:addr:back_city": text = "⬅️ חזרה לעיר / יישוב"
+        elif raw == "ui:addr:back_street": text = "⬅️ חזרה לרחוב"
+        elif raw == "ui:addr:back_floor": text = "⬅️ חזרה לקומה"
         elif raw.startswith("ui:addr:id:"):
             text = f"🏠 {parts[-1]}"
 
@@ -3368,6 +3395,39 @@ async def handle_shop(message: Message):
     if not data:
         return
 
+    if data.get("step") == "add_address_street" and txt == "⬅️ חזרה לעיר / יישוב":
+        data["step"] = "add_address_city"
+        await delete_temp_bot_messages(message.bot, uid)
+        await send_temp_message(
+            message,
+            rtl("<b>📍 עיר / יישוב</b>\n\nרשום את שם העיר או היישוב."),
+            reply_markup=add_address_cancel_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if data.get("step") == "add_address_floor" and txt == "⬅️ חזרה לרחוב":
+        data["step"] = "add_address_street"
+        await delete_temp_bot_messages(message.bot, uid)
+        await send_temp_message(
+            message,
+            rtl("<b>🏠 רחוב ומספר בית</b>\n\nלדוגמה: הרצל 10"),
+            reply_markup=add_address_street_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if data.get("step") == "add_address_apartment" and txt == "⬅️ חזרה לקומה":
+        data["step"] = "add_address_floor"
+        await delete_temp_bot_messages(message.bot, uid)
+        await send_temp_message(
+            message,
+            rtl("<b>קומה</b>\n\nאם אין, רשום 0."),
+            reply_markup=add_address_floor_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
     if data.get("step") in {"add_address_label", "add_address_city", "add_address_street", "add_address_floor", "add_address_apartment"} and txt in {"⬅️ חזרה לכתובות", "❌ ביטול הוספת כתובת"}:
         data.pop("new_address", None)
         clear_city_autocomplete_state(data)
@@ -3705,20 +3765,30 @@ async def handle_shop(message: Message):
         await send_temp_message(
             message,
             rtl("<b>🏠 רחוב ומספר בית</b>\n\nלדוגמה: הרצל 10"),
-            reply_markup=add_address_cancel_keyboard(),
+            reply_markup=add_address_street_keyboard(),
             parse_mode="HTML"
         )
         return
 
     if data.get("step") == "add_address_street":
         street = txt.strip()
+        city = (data.get("new_address") or {}).get("city")
 
-        if len(street) < 2:
+        street_status = validate_street_address(city, street)
+
+        if len(street) < 2 or not street_status.get("ok"):
             await delete_customer_message(message)
             if not data.get("address_street_warning_sent"):
+                if street_status.get("reason") == "missing_number":
+                    warning_text = "<b>⚠️ נא לרשום רחוב ומספר בית.</b>\nלדוגמה: הרצל 10"
+                elif street_status.get("reason") == "not_found":
+                    warning_text = "<b>⚠️ לא נמצאה כתובת כזאת בעיר שבחרת.</b>\nבדוק את שם הרחוב ומספר הבית ונסה שוב."
+                else:
+                    warning_text = "<b>⚠️ כתובת לא תקינה.</b>\nנא לרשום רחוב ומספר בית. לדוגמה: הרצל 10"
+
                 sent = await message.answer(
-                    rtl("<b>⚠️ כתובת קצרה מדי.</b>"),
-                    reply_markup=add_address_cancel_keyboard(),
+                    rtl(warning_text),
+                    reply_markup=add_address_street_keyboard(),
                     parse_mode="HTML"
                 )
                 data["address_street_warning_sent"] = True
@@ -3736,13 +3806,13 @@ async def handle_shop(message: Message):
                 pass
         data.pop("address_street_warning_sent", None)
 
-        data["new_address"]["street"] = street
+        data["new_address"]["street"] = street_status.get("display") or street
         data["step"] = "add_address_floor"
 
         await send_temp_message(
             message,
             rtl("<b>קומה</b>\n\nאם אין, רשום 0."),
-            reply_markup=add_address_cancel_keyboard(),
+            reply_markup=add_address_floor_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -3778,7 +3848,7 @@ async def handle_shop(message: Message):
         await send_temp_message(
             message,
             rtl("<b>דירה</b>\n\nאם אין, רשום 0."),
-            reply_markup=add_address_cancel_keyboard(),
+            reply_markup=add_address_apartment_keyboard(),
             parse_mode="HTML"
         )
         return
