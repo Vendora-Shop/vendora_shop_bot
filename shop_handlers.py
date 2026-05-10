@@ -3234,8 +3234,17 @@ async def add_address_start(message: Message):
     users.setdefault(uid, {"cart": []})
     users[uid]["step"] = "add_address_label"
     users[uid]["new_address"] = {}
+    users[uid].pop("address_numeric_warning_sent", None)
+    users[uid].pop("address_numeric_warning_id", None)
+    users[uid].pop("address_label_warning_sent", None)
+    users[uid].pop("address_label_warning_id", None)
+    users[uid].pop("address_street_warning_sent", None)
+    users[uid].pop("address_street_warning_id", None)
 
-    await message.answer(
+    await delete_temp_bot_messages(message.bot, uid)
+
+    await send_temp_message(
+        message,
         rtl(
             "<b>➕ הוספת כתובת חדשה</b>\n\n"
             "רשום שם לכתובת.\n"
@@ -3244,7 +3253,6 @@ async def add_address_start(message: Message):
         reply_markup=add_address_cancel_keyboard(),
         parse_mode="HTML"
     )
-
 
 @router.message()
 async def handle_shop(message: Message):
@@ -3637,16 +3645,32 @@ async def handle_shop(message: Message):
         label = txt.strip()
 
         if len(label) < 2:
-            await message.answer(
-                rtl("<b>⚠️ שם כתובת קצר מדי.</b>\nרשום לפחות 2 תווים."),
-                parse_mode="HTML"
-            )
+            await delete_customer_message(message)
+            if not data.get("address_label_warning_sent"):
+                sent = await message.answer(
+                    rtl("<b>⚠️ שם כתובת קצר מדי.</b>\nרשום לפחות 2 תווים."),
+                    parse_mode="HTML"
+                )
+                data["address_label_warning_sent"] = True
+                data["address_label_warning_id"] = sent.message_id
+                data.setdefault("temp_bot_messages", []).append(sent.message_id)
             return
+
+        await consume_customer_click(message)
+
+        old_warning_id = data.pop("address_label_warning_id", None)
+        if old_warning_id:
+            try:
+                await message.bot.delete_message(uid, old_warning_id)
+            except Exception:
+                pass
+        data.pop("address_label_warning_sent", None)
 
         data["new_address"]["label"] = label
         data["step"] = "add_address_city"
 
-        await message.answer(
+        await send_temp_message(
+            message,
             rtl("<b>📍 עיר / יישוב</b>\n\nרשום את שם העיר או היישוב."),
             reply_markup=add_address_cancel_keyboard(),
             parse_mode="HTML"
@@ -3662,6 +3686,8 @@ async def handle_shop(message: Message):
             await send_city_not_found_message(message, data, city, mode="address")
             return
 
+        await consume_customer_click(message)
+
         old_warning_id = data.pop("city_warning_message_id", None)
         if old_warning_id:
             try:
@@ -3671,13 +3697,13 @@ async def handle_shop(message: Message):
 
         clear_city_autocomplete_state(data)
 
-        # שומרים את שם היישוב כפי שהוא מופיע במאגר הרשמי.
         city = normalized_city
 
         data["new_address"]["city"] = city
         data["step"] = "add_address_street"
 
-        await message.answer(
+        await send_temp_message(
+            message,
             rtl("<b>🏠 רחוב ומספר בית</b>\n\nלדוגמה: הרצל 10"),
             reply_markup=add_address_cancel_keyboard(),
             parse_mode="HTML"
@@ -3688,17 +3714,33 @@ async def handle_shop(message: Message):
         street = txt.strip()
 
         if len(street) < 2:
-            await message.answer(
-                rtl("<b>⚠️ כתובת קצרה מדי.</b>"),
-                reply_markup=add_address_cancel_keyboard(),
-                parse_mode="HTML"
-            )
+            await delete_customer_message(message)
+            if not data.get("address_street_warning_sent"):
+                sent = await message.answer(
+                    rtl("<b>⚠️ כתובת קצרה מדי.</b>"),
+                    reply_markup=add_address_cancel_keyboard(),
+                    parse_mode="HTML"
+                )
+                data["address_street_warning_sent"] = True
+                data["address_street_warning_id"] = sent.message_id
+                data.setdefault("temp_bot_messages", []).append(sent.message_id)
             return
+
+        await consume_customer_click(message)
+
+        old_warning_id = data.pop("address_street_warning_id", None)
+        if old_warning_id:
+            try:
+                await message.bot.delete_message(uid, old_warning_id)
+            except Exception:
+                pass
+        data.pop("address_street_warning_sent", None)
 
         data["new_address"]["street"] = street
         data["step"] = "add_address_floor"
 
-        await message.answer(
+        await send_temp_message(
+            message,
             rtl("<b>קומה</b>\n\nאם אין, רשום 0."),
             reply_markup=add_address_cancel_keyboard(),
             parse_mode="HTML"
@@ -3706,10 +3748,35 @@ async def handle_shop(message: Message):
         return
 
     if data.get("step") == "add_address_floor":
-        data["new_address"]["floor"] = txt.strip()
+        floor = txt.strip()
+
+        if not floor.isdigit():
+            await delete_customer_message(message)
+            if not data.get("address_numeric_warning_sent"):
+                sent = await message.answer(
+                    rtl("<b>⚠️ רשום מספרים בלבד.</b>\nאם אין, רשום 0."),
+                    parse_mode="HTML"
+                )
+                data["address_numeric_warning_sent"] = True
+                data["address_numeric_warning_id"] = sent.message_id
+                data.setdefault("temp_bot_messages", []).append(sent.message_id)
+            return
+
+        await consume_customer_click(message)
+
+        old_warning_id = data.pop("address_numeric_warning_id", None)
+        if old_warning_id:
+            try:
+                await message.bot.delete_message(uid, old_warning_id)
+            except Exception:
+                pass
+        data.pop("address_numeric_warning_sent", None)
+
+        data["new_address"]["floor"] = floor
         data["step"] = "add_address_apartment"
 
-        await message.answer(
+        await send_temp_message(
+            message,
             rtl("<b>דירה</b>\n\nאם אין, רשום 0."),
             reply_markup=add_address_cancel_keyboard(),
             parse_mode="HTML"
@@ -3717,7 +3784,31 @@ async def handle_shop(message: Message):
         return
 
     if data.get("step") == "add_address_apartment":
-        data["new_address"]["apartment"] = txt.strip()
+        apartment = txt.strip()
+
+        if not apartment.isdigit():
+            await delete_customer_message(message)
+            if not data.get("address_numeric_warning_sent"):
+                sent = await message.answer(
+                    rtl("<b>⚠️ רשום מספרים בלבד.</b>\nאם אין, רשום 0."),
+                    parse_mode="HTML"
+                )
+                data["address_numeric_warning_sent"] = True
+                data["address_numeric_warning_id"] = sent.message_id
+                data.setdefault("temp_bot_messages", []).append(sent.message_id)
+            return
+
+        await consume_customer_click(message)
+
+        old_warning_id = data.pop("address_numeric_warning_id", None)
+        if old_warning_id:
+            try:
+                await message.bot.delete_message(uid, old_warning_id)
+            except Exception:
+                pass
+        data.pop("address_numeric_warning_sent", None)
+
+        data["new_address"]["apartment"] = apartment
 
         address = data["new_address"]
 
@@ -3733,7 +3824,8 @@ async def handle_shop(message: Message):
         data.pop("new_address", None)
         data["step"] = "addresses_menu"
 
-        await message.answer(
+        await send_temp_message(
+            message,
             rtl(
                 "<b>✅ הכתובת נשמרה בהצלחה</b>\n\n"
                 "אפשר להשתמש בה להזמנות הבאות."
@@ -3743,7 +3835,6 @@ async def handle_shop(message: Message):
         )
         return
 
-    if data.get("step") == "saved_profile_choice":
         if txt == "✅ המשך עם הפרטים השמורים":
             profile = data.get("saved_profile") or get_customer_profile(uid)
 
