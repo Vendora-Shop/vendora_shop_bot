@@ -16,46 +16,20 @@ def support_tickets_button_text():
 
 
 
-def compact_menu_keyboard():
-    from aiogram.types import ReplyKeyboardRemove
-    return ReplyKeyboardRemove()
-
-
-
-def main_menu_inline_keyboard(user_id=None):
+def main_keyboard(user_id=None):
+    """תפריט לקוח Inline — בלי מקלדת שקופצת למטה."""
     keyboard = [
-        [InlineKeyboardButton(text="חנות 🛒", callback_data="main_menu:shop")],
-        [InlineKeyboardButton(text="ההזמנות שלי 📦", callback_data="main_menu:orders")],
-        [InlineKeyboardButton(text="הפרטים שלי 👤", callback_data="main_menu:profile")],
-        [InlineKeyboardButton(text="הכתובות שלי 🏠", callback_data="main_menu:addresses")],
-        [InlineKeyboardButton(text="שירות לקוחות 📞", callback_data="main_menu:support")]
+        [InlineKeyboardButton(text="🛒 חנות", callback_data="ui:main:shop")],
+        [InlineKeyboardButton(text="👤 הפרטים שלי", callback_data="ui:main:details")],
+        [InlineKeyboardButton(text="📦 ההזמנות שלי", callback_data="ui:main:orders")],
+        [InlineKeyboardButton(text="🏠 הכתובות שלי", callback_data="ui:main:addresses")],
+        [InlineKeyboardButton(text="📞 שירות לקוחות", callback_data="ui:main:support")],
     ]
 
     if user_id == ADMIN_ID:
-        keyboard.append([InlineKeyboardButton(text="פאנל ניהול 🔐", callback_data="main_menu:admin")])
+        keyboard.append([InlineKeyboardButton(text="🔐 פאנל ניהול", callback_data="ui:main:admin")])
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
-
-
-def main_keyboard(user_id=None):
-    keyboard = [
-        [KeyboardButton(text="חנות 🛒")],
-        [KeyboardButton(text="ההזמנות שלי 📦")],
-        [KeyboardButton(text="הפרטים שלי 👤")],
-        [KeyboardButton(text="הכתובות שלי 🏠")],
-        [KeyboardButton(text="שירות לקוחות 📞")]
-    ]
-
-    if user_id == ADMIN_ID:
-        keyboard.append([KeyboardButton(text="פאנל ניהול 🔐")])
-
-    return ReplyKeyboardMarkup(
-        keyboard=keyboard,
-        resize_keyboard=True,
-        one_time_keyboard=False,
-        input_field_placeholder="בחר פעולה מהתפריט"
-    )
-
 
 
 def admin_keyboard():
@@ -125,24 +99,23 @@ def customer_actions_keyboard():
         resize_keyboard=True
     )
 
-
 def my_orders_keyboard():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🔁 הזמן שוב", callback_data="cust_btn:reorder")],
-            [InlineKeyboardButton(text="⬅️ חזרה לתפריט", callback_data="cust_btn:main_menu")]
-        ]
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🔁 הזמן שוב")],
+            [KeyboardButton(text="⬅️ חזרה לתפריט")]
+        ],
+        resize_keyboard=True
     )
 
-
-
 def addresses_menu_keyboard():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📋 הצג כתובות", callback_data="cust_btn:show_addresses")],
-            [InlineKeyboardButton(text="➕ הוסף כתובת", callback_data="cust_btn:add_address")],
-            [InlineKeyboardButton(text="⬅️ חזרה לתפריט", callback_data="cust_btn:main_menu")]
-        ]
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📋 הצג כתובות")],
+            [KeyboardButton(text="➕ הוסף כתובת")],
+            [KeyboardButton(text="⬅️ חזרה לתפריט")]
+        ],
+        resize_keyboard=True
     )
 
 
@@ -158,7 +131,7 @@ def address_select_keyboard(addresses):
 
     keyboard.append([KeyboardButton(text="➕ הוסף כתובת")])
     keyboard.append([KeyboardButton(text="⬅️ חזרה לכתובות")])
-    keyboard.append([KeyboardButton(text="חזרה לתפריט הראשי ↩️")])
+    keyboard.append([KeyboardButton(text="⬅️ חזרה לתפריט")])
 
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
@@ -168,7 +141,7 @@ def address_actions_keyboard():
         keyboard=[
             [KeyboardButton(text="🗑️ מחק כתובת")],
             [KeyboardButton(text="⬅️ חזרה לרשימת כתובות")],
-            [KeyboardButton(text="חזרה לתפריט הראשי ↩️")]
+            [KeyboardButton(text="⬅️ חזרה לתפריט")]
         ],
         resize_keyboard=True
     )
@@ -204,7 +177,7 @@ def reorder_select_keyboard(orders):
         ])
 
     keyboard.append([KeyboardButton(text="⬅️ חזרה להזמנות שלי")])
-    keyboard.append([KeyboardButton(text="חזרה לתפריט הראשי ↩️")])
+    keyboard.append([KeyboardButton(text="⬅️ חזרה לתפריט")])
 
     return ReplyKeyboardMarkup(
         keyboard=keyboard,
@@ -236,18 +209,18 @@ def customer_select_keyboard(customers):
 
 
 
-
 def support_subject_keyboard():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📦 שאלה על הזמנה קיימת", callback_data="cust_text:support_order")],
-            [InlineKeyboardButton(text="🚚 משלוח / איסוף", callback_data="cust_text:support_fulfillment")],
-            [InlineKeyboardButton(text="💳 תשלום", callback_data="cust_text:support_payment")],
-            [InlineKeyboardButton(text="🛍️ מוצר / מלאי", callback_data="cust_text:support_product")],
-            [InlineKeyboardButton(text="📝 שינוי פרטים", callback_data="cust_text:support_details")],
-            [InlineKeyboardButton(text="❓ אחר", callback_data="cust_text:support_other")],
-            [InlineKeyboardButton(text="⬅️ חזרה לתפריט", callback_data="cust_btn:main_menu")]
-        ]
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📦 שאלה על הזמנה קיימת")],
+            [KeyboardButton(text="🚚 משלוח / איסוף")],
+            [KeyboardButton(text="💳 תשלום")],
+            [KeyboardButton(text="🛍️ מוצר / מלאי")],
+            [KeyboardButton(text="📝 שינוי פרטים")],
+            [KeyboardButton(text="❓ אחר")],
+            [KeyboardButton(text="⬅️ חזרה לתפריט")]
+        ],
+        resize_keyboard=True
     )
 
 
