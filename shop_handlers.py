@@ -2972,15 +2972,21 @@ async def quantity_inline_action(callback: CallbackQuery):
 async def support(message: Message):
     uid = message.from_user.id
 
+    # חשוב: לא מאפסים את users[uid] לפני ניקוי המסכים הקודמים.
+    # אחרת נאבד את temp_bot_messages והתפריט הראשי נשאר פתוח מתחת למסך שירות לקוחות.
+    previous_state = users.get(uid, {})
+    previous_temp_messages = list(previous_state.get("temp_bot_messages", []))
+
     existing_ticket = get_open_support_ticket_by_user(uid)
 
     if existing_ticket:
         users[uid] = {
-            "cart": [],
+            "cart": previous_state.get("cart", []),
             "step": "support_chat",
             "support_ticket_number": existing_ticket["ticket_number"],
             "support_phone": existing_ticket["phone"],
-            "support_subject": existing_ticket.get("subject") or ""
+            "support_subject": existing_ticket.get("subject") or "",
+            "temp_bot_messages": previous_temp_messages
         }
 
         await send_temp_message(
@@ -2997,8 +3003,9 @@ async def support(message: Message):
         return
 
     users[uid] = {
-        "cart": [],
-        "step": "support_subject"
+        "cart": previous_state.get("cart", []),
+        "step": "support_subject",
+        "temp_bot_messages": previous_temp_messages
     }
 
     await send_temp_message(
