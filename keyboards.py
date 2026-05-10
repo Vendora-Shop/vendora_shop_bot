@@ -1,4 +1,4 @@
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from config import ADMIN_ID
 
 
@@ -13,6 +13,35 @@ def support_tickets_button_text():
         return f"📩 פניות שירות ({count})"
 
     return "📩 פניות שירות"
+
+
+
+def compact_menu_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="☰ תפריט")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=False,
+        input_field_placeholder="פתח תפריט"
+    )
+
+
+def main_menu_inline_keyboard(user_id=None):
+    keyboard = [
+        [InlineKeyboardButton(text="🛒 חנות", callback_data="main_menu:shop")],
+        [
+            InlineKeyboardButton(text="📦 ההזמנות שלי", callback_data="main_menu:orders"),
+            InlineKeyboardButton(text="👤 הפרטים שלי", callback_data="main_menu:profile")
+        ],
+        [InlineKeyboardButton(text="🏠 הכתובות שלי", callback_data="main_menu:addresses")],
+        [InlineKeyboardButton(text="📞 שירות לקוחות", callback_data="main_menu:support")]
+    ]
+
+    if user_id == ADMIN_ID:
+        keyboard.append([InlineKeyboardButton(text="🔐 פאנל ניהול", callback_data="main_menu:admin")])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 
