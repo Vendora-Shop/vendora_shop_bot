@@ -21,6 +21,7 @@ def compact_menu_keyboard():
     return ReplyKeyboardRemove()
 
 
+
 def main_menu_inline_keyboard(user_id=None):
     keyboard = [
         [InlineKeyboardButton(text="חנות 🛒", callback_data="main_menu:shop")],
@@ -124,23 +125,24 @@ def customer_actions_keyboard():
         resize_keyboard=True
     )
 
+
 def my_orders_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🔁 הזמן שוב")],
-            [KeyboardButton(text="חזרה לתפריט הראשי ↩️")]
-        ],
-        resize_keyboard=True
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔁 הזמן שוב", callback_data="cust_btn:reorder")],
+            [InlineKeyboardButton(text="⬅️ חזרה לתפריט", callback_data="cust_btn:main_menu")]
+        ]
     )
 
+
+
 def addresses_menu_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📋 הצג כתובות")],
-            [KeyboardButton(text="➕ הוסף כתובת")],
-            [KeyboardButton(text="חזרה לתפריט הראשי ↩️")]
-        ],
-        resize_keyboard=True
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📋 הצג כתובות", callback_data="cust_btn:show_addresses")],
+            [InlineKeyboardButton(text="➕ הוסף כתובת", callback_data="cust_btn:add_address")],
+            [InlineKeyboardButton(text="⬅️ חזרה לתפריט", callback_data="cust_btn:main_menu")]
+        ]
     )
 
 
@@ -234,18 +236,18 @@ def customer_select_keyboard(customers):
 
 
 
+
 def support_subject_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📦 שאלה על הזמנה קיימת")],
-            [KeyboardButton(text="🚚 משלוח / איסוף")],
-            [KeyboardButton(text="💳 תשלום")],
-            [KeyboardButton(text="🛍️ מוצר / מלאי")],
-            [KeyboardButton(text="📝 שינוי פרטים")],
-            [KeyboardButton(text="❓ אחר")],
-            [KeyboardButton(text="חזרה לתפריט הראשי ↩️")]
-        ],
-        resize_keyboard=True
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📦 שאלה על הזמנה קיימת", callback_data="cust_text:support_order")],
+            [InlineKeyboardButton(text="🚚 משלוח / איסוף", callback_data="cust_text:support_fulfillment")],
+            [InlineKeyboardButton(text="💳 תשלום", callback_data="cust_text:support_payment")],
+            [InlineKeyboardButton(text="🛍️ מוצר / מלאי", callback_data="cust_text:support_product")],
+            [InlineKeyboardButton(text="📝 שינוי פרטים", callback_data="cust_text:support_details")],
+            [InlineKeyboardButton(text="❓ אחר", callback_data="cust_text:support_other")],
+            [InlineKeyboardButton(text="⬅️ חזרה לתפריט", callback_data="cust_btn:main_menu")]
+        ]
     )
 
 
