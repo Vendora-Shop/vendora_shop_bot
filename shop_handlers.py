@@ -1,11 +1,11 @@
 from aiogram import Router, F
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from html import escape
 import asyncio
 
 from config import ADMIN_ID
-from keyboards import main_keyboard, compact_menu_keyboard, main_menu_inline_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard, support_subject_keyboard
+from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard, support_subject_keyboard
 from database import (
     get_active_products,
     get_product_by_name,
@@ -42,36 +42,6 @@ def is_admin_panel_active_for_shop_guard(user_id):
         return False
 
 
-
-class CallbackMessageProxy:
-    def __init__(self, callback: CallbackQuery, text: str):
-        self._callback = callback
-        self._message = callback.message
-        self.from_user = callback.from_user
-        self.bot = callback.message.bot
-        self.chat = callback.message.chat
-        self.text = text
-
-    async def answer(self, *args, **kwargs):
-        return await self._message.answer(*args, **kwargs)
-
-    async def answer_photo(self, *args, **kwargs):
-        return await self._message.answer_photo(*args, **kwargs)
-
-    async def answer_document(self, *args, **kwargs):
-        return await self._message.answer_document(*args, **kwargs)
-
-    async def delete(self):
-        try:
-            return await self._message.delete()
-        except Exception:
-            return None
-
-
-def callback_proxy(callback: CallbackQuery, text: str):
-    return CallbackMessageProxy(callback, text)
-
-
 @router.message(F.text == "✅ הבעיה נפתרה")
 async def customer_close_support_ticket_button(message: Message):
     await close_customer_open_support_ticket(message)
@@ -99,7 +69,7 @@ async def customer_cancel_payment_button(message: Message):
 
     await message.answer(
         rtl("<b>ℹ️ אין תשלום פעיל לביטול.</b>"),
-        reply_markup=main_menu_inline_keyboard(message.from_user.id),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
@@ -323,7 +293,7 @@ async def close_customer_open_support_ticket(message: Message, data=None):
                 "<b>ℹ️ אין פנייה פתוחה לסגירה.</b>\n"
                 "חזרת לתפריט הראשי."
             ),
-            reply_markup=main_menu_inline_keyboard(message.from_user.id),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return True
@@ -340,7 +310,7 @@ async def close_customer_open_support_ticket(message: Message, data=None):
                 "<b>ℹ️ הפנייה כבר סגורה.</b>\n"
                 "חזרת לתפריט הראשי."
             ),
-            reply_markup=main_menu_inline_keyboard(message.from_user.id),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return True
@@ -363,7 +333,7 @@ async def close_customer_open_support_ticket(message: Message, data=None):
             "<b>✅ הפנייה נסגרה.</b>\n"
             "תודה שפנית לשירות הלקוחות של Vendora."
         ),
-        reply_markup=main_menu_inline_keyboard(message.from_user.id),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
     return True
@@ -425,26 +395,6 @@ async def delete_temp_bot_messages(bot, user_id):
             pass
 
     data["temp_bot_messages"] = []
-
-
-
-async def delete_main_menu_message(bot, user_id):
-    data = users.get(user_id)
-
-    if not data:
-        return
-
-    message_id = data.get("main_menu_message_id")
-
-    if not message_id:
-        return
-
-    try:
-        await bot.delete_message(user_id, message_id)
-    except Exception:
-        pass
-
-    data.pop("main_menu_message_id", None)
 
 
 
@@ -531,7 +481,7 @@ async def reset_customer_to_main_menu(message, text):
 
     await message.answer(
         rtl(text),
-        reply_markup=main_menu_inline_keyboard(message.from_user.id),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
@@ -549,7 +499,7 @@ async def reset_callback_customer_to_main_menu(callback, text):
 
     await callback.message.answer(
         rtl(text),
-        reply_markup=main_menu_inline_keyboard(callback.from_user.id),
+        reply_markup=main_keyboard(callback.from_user.id),
         parse_mode="HTML"
     )
 
@@ -704,99 +654,7 @@ def h(text):
 
 
 def rtl(text):
-    return "\u202B" + str(text) + "\u202C" + RTL
-
-
-WIDE_PAD = "⠀" * 44
-
-def wide_rtl(text):
-    return rtl(str(text) + "\n" + WIDE_PAD)
-
-
-def wide_inline_keyboard(rows):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=text, callback_data=callback_data)]
-            for text, callback_data in rows
-        ]
-    )
-
-def main_menu_inline_keyboard(user_id=None):
-    rows = [
-        ("חנות 🛒", "main_menu:shop"),
-        ("ההזמנות שלי 📦", "main_menu:orders"),
-        ("הפרטים שלי 👤", "main_menu:profile"),
-        ("הכתובות שלי 🏠", "main_menu:addresses"),
-        ("שירות לקוחות 📞", "main_menu:support"),
-    ]
-
-    if user_id == ADMIN_ID:
-        rows.append(("פאנל ניהול 🔐", "main_menu:admin"))
-
-    return wide_inline_keyboard(rows)
-
-def empty_cart_keyboard():
-    return wide_inline_keyboard([
-        ("🛍️ עבור לחנות", "cust_btn:add_more"),
-        ("❌ בטל הזמנה", "cust_btn:cancel_order"),
-    ])
-
-def saved_details_keyboard():
-    return wide_inline_keyboard([
-        ("✅ המשך עם הפרטים השמורים", "cust_btn:saved_details_continue"),
-        ("✏️ הזן פרטים חדשים", "cust_btn:new_details"),
-        ("⬅️ חזרה לבחירת משלוח / איסוף", "cust_btn:back_fulfillment"),
-        ("❌ בטל הזמנה", "cust_btn:cancel_order"),
-    ])
-
-def support_subject_keyboard():
-    return wide_inline_keyboard([
-        ("📦 שאלה על הזמנה קיימת", "cust_text:support_order"),
-        ("🚚 משלוח / איסוף", "cust_text:support_fulfillment"),
-        ("💳 תשלום", "cust_text:support_payment"),
-        ("🛍️ מוצר / מלאי", "cust_text:support_product"),
-        ("📝 שינוי פרטים", "cust_text:support_details"),
-        ("❓ אחר", "cust_text:support_other"),
-        ("⬅️ חזרה לתפריט", "cust_btn:main_menu"),
-    ])
-
-def main_menu_text():
-    return rtl(
-        "<b>☰ תפריט ראשי</b>\n\n"
-        "בחר פעולה מתוך האפשרויות של Vendora:"
-    )
-
-
-def ui_text(text):
-    text = str(text or "").replace("\u200f", "").replace("\u200e", "").strip()
-
-    aliases = {
-        "חנות 🛒": "🛒 חנות",
-        "הסל שלי 🛒": "🛒 הסל שלי",
-        "ההזמנות שלי 📦": "📦 ההזמנות שלי",
-        "הפרטים שלי 👤": "👤 הפרטים שלי",
-        "הכתובות שלי 🏠": "🏠 הכתובות שלי",
-        "שירות לקוחות 📞": "📞 שירות לקוחות",
-        "פאנל ניהול 🔐": "🔐 פאנל ניהול",
-        "חזרה ↩️": "⬅️ חזרה",
-        "חזרה לקטגוריות ↩️": "⬅️ חזרה לקטגוריות",
-        "חזרה לתפריט הראשי ↩️": "⬅️ חזרה לתפריט",
-        "הוסף עוד מוצר ➕": "➕ הוסף עוד מוצר",
-        "המשך להזמנה ✅": "✅ המשך להזמנה",
-        "רוקן סל 🧹": "🧹 רוקן סל",
-        "בטל הזמנה ❌": "❌ בטל הזמנה",
-        "אשר הזמנה ✅": "✅ אשר הזמנה",
-        "שנה פרטים ✏️": "✏️ שנה פרטים",
-        "משלוח עד הבית 🚚": "🚚 משלוח עד הבית",
-        "איסוף עצמי מהחנות 🛍️": "🛍️ איסוף עצמי מהחנות",
-        "המשך עם הפרטים השמורים ✅": "✅ המשך עם הפרטים השמורים",
-        "הזן פרטים חדשים ✏️": "✏️ הזן פרטים חדשים",
-        "חזרה לבחירת משלוח / איסוף ↩️": "⬅️ חזרה לבחירת משלוח / איסוף",
-        "חזרה לסיכום הזמנה ↩️": "⬅️ חזרה לסיכום הזמנה",
-        "ביטול תשלום ❌": "❌ ביטול תשלום",
-    }
-
-    return aliases.get(text, text)
+    return RTL + str(text)
 
 
 def money(value):
@@ -821,6 +679,146 @@ def large_quantity_contact_text(max_qty):
 
 
 
+
+
+# ================== CUSTOMER INLINE UI STYLE ==================
+# כל התפריטים בצד הלקוח מוצגים כ־Inline Keyboard בתוך ההודעה,
+# כדי למנוע פתיחה של מקלדת רגילה למטה ולתת מראה נקי כמו Mini App.
+# הלוגיקה עצמה נשארת זהה: כל כפתור Inline מתורגם חזרה לטקסט הכפתור המקורי
+# ומועבר לאותם handlers קיימים.
+INLINE_TEXT_BY_CODE = {}
+INLINE_CODE_BY_TEXT = {}
+INLINE_NEXT_ID = 1
+
+
+def customer_inline_code(text):
+    global INLINE_NEXT_ID
+    text = str(text)
+
+    if text in INLINE_CODE_BY_TEXT:
+        return INLINE_CODE_BY_TEXT[text]
+
+    code = f"ui:{INLINE_NEXT_ID}"
+    INLINE_NEXT_ID += 1
+    INLINE_CODE_BY_TEXT[text] = code
+    INLINE_TEXT_BY_CODE[code] = text
+    return code
+
+
+def inline_button(text):
+    return InlineKeyboardButton(text=str(text), callback_data=customer_inline_code(text))
+
+
+def inline_keyboard(rows):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [inline_button(button_text) for button_text in row]
+            for row in rows
+        ]
+    )
+
+
+def main_keyboard(user_id=None):
+    rows = [
+        ["🛒 חנות"],
+        ["👤 הפרטים שלי"],
+        ["📦 ההזמנות שלי"],
+        ["🏠 הכתובות שלי"],
+        ["📞 שירות לקוחות"],
+    ]
+
+    if user_id == ADMIN_ID:
+        rows.append(["🔐 פאנל ניהול"])
+
+    return inline_keyboard(rows)
+
+
+def customer_home_text(customer_name="לקוח יקר"):
+    return rtl(
+        f"<b>👋 ברוך הבא {h(customer_name)}</b>\n\n"
+        "<b>🛍️ Vendora Shop</b>\n"
+        "חנות דיגיטלית חכמה להזמנות, משלוחים ואיסוף עצמי.\n\n"
+        "בחר פעולה מהתפריט:"
+    )
+
+
+def my_orders_keyboard():
+    return inline_keyboard([
+        ["🔁 הזמן שוב"],
+        ["⬅️ חזרה לתפריט"],
+    ])
+
+
+def addresses_menu_keyboard():
+    return inline_keyboard([
+        ["📋 הצג כתובות"],
+        ["➕ הוסף כתובת"],
+        ["⬅️ חזרה לתפריט"],
+    ])
+
+
+def address_select_keyboard(addresses):
+    rows = []
+
+    for address in addresses:
+        address_id = address.get("id")
+        label = address.get("label") or "כתובת"
+        city = address.get("city") or "-"
+        street = address.get("street") or "-"
+        rows.append([f"🏠 {address_id} | {label} | {city}, {street}"])
+
+    rows.append(["➕ הוסף כתובת"])
+    rows.append(["⬅️ חזרה לכתובות"])
+    rows.append(["⬅️ חזרה לתפריט"])
+    return inline_keyboard(rows)
+
+
+def address_actions_keyboard():
+    return inline_keyboard([
+        ["🗑️ מחק כתובת"],
+        ["⬅️ חזרה לרשימת כתובות"],
+        ["⬅️ חזרה לתפריט"],
+    ])
+
+
+def translate_order_status_for_keyboard(status):
+    statuses = {
+        "new": "חדשה",
+        "approved": "אושרה",
+        "processing": "בטיפול",
+        "shipping": "בדרך",
+        "done": "הושלמה",
+        "completed": "הושלמה",
+        "cancelled": "בוטלה",
+        "canceled": "בוטלה"
+    }
+    return statuses.get(str(status or "").lower(), str(status or "-"))
+
+
+def reorder_select_keyboard(orders):
+    rows = []
+
+    for order in orders:
+        order_number = order.get("order_number")
+        total = int(float(order.get("final_total") or 0))
+        status = translate_order_status_for_keyboard(order.get("status"))
+        rows.append([f"🔁 {order_number} | {total}₪ | {status}"])
+
+    rows.append(["⬅️ חזרה להזמנות שלי"])
+    rows.append(["⬅️ חזרה לתפריט"])
+    return inline_keyboard(rows)
+
+
+def support_subject_keyboard():
+    return inline_keyboard([
+        ["📦 שאלה על הזמנה קיימת"],
+        ["🚚 משלוח / איסוף"],
+        ["💳 תשלום"],
+        ["🛍️ מוצר / מלאי"],
+        ["📝 שינוי פרטים"],
+        ["❓ אחר"],
+        ["⬅️ חזרה לתפריט"],
+    ])
 
 def admin_support_reply_keyboard(telegram_id):
     return InlineKeyboardMarkup(
@@ -848,59 +846,41 @@ def admin_new_order_keyboard(order_number):
 
 def categories_keyboard():
     products = get_active_products()
-    rows = [(cat, f"shop_cat:{i}") for i, cat in enumerate(products.keys())]
-    rows.append(("🛒 הסל שלי", "cust_btn:cart"))
-    rows.append(("⬅️ חזרה", "cust_btn:back"))
-    return wide_inline_keyboard(rows)
+
+    rows = [[cat] for cat in products.keys()]
+    rows.append(["🛒 הסל שלי"])
+    rows.append(["⬅️ חזרה"])
+    return inline_keyboard(rows)
 
 
 def products_keyboard(category):
     products = get_active_products()
-    items = products.get(category, [])
-    categories = list(products.keys())
-
-    try:
-        category_index = categories.index(category)
-    except ValueError:
-        category_index = 0
-
     rows = []
-    for i, product in enumerate(items):
-        stock = int(product.get("stock", 0) or 0)
-        if stock <= 0:
-            rows.append((f"❌ {product['name']} - אזל מהמלאי", "shop_out_of_stock"))
-        else:
-            rows.append((product["name"], f"shop_prod:{category_index}:{i}"))
 
-    rows.append(("🛒 הסל שלי", "cust_btn:cart"))
-    rows.append(("⬅️ חזרה לקטגוריות", "cust_btn:back_categories"))
-    return wide_inline_keyboard(rows)
+    for product in products.get(category, []):
+        stock = int(product.get("stock", 0))
+        if stock <= 0:
+            rows.append([f"❌ {product['name']} - אזל מהמלאי"])
+        else:
+            rows.append([product["name"]])
+
+    rows.append(["🛒 הסל שלי"])
+    rows.append(["⬅️ חזרה לקטגוריות"])
+    return inline_keyboard(rows)
 
 
 def cart_keyboard():
-    return wide_inline_keyboard([
-        ("➕ הוסף עוד מוצר", "cust_btn:add_more"),
-        ("✅ המשך להזמנה", "cust_btn:checkout"),
-        ("🧹 רוקן סל", "cust_btn:clear_cart"),
-        ("❌ בטל הזמנה", "cust_btn:cancel_order"),
+    return inline_keyboard([
+        ["➕ הוסף עוד מוצר"],
+        ["✅ המשך להזמנה"],
+        ["🧹 רוקן סל"],
+        ["❌ בטל הזמנה"],
     ])
 
 
+
 def quantity_keyboard(selected_qty, available_left, max_qty):
-    selected_qty = int(selected_qty)
-
-    keyboard = [
-        [
-            KeyboardButton(text="➖ פחות"),
-            KeyboardButton(text=f"כמות: {selected_qty}"),
-            KeyboardButton(text="➕ יותר")
-        ],
-        [KeyboardButton(text="🛒 הוסף לסל")],
-        [KeyboardButton(text="🛒 הסל שלי")],
-        [KeyboardButton(text="⬅️ חזרה לקטגוריות")]
-    ]
-
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+    return quantity_inline_keyboard(selected_qty)
 
 
 
@@ -928,44 +908,39 @@ def quantity_inline_keyboard(selected_qty):
 
 
 def confirm_keyboard():
-    return wide_inline_keyboard([
-        ("✅ אשר הזמנה", "cust_btn:confirm_order"),
-        ("✏️ שנה פרטים", "cust_btn:edit_details"),
-        ("⬅️ חזרה לשלב קודם", "cust_btn:back_prev"),
-        ("❌ בטל הזמנה", "cust_btn:cancel_order"),
+    return inline_keyboard([
+        ["✅ אשר הזמנה"],
+        ["✏️ שנה פרטים"],
+        ["⬅️ חזרה לשלב קודם"],
+        ["❌ בטל הזמנה"],
     ])
 
 
+
 def payment_keyboard():
-    return wide_inline_keyboard([
-        ("✅ סימולציית תשלום הצליחה", "cust_btn:pay_success"),
-        ("⬅️ חזרה לסיכום הזמנה", "cust_btn:back_summary"),
-        ("❌ ביטול תשלום", "cust_btn:cancel_payment"),
+    return inline_keyboard([
+        ["✅ סימולציית תשלום הצליחה"],
+        ["⬅️ חזרה לסיכום הזמנה"],
+        ["❌ ביטול תשלום"],
     ])
 
 
 def use_saved_details_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="✅ המשך עם הפרטים השמורים")],
-            [KeyboardButton(text="✏️ הזן פרטים חדשים")],
-            [KeyboardButton(text="⬅️ חזרה לבחירת משלוח / איסוף")],
-            [KeyboardButton(text="❌ בטל הזמנה")]
-        ],
-        resize_keyboard=True
-    )
+    return inline_keyboard([
+        ["✅ המשך עם הפרטים השמורים"],
+        ["✏️ הזן פרטים חדשים"],
+        ["⬅️ חזרה לבחירת משלוח / איסוף"],
+        ["❌ בטל הזמנה"],
+    ])
 
 
 
 def manual_details_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="✅ חזור לפרטים השמורים")],
-            [KeyboardButton(text="⬅️ חזרה לבחירת משלוח / איסוף")],
-            [KeyboardButton(text="❌ בטל הזמנה")]
-        ],
-        resize_keyboard=True
-    )
+    return inline_keyboard([
+        ["✅ חזור לפרטים השמורים"],
+        ["⬅️ חזרה לבחירת משלוח / איסוף"],
+        ["❌ בטל הזמנה"],
+    ])
 
 
 
@@ -1009,18 +984,20 @@ SUPPORT_FAQ_BY_SUBJECT = {
 
 def support_faq_keyboard(subject):
     questions = SUPPORT_FAQ_BY_SUBJECT.get(subject, SUPPORT_FAQ_BY_SUBJECT.get("❓ אחר", []))
-    rows = [(question, f"support_question:{i}") for i, question in enumerate(questions)]
-    rows.append(("✍️ פנייה לנציג שירות", "support_action:agent"))
-    rows.append(("⬅️ חזרה לנושאים", "support_action:back_topics"))
-    rows.append(("⬅️ חזרה לתפריט", "cust_btn:main_menu"))
-    return wide_inline_keyboard(rows)
+
+    rows = [[q] for q in questions]
+    rows.append(["✍️ פנייה לנציג שירות"])
+    rows.append(["⬅️ חזרה לנושאים"])
+    rows.append(["⬅️ חזרה לתפריט"])
+
+    return inline_keyboard(rows)
 
 
 def support_faq_after_answer_keyboard(subject):
-    return wide_inline_keyboard([
-        ("✍️ פנייה לנציג שירות", "support_action:agent"),
-        ("⬅️ חזרה לנושאים", "support_action:back_topics"),
-        ("⬅️ חזרה לתפריט", "cust_btn:main_menu"),
+    return inline_keyboard([
+        ["✍️ פנייה לנציג שירות"],
+        ["⬅️ חזרה לנושאים"],
+        ["⬅️ חזרה לתפריט"],
     ])
 
 
@@ -1253,18 +1230,18 @@ def support_faq_answer_text(user_id, subject, question):
 
 
 def support_customer_keyboard(user_id=None):
-    return wide_inline_keyboard([
-        ("✅ הבעיה נפתרה", "support_action:close_ticket"),
-        ("⬅️ חזרה לתפריט", "cust_btn:main_menu"),
+    return inline_keyboard([
+        ["✅ הבעיה נפתרה"],
+        ["⬅️ חזרה לתפריט"],
     ])
 
 
 def fulfillment_keyboard():
-    return wide_inline_keyboard([
-        ("🚚 משלוח עד הבית", "cust_btn:delivery"),
-        ("🛍️ איסוף עצמי מהחנות", "cust_btn:pickup"),
-        ("⬅️ חזרה לסל", "cust_btn:back_cart"),
-        ("❌ בטל הזמנה", "cust_btn:cancel_order"),
+    return inline_keyboard([
+        ["🚚 משלוח עד הבית"],
+        ["🛍️ איסוף עצמי מהחנות"],
+        ["⬅️ חזרה לסל"],
+        ["❌ בטל הזמנה"],
     ])
 
 
@@ -1579,37 +1556,13 @@ async def start(message: Message):
     customer_name = message.from_user.first_name or "לקוח יקר"
 
     await message.answer(
-        rtl(
-            f"<b>👋 ברוך הבא {h(customer_name)}</b>\n\n"
-            "לחץ על כפתור <b>Menu</b> הכחול כדי לפתוח את התפריט הראשי."
-        ),
-        reply_markup=ReplyKeyboardRemove(),
+        customer_home_text(customer_name),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
 
-@router.message(Command("menu"))
-@router.message(F.text.in_({"☰ תפריט", "תפריט ☰"}))
-async def open_inline_main_menu(message: Message):
-    uid = message.from_user.id
-
-    users.setdefault(uid, {"cart": [], "step": "main"})
-    users[uid]["step"] = "main"
-
-    await delete_main_menu_message(message.bot, uid)
-
-    sent = await message.answer(
-        main_menu_text(),
-        reply_markup=main_menu_inline_keyboard(uid),
-        parse_mode="HTML"
-    )
-
-    users[uid]["main_menu_message_id"] = sent.message_id
-
-
-
-
-@router.message(F.text.in_({"👤 הפרטים שלי", "הפרטים שלי 👤"}))
+@router.message(F.text == "👤 הפרטים שלי")
 async def my_details(message: Message):
     uid = message.from_user.id
     profile = get_customer_profile(uid)
@@ -1621,15 +1574,15 @@ async def my_details(message: Message):
                 "אין פרטים שמורים עדיין.\n"
                 "אחרי ההזמנה הראשונה, הבוט ישמור את הפרטים שלך להזמנות הבאות."
             ),
-            reply_markup=main_menu_inline_keyboard(message.from_user.id),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
 
-    await message.answer(saved_profile_text(profile), reply_markup=main_menu_inline_keyboard(message.from_user.id), parse_mode="HTML")
+    await message.answer(saved_profile_text(profile), reply_markup=main_keyboard(message.from_user.id), parse_mode="HTML")
 
 
-@router.message(F.text.in_({"🛒 חנות", "חנות 🛒"}))
+@router.message(F.text == "🛒 חנות")
 async def shop(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
@@ -1653,7 +1606,7 @@ async def shop(message: Message):
 
     await send_temp_message(
         message,
-        wide_rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"),
+        rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
@@ -1675,7 +1628,7 @@ async def back_to_admin_panel_from_shop(message: Message):
     )
 
 
-@router.message(F.text.in_({"⬅️ חזרה", "חזרה ↩️"}))
+@router.message(F.text == "⬅️ חזרה")
 async def back_main(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
@@ -1699,11 +1652,11 @@ async def back_main(message: Message):
     await send_temp_message(
         message,
         rtl("<b>↩️ חזרת לתפריט הראשי</b>"),
-        reply_markup=main_menu_inline_keyboard(message.from_user.id),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
-@router.message(F.text.in_({"⬅️ חזרה לקטגוריות", "חזרה לקטגוריות ↩️"}))
+@router.message(F.text == "⬅️ חזרה לקטגוריות")
 async def back_categories(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
@@ -1717,7 +1670,7 @@ async def back_categories(message: Message):
     )
 
 
-@router.message(F.text.in_({"➕ הוסף עוד מוצר", "הוסף עוד מוצר ➕"}))
+@router.message(F.text == "➕ הוסף עוד מוצר")
 async def add_more(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
@@ -1731,7 +1684,7 @@ async def add_more(message: Message):
     )
 
 
-@router.message(F.text.in_({"🛒 הסל שלי", "הסל שלי 🛒"}))
+@router.message(F.text == "🛒 הסל שלי")
 async def show_cart(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
@@ -1744,7 +1697,7 @@ async def show_cart(message: Message):
     )
 
 
-@router.message(F.text.in_({"🧹 רוקן סל", "רוקן סל 🧹"}))
+@router.message(F.text == "🧹 רוקן סל")
 async def clear_cart(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
@@ -1771,7 +1724,7 @@ async def clear_cart(message: Message):
     )
 
 
-@router.message(F.text.in_({"❌ בטל הזמנה", "בטל הזמנה ❌"}))
+@router.message(F.text == "❌ בטל הזמנה")
 async def cancel_order(message: Message):
     if is_admin_panel_active_for_shop_guard(message.from_user.id):
         return
@@ -1786,7 +1739,7 @@ async def cancel_order(message: Message):
     users.pop(uid, None)
 
 
-@router.message(F.text.in_({"✏️ שנה פרטים", "שנה פרטים ✏️"}))
+@router.message(F.text == "✏️ שנה פרטים")
 async def edit_details(message: Message):
     uid = message.from_user.id
     data = users.get(uid)
@@ -1794,7 +1747,7 @@ async def edit_details(message: Message):
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_menu_inline_keyboard(message.from_user.id),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -1809,7 +1762,7 @@ async def edit_details(message: Message):
     )
 
 
-@router.message(F.text.in_({"✅ המשך להזמנה", "המשך להזמנה ✅"}))
+@router.message(F.text == "✅ המשך להזמנה")
 async def checkout(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
@@ -1817,7 +1770,7 @@ async def checkout(message: Message):
 
     if not data or not data.get("cart"):
         await message.answer(
-            wide_rtl("<b>🛒 הסל שלך ריק.</b>\n\nקודם בחר מוצר."),
+            rtl("<b>🛒 הסל שלך ריק.</b>\n\nקודם בחר מוצר."),
             parse_mode="HTML"
         )
         return
@@ -1846,7 +1799,7 @@ async def submit_paid_order(message: Message, data):
                 "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
                 "ההזמנה כבר נקלטה במערכת ונמצאת בטיפול."
             ),
-            reply_markup=main_menu_inline_keyboard(message.from_user.id),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -1988,7 +1941,7 @@ async def submit_paid_order(message: Message, data):
 
     await message.answer(
         rtl(customer_success_text),
-        reply_markup=main_menu_inline_keyboard(message.from_user.id),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
@@ -2002,7 +1955,7 @@ async def back_to_fulfillment_choice(message: Message):
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_menu_inline_keyboard(message.from_user.id),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -2046,7 +1999,7 @@ async def back_from_order_summary_to_previous_step(message: Message):
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_menu_inline_keyboard(message.from_user.id),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -2109,7 +2062,7 @@ async def confirm_order(message: Message):
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_menu_inline_keyboard(message.from_user.id),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -2129,7 +2082,7 @@ async def confirm_order(message: Message):
                 "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
                 "ההזמנה כבר נקלטה במערכת ונמצאת בטיפול."
             ),
-            reply_markup=main_menu_inline_keyboard(message.from_user.id),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -2375,7 +2328,7 @@ async def quantity_inline_action(callback: CallbackQuery):
     await callback.answer("פעולה לא תקינה.", show_alert=True)
 
 
-@router.message(F.text.in_({"📞 שירות לקוחות", "שירות לקוחות 📞"}))
+@router.message(F.text == "📞 שירות לקוחות")
 async def support(message: Message):
     uid = message.from_user.id
 
@@ -2416,7 +2369,7 @@ async def support(message: Message):
         parse_mode="HTML"
     )
 
-@router.message(F.text.in_({"📦 ההזמנות שלי", "ההזמנות שלי 📦"}))
+@router.message(F.text == "📦 ההזמנות שלי")
 async def my_orders(message: Message):
     uid = message.from_user.id
 
@@ -2452,7 +2405,7 @@ async def reorder_choose_order(message: Message):
                 "<b>⚠️ אין הזמנות קודמות לשחזור.</b>\n\n"
                 "אפשר להיכנס לחנות ולבצע הזמנה חדשה."
             ),
-            reply_markup=main_menu_inline_keyboard(message.from_user.id),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -2466,7 +2419,7 @@ async def reorder_choose_order(message: Message):
     )
 
 
-@router.message(F.text.in_({"⬅️ חזרה לתפריט", "חזרה לתפריט הראשי ↩️"}))
+@router.message(F.text == "⬅️ חזרה לתפריט")
 async def back_to_main_menu(message: Message):
     uid = message.from_user.id
 
@@ -2477,12 +2430,12 @@ async def back_to_main_menu(message: Message):
 
     await send_temp_message(
         message,
-        rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט למטה."),
-        reply_markup=main_menu_inline_keyboard(message.from_user.id),
+        rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט:"),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
-@router.message(F.text.in_({"🏠 הכתובות שלי", "הכתובות שלי 🏠"}))
+@router.message(F.text == "🏠 הכתובות שלי")
 async def my_addresses(message: Message):
     uid = message.from_user.id
 
@@ -2546,272 +2499,10 @@ async def add_address_start(message: Message):
     )
 
 
-
-CUSTOMER_BUTTON_ACTIONS = {
-    "cart": "🛒 הסל שלי",
-    "back": "⬅️ חזרה",
-    "back_categories": "⬅️ חזרה לקטגוריות",
-    "add_more": "➕ הוסף עוד מוצר",
-    "checkout": "✅ המשך להזמנה",
-    "clear_cart": "🧹 רוקן סל",
-    "cancel_order": "❌ בטל הזמנה",
-    "delivery": "🚚 משלוח עד הבית",
-    "pickup": "🛍️ איסוף עצמי מהחנות",
-    "back_cart": "⬅️ חזרה לסל",
-    "back_fulfillment": "⬅️ חזרה לבחירת משלוח / איסוף",
-    "saved_details_continue": "✅ המשך עם הפרטים השמורים",
-    "new_details": "✏️ הזן פרטים חדשים",
-    "confirm_order": "✅ אשר הזמנה",
-    "edit_details": "✏️ שנה פרטים",
-    "back_prev": "⬅️ חזרה לשלב קודם",
-    "pay_success": "✅ סימולציית תשלום הצליחה",
-    "back_summary": "⬅️ חזרה לסיכום הזמנה",
-    "cancel_payment": "❌ ביטול תשלום",
-    "main_menu": "⬅️ חזרה לתפריט",
-    "reorder": "🔁 הזמן שוב",
-    "show_addresses": "📋 הצג כתובות",
-    "add_address": "➕ הוסף כתובת",
-}
-
-
-CUSTOMER_TEXT_ACTIONS = {
-    "support_order": "📦 שאלה על הזמנה קיימת",
-    "support_fulfillment": "🚚 משלוח / איסוף",
-    "support_payment": "💳 תשלום",
-    "support_product": "🛍️ מוצר / מלאי",
-    "support_details": "📝 שינוי פרטים",
-    "support_other": "❓ אחר",
-}
-
-
-@router.callback_query(F.data.startswith("main_menu:"))
-async def inline_main_menu_action(callback: CallbackQuery):
-    uid = callback.from_user.id
-    action = (callback.data or "").split(":", 1)[1]
-    users.setdefault(uid, {"cart": [], "step": None})
-    proxy = callback_proxy(callback, "")
-
-    if action == "shop":
-        users[uid]["step"] = "category_select"
-        await delete_temp_bot_messages(callback.message.bot, uid)
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
-        await send_temp_message(proxy, wide_wide_rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"), reply_markup=categories_keyboard(), parse_mode="HTML")
-        await callback.answer()
-        return
-
-    mapping = {
-        "orders": "📦 ההזמנות שלי",
-        "profile": "👤 הפרטים שלי",
-        "addresses": "🏠 הכתובות שלי",
-        "admin": "🔐 פאנל ניהול",
-    }
-
-    if action == "support":
-        users[uid]["step"] = "support_subject"
-        await delete_temp_bot_messages(callback.message.bot, uid)
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
-        await send_temp_message(proxy, wide_rtl("<b>📞 שירות לקוחות</b>\n\nבחר את נושא הפנייה:"), reply_markup=support_subject_keyboard(), parse_mode="HTML")
-        await callback.answer()
-        return
-
-    text = mapping.get(action)
-    if text:
-        proxy.text = text
-        await handle_shop(proxy)
-        await callback.answer()
-        return
-
-    await callback.answer("פעולה לא תקינה.", show_alert=True)
-
-
-@router.callback_query(F.data.startswith("shop_cat:"))
-async def inline_shop_category(callback: CallbackQuery):
-    uid = callback.from_user.id
-    products = get_active_products()
-    categories = list(products.keys())
-
-    try:
-        category = categories[int((callback.data or "").split(":", 1)[1])]
-    except Exception:
-        await callback.answer("קטגוריה לא נמצאה.", show_alert=True)
-        return
-
-    users.setdefault(uid, {"cart": [], "step": None})
-    users[uid]["category"] = category
-    users[uid]["step"] = "product_select"
-
-    await delete_temp_bot_messages(callback.message.bot, uid)
-    proxy = callback_proxy(callback, category)
-
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
-
-    await send_temp_message(proxy, wide_wide_rtl(f"<b>📂 {h(category)}</b>\n\nבחר מוצר:"), reply_markup=products_keyboard(category), parse_mode="HTML")
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("shop_prod:"))
-async def inline_shop_product(callback: CallbackQuery):
-    uid = callback.from_user.id
-    products = get_active_products()
-
-    try:
-        _, category_index, product_index = (callback.data or "").split(":")
-        category = list(products.keys())[int(category_index)]
-        product = products[category][int(product_index)]
-    except Exception:
-        await callback.answer("המוצר לא נמצא.", show_alert=True)
-        return
-
-    if int(product.get("stock", 0) or 0) <= 0:
-        await callback.answer("המוצר אזל מהמלאי.", show_alert=True)
-        return
-
-    users.setdefault(uid, {"cart": [], "step": None})
-    users[uid]["category"] = category
-    users[uid]["selected_product"] = product
-    users[uid]["selected_qty"] = 1
-    users[uid]["step"] = "qty"
-
-    await delete_temp_bot_messages(callback.message.bot, uid)
-    proxy = callback_proxy(callback, product.get("name", ""))
-
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
-
-    try:
-        await send_product_card(proxy, product)
-    except Exception:
-        pass
-
-    await send_temp_message(
-        proxy,
-        wide_rtl("<b>🔢 בחירת כמות</b>\n\n" + field("כמות נבחרת", 1) + "\n\nבחר את הכמות הרצויה להזמנה.\nלאחר מכן לחץ על 🛒 הוסף לסל."),
-        reply_markup=quantity_inline_keyboard(1),
-        parse_mode="HTML",
-        clear_previous=False
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "shop_out_of_stock")
-async def inline_shop_out_of_stock(callback: CallbackQuery):
-    await callback.answer("המוצר אזל מהמלאי.", show_alert=True)
-
-
-@router.callback_query(F.data.startswith("cust_btn:"))
-async def inline_customer_button(callback: CallbackQuery):
-    action = (callback.data or "").split(":", 1)[1]
-    text = CUSTOMER_BUTTON_ACTIONS.get(action)
-
-    if not text:
-        await callback.answer("פעולה לא תקינה.", show_alert=True)
-        return
-
-    proxy = callback_proxy(callback, text)
-
-    if action == "cart":
-        await show_cart(proxy)
-    elif action == "back":
-        await back_main(proxy)
-    elif action == "back_categories":
-        await back_categories(proxy)
-    elif action == "add_more":
-        await add_more(proxy)
-    elif action == "checkout":
-        if not users.get(callback.from_user.id, {}).get("cart"):
-            await callback.answer("הסל ריק. קודם בחר מוצר.", show_alert=True)
-            return
-        await checkout(proxy)
-    elif action == "clear_cart":
-        await clear_cart(proxy)
-    elif action == "cancel_order":
-        await cancel_order(proxy)
-    elif action == "confirm_order":
-        await confirm_order(proxy)
-    elif action == "edit_details":
-        await edit_details(proxy)
-    elif action in {"delivery", "pickup", "back_cart", "back_fulfillment", "saved_details_continue", "new_details", "back_prev", "pay_success", "back_summary", "cancel_payment"}:
-        await handle_shop(proxy)
-    elif action == "main_menu":
-        await back_to_main_menu(proxy)
-    elif action == "reorder":
-        await reorder_choose_order(proxy)
-    elif action == "show_addresses":
-        await show_my_addresses(proxy)
-    elif action == "add_address":
-        await add_address_start(proxy)
-    else:
-        await handle_shop(proxy)
-
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("cust_text:"))
-async def inline_customer_text(callback: CallbackQuery):
-    action = (callback.data or "").split(":", 1)[1]
-    text = CUSTOMER_TEXT_ACTIONS.get(action)
-
-    if not text:
-        await callback.answer("פעולה לא תקינה.", show_alert=True)
-        return
-
-    proxy = callback_proxy(callback, text)
-    await handle_shop(proxy)
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("support_question:"))
-async def inline_support_question(callback: CallbackQuery):
-    uid = callback.from_user.id
-    data = users.get(uid, {})
-    subject = data.get("support_subject") or "❓ אחר"
-    questions = SUPPORT_FAQ_BY_SUBJECT.get(subject, SUPPORT_FAQ_BY_SUBJECT.get("❓ אחר", []))
-
-    try:
-        question = questions[int((callback.data or "").split(":", 1)[1])]
-    except Exception:
-        await callback.answer("שאלה לא נמצאה.", show_alert=True)
-        return
-
-    proxy = callback_proxy(callback, question)
-    await handle_shop(proxy)
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("support_action:"))
-async def inline_support_action(callback: CallbackQuery):
-    action = (callback.data or "").split(":", 1)[1]
-    mapping = {
-        "close_ticket": "✅ הבעיה נפתרה",
-        "agent": "✍️ פנייה לנציג שירות",
-        "back_topics": "⬅️ חזרה לנושאים",
-    }
-
-    text = mapping.get(action)
-    if not text:
-        await callback.answer("פעולה לא תקינה.", show_alert=True)
-        return
-
-    proxy = callback_proxy(callback, text)
-    await handle_shop(proxy)
-    await callback.answer()
-
-
 @router.message()
 async def handle_shop(message: Message):
     uid = message.from_user.id
-    txt = ui_text(message.text)
+    txt = (message.text or "").strip()
     data = users.get(uid)
 
     products = get_active_products()
@@ -3416,7 +3107,7 @@ async def handle_shop(message: Message):
 
             await message.answer(
                 rtl("<b>✅ הפנייה בוטלה.</b>\nחזרת לתפריט הראשי."),
-                reply_markup=main_menu_inline_keyboard(message.from_user.id),
+                reply_markup=main_keyboard(message.from_user.id),
                 parse_mode="HTML"
             )
             return
@@ -3497,7 +3188,7 @@ async def handle_shop(message: Message):
                         "<b>ℹ️ הפנייה כבר סגורה.</b>\n"
                         "חזרת לתפריט הראשי."
                     ),
-                    reply_markup=main_menu_inline_keyboard(message.from_user.id),
+                    reply_markup=main_keyboard(message.from_user.id),
                     parse_mode="HTML"
                 )
                 return
@@ -3522,7 +3213,7 @@ async def handle_shop(message: Message):
 
                 await message.answer(
                     rtl("<b>✅ הפנייה נסגרה.</b>\nתודה שפנית לשירות הלקוחות של Vendora."),
-                    reply_markup=main_menu_inline_keyboard(message.from_user.id),
+                    reply_markup=main_keyboard(message.from_user.id),
                     parse_mode="HTML"
                 )
                 return
@@ -3534,7 +3225,7 @@ async def handle_shop(message: Message):
                     "<b>ℹ️ הפנייה כבר סגורה.</b>\n"
                     "חזרת לתפריט הראשי."
                 ),
-                reply_markup=main_menu_inline_keyboard(message.from_user.id),
+                reply_markup=main_keyboard(message.from_user.id),
                 parse_mode="HTML"
             )
             return
@@ -4034,3 +3725,88 @@ async def handle_shop(message: Message):
     if data and not is_free_text_step_for_customer(data.get("step")):
         await delete_customer_message(message)
         return
+
+
+# ================== CUSTOMER INLINE CALLBACK ROUTER ==================
+class CustomerInlineMessageProxy:
+    """Proxy קטן שמאפשר ל־Inline buttons להשתמש באותם handlers קיימים בלי לשכתב לוגיקה."""
+
+    def __init__(self, callback: CallbackQuery, text: str):
+        self._callback = callback
+        self._message = callback.message
+        self.text = text
+        self.from_user = callback.from_user
+        self.bot = callback.message.bot
+        self.chat = callback.message.chat
+
+    async def answer(self, *args, **kwargs):
+        return await self._message.answer(*args, **kwargs)
+
+    async def answer_photo(self, *args, **kwargs):
+        return await self._message.answer_photo(*args, **kwargs)
+
+    async def answer_document(self, *args, **kwargs):
+        return await self._message.answer_document(*args, **kwargs)
+
+    async def delete(self):
+        try:
+            return await self._message.delete()
+        except Exception:
+            return None
+
+
+async def dispatch_customer_inline_text(callback: CallbackQuery, text: str):
+    message = CustomerInlineMessageProxy(callback, text)
+
+    if text == "🔐 פאנל ניהול":
+        try:
+            from admin_handlers import admin_panel_button
+            await admin_panel_button(message)
+        except Exception:
+            await message.answer(rtl("<b>⚠️ לא ניתן לפתוח את פאנל הניהול כרגע.</b>"), parse_mode="HTML")
+        return
+
+    direct_handlers = {
+        "✅ הבעיה נפתרה": customer_close_support_ticket_button,
+        "❌ ביטול תשלום": customer_cancel_payment_button,
+        "👤 הפרטים שלי": my_details,
+        "🛒 חנות": shop,
+        "⬅️ חזרה לניהול": back_to_admin_panel_from_shop,
+        "⬅️ חזרה": back_main,
+        "⬅️ חזרה לקטגוריות": back_categories,
+        "➕ הוסף עוד מוצר": add_more,
+        "🛒 הסל שלי": show_cart,
+        "🧹 רוקן סל": clear_cart,
+        "❌ בטל הזמנה": cancel_order,
+        "✏️ שנה פרטים": edit_details,
+        "✅ המשך להזמנה": continue_order,
+        "⬅️ חזרה לבחירת משלוח / איסוף": back_to_fulfillment_choice,
+        "⬅️ חזרה לשלב קודם": back_from_order_summary_to_previous_step,
+        "✅ אשר הזמנה": confirm_order,
+        "📞 שירות לקוחות": support,
+        "📦 ההזמנות שלי": my_orders,
+        "🔁 הזמן שוב": reorder_choose_order,
+        "⬅️ חזרה לתפריט": back_to_main_menu,
+        "🏠 הכתובות שלי": my_addresses,
+        "📋 הצג כתובות": show_my_addresses,
+        "➕ הוסף כתובת": add_address_start,
+    }
+
+    handler = direct_handlers.get(text)
+    if handler:
+        await handler(message)
+        return
+
+    await handle_shop(message)
+
+
+@router.callback_query(F.data.startswith("ui:"))
+async def customer_inline_button_router(callback: CallbackQuery):
+    text = INLINE_TEXT_BY_CODE.get(callback.data)
+
+    if not text:
+        await callback.answer("הכפתור כבר לא פעיל. לחץ /start לפתיחה מחדש.", show_alert=True)
+        return
+
+    await callback.answer()
+    await dispatch_customer_inline_text(callback, text)
