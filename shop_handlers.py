@@ -5,7 +5,7 @@ from html import escape
 import asyncio
 
 from config import ADMIN_ID
-from keyboards import main_keyboard, compact_menu_keyboard, main_menu_inline_keyboard, shop_categories_inline_keyboard, shop_products_inline_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard, support_subject_keyboard
+from keyboards import main_keyboard, compact_menu_keyboard, main_menu_inline_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard, support_subject_keyboard
 from database import (
     get_active_products,
     get_product_by_name,
@@ -1514,15 +1514,6 @@ async def inline_main_menu_action(callback: CallbackQuery):
     uid = callback.from_user.id
     action = (callback.data or "").split(":", 1)[1]
 
-    if action == "open":
-        await callback.message.answer(
-            main_menu_text(),
-            reply_markup=main_menu_inline_keyboard(uid),
-            parse_mode="HTML"
-        )
-        await callback.answer()
-        return
-
     users.setdefault(uid, {"cart": [], "step": None})
     users[uid].pop("main_menu_message_id", None)
 
@@ -1549,7 +1540,7 @@ async def inline_main_menu_action(callback: CallbackQuery):
 
         sent = await callback.message.answer(
             rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"),
-            reply_markup=shop_categories_inline_keyboard(),
+            reply_markup=categories_keyboard(),
             parse_mode="HTML"
         )
         users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
@@ -1690,7 +1681,7 @@ async def shop(message: Message):
     await send_temp_message(
         message,
         rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"),
-        reply_markup=shop_categories_inline_keyboard(),
+        reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
 
@@ -2580,141 +2571,6 @@ async def add_address_start(message: Message):
         ),
         parse_mode="HTML"
     )
-
-
-@router.callback_query(F.data.startswith("shop_category:"))
-async def shop_category_inline_action(callback: CallbackQuery):
-    uid = callback.from_user.id
-    category = (callback.data or "").split(":", 1)[1]
-
-    users.setdefault(uid, {"cart": [], "step": None})
-    users[uid]["step"] = "product_select"
-    users[uid]["category"] = category
-
-    await delete_temp_bot_messages(callback.message.bot, uid)
-
-    sent = await callback.message.answer(
-        rtl(f"<b>📂 {h(category)}</b>\n\nבחר מוצר:"),
-        reply_markup=shop_products_inline_keyboard(category),
-        parse_mode="HTML"
-    )
-    users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
-
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
-
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("shop_product:"))
-async def shop_product_inline_action(callback: CallbackQuery):
-    uid = callback.from_user.id
-    product_name = (callback.data or "").split(":", 1)[1]
-
-    if product_name == "out_of_stock":
-        await callback.answer("המוצר אזל מהמלאי.", show_alert=True)
-        return
-
-    users.setdefault(uid, {"cart": [], "step": None})
-    data = users[uid]
-
-    product = get_product_by_name(product_name)
-
-    if not product:
-        await callback.answer("המוצר לא נמצא.", show_alert=True)
-        return
-
-    stock = int(product.get("stock", 0) or 0)
-
-    if stock <= 0:
-        await callback.answer("המוצר אזל מהמלאי.", show_alert=True)
-        return
-
-    data["step"] = "qty"
-    data["selected_product"] = product
-    data["selected_qty"] = 1
-
-    await delete_temp_bot_messages(callback.message.bot, uid)
-
-    caption = product_text(product)
-
-    if product.get("image_file_id"):
-        sent = await callback.message.answer_photo(
-            photo=product.get("image_file_id"),
-            caption=caption,
-            reply_markup=quantity_inline_keyboard(1),
-            parse_mode="HTML"
-        )
-    else:
-        sent = await callback.message.answer(
-            caption,
-            reply_markup=quantity_inline_keyboard(1),
-            parse_mode="HTML"
-        )
-
-    users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
-
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
-
-    await callback.answer()
-
-
-@router.callback_query(F.data == "shop_back:categories")
-async def shop_back_to_categories_inline(callback: CallbackQuery):
-    uid = callback.from_user.id
-    users.setdefault(uid, {"cart": [], "step": None})
-    users[uid]["step"] = "browse_products"
-
-    await delete_temp_bot_messages(callback.message.bot, uid)
-
-    sent = await callback.message.answer(
-        rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"),
-        reply_markup=shop_categories_inline_keyboard(),
-        parse_mode="HTML"
-    )
-    users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
-
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
-
-    await callback.answer()
-
-
-@router.callback_query(F.data == "shop_cart:open")
-async def shop_cart_inline_action(callback: CallbackQuery):
-    uid = callback.from_user.id
-    data = users.get(uid, {})
-
-    if not data.get("cart"):
-        await callback.message.answer(
-            rtl("<b>🛒 הסל שלך ריק.</b>\n\nקודם בחר מוצר."),
-            parse_mode="HTML"
-        )
-        await callback.answer()
-        return
-
-    data["step"] = "cart"
-
-    await callback.message.answer(
-        cart_text(data["cart"]),
-        reply_markup=cart_keyboard(),
-        parse_mode="HTML"
-    )
-
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
-
-    await callback.answer()
-
 
 
 @router.message()
