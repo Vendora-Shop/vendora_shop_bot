@@ -437,10 +437,25 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
     if disable_web_page_preview is not None:
         kwargs["disable_web_page_preview"] = disable_web_page_preview
 
+    if isinstance(reply_markup, InlineKeyboardMarkup):
+        text = widen_inline_screen_text(text)
+
+    if not clear_previous:
+        try:
+            setattr(message, "_skip_inline_auto_delete_once", True)
+        except Exception:
+            pass
+
     sent = await message.answer(
         text,
         **kwargs
     )
+
+    try:
+        if not clear_previous:
+            setattr(message, "_skip_inline_auto_delete_once", False)
+    except Exception:
+        pass
 
     users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
 
@@ -1464,10 +1479,22 @@ class CustomerCallbackMessage:
 
     async def answer(self, *args, **kwargs):
         # Inline UI: בכל מעבר מסך מוחקים את המסך הפעיל הקודם ושומרים את החדש.
+        # כש-send_temp_message נקרא עם clear_previous=False שומרים גם את ההודעה הקודמת
+        # למשל: תמונת מוצר + מסך בחירת כמות.
+        skip_delete = bool(getattr(self, "_skip_inline_auto_delete_once", False))
+
         try:
-            await delete_temp_bot_messages(self.bot, self.from_user.id)
+            reply_markup = kwargs.get("reply_markup")
+            if isinstance(reply_markup, InlineKeyboardMarkup) and args:
+                args = (widen_inline_screen_text(args[0]),) + tuple(args[1:])
         except Exception:
             pass
+
+        if not skip_delete:
+            try:
+                await delete_temp_bot_messages(self.bot, self.from_user.id)
+            except Exception:
+                pass
 
         sent = await self.message.answer(*args, **kwargs)
 
@@ -1480,10 +1507,13 @@ class CustomerCallbackMessage:
 
     async def answer_photo(self, *args, **kwargs):
         # אותו עיקרון גם לתמונות מוצר/באנרים.
-        try:
-            await delete_temp_bot_messages(self.bot, self.from_user.id)
-        except Exception:
-            pass
+        skip_delete = bool(getattr(self, "_skip_inline_auto_delete_once", False))
+
+        if not skip_delete:
+            try:
+                await delete_temp_bot_messages(self.bot, self.from_user.id)
+            except Exception:
+                pass
 
         sent = await self.message.answer_photo(*args, **kwargs)
 
@@ -1492,6 +1522,11 @@ class CustomerCallbackMessage:
         except Exception:
             pass
 
+        return sent
+
+    async def answer_document(self, *args, **kwargs):
+        # מאפשר לשלוח PDF/קבצים גם כאשר הפעולה הגיעה מכפתור Inline.
+        sent = await self.message.answer_document(*args, **kwargs)
         return sent
 
     async def delete(self):
@@ -2529,14 +2564,14 @@ async def quantity_inline_action(callback: CallbackQuery):
         data["selected_qty"] = selected_qty
 
         await callback.message.edit_text(
-            rtl(
+            widen_inline_screen_text(rtl(
                 "<b>🔢 בחירת כמות</b>\n\n"
                 f"{field('כמות נבחרת', selected_qty)}\n\n"
                 "בחר את הכמות הרצויה להזמנה.\n"
                 "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
                 "רק לאחר בחירת הכמות ולחיצה על 🛒 הוסף לסל,\n"
                 "המוצרים יתווספו לסל ותוכל להמשיך."
-            ),
+            )),
             reply_markup=quantity_inline_keyboard(selected_qty),
             parse_mode="HTML"
         )
@@ -2550,14 +2585,14 @@ async def quantity_inline_action(callback: CallbackQuery):
         data["selected_qty"] = selected_qty
 
         await callback.message.edit_text(
-            rtl(
+            widen_inline_screen_text(rtl(
                 "<b>🔢 בחירת כמות</b>\n\n"
                 f"{field('כמות נבחרת', selected_qty)}\n\n"
                 "בחר את הכמות הרצויה להזמנה.\n"
                 "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
                 "רק לאחר בחירת הכמות ולחיצה על 🛒 הוסף לסל,\n"
                 "המוצרים יתווספו לסל ותוכל להמשיך למשלוח או לאיסוף."
-            ),
+            )),
             reply_markup=quantity_inline_keyboard(selected_qty),
             parse_mode="HTML"
         )
