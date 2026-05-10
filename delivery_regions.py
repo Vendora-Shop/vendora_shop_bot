@@ -233,6 +233,105 @@ def is_valid_israel_location(city):
     return normalize_israel_location(city) is not None
 
 
+
+_STREET_VALIDATION_CACHE = {}
+
+
+def _has_house_number(street):
+    return bool(re.search(r"\d+", str(street or "")))
+
+
+def validate_street_address(city, street):
+    """
+    בודק כתובת רחוב + מספר בית מול העיר.
+
+    מחזיר dict:
+    {
+      "ok": True/False,
+      "reason": "ok" / "missing_city" / "missing_number" / "not_found" / "unverified",
+      "display": "שם כתובת לתצוגה"
+    }
+
+    הבדיקה משתמשת ב־OpenStreetMap Nominatim אם יש אינטרנט.
+    אם אין חיבור/שירות, היא לא מפילה את הבוט ומחזירה unverified.
+    """
+    city = normalize_israel_location(city)
+    street = _clean_text(street)
+
+    if not city:
+        return {"ok": False, "reason": "missing_city", "display": street}
+
+    if not street or len(street) < 2:
+        return {"ok": False, "reason": "too_short", "display": street}
+
+    if not _has_house_number(street):
+        return {"ok": False, "reason": "missing_number", "display": street}
+
+    cache_key = (_normalize_key(city), _normalize_key(street))
+    if cache_key in _STREET_VALIDATION_CACHE:
+        return _STREET_VALIDATION_CACHE[cache_key]
+
+    # בדיקת אונליין עדינה. אם היא נכשלת טכנית — לא חוסמים לקוח לגמרי.
+    try:
+        import requests
+
+        query = f"{street}, {city}, Israel"
+        response = requests.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={
+                "q": query,
+                "format": "json",
+                "addressdetails": 1,
+                "limit": 3,
+                "countrycodes": "il",
+            },
+            headers={"User-Agent": "vendora-shop-bot/1.0"},
+            timeout=5,
+        )
+
+        if response.status_code != 200:
+            result = {"ok": True, "reason": "unverified", "display": street}
+            _STREET_VALIDATION_CACHE[cache_key] = result
+            return result
+
+        results = response.json() or []
+
+        city_key = _normalize_key(city)
+        street_key = _normalize_key(re.sub(r"\d+", "", street))
+
+        for item in results:
+            display = item.get("display_name", "")
+            address = item.get("address", {}) or {}
+
+            candidate_city = (
+                address.get("city")
+                or address.get("town")
+                or address.get("village")
+                or address.get("municipality")
+                or address.get("suburb")
+                or ""
+            )
+            road = address.get("road") or address.get("pedestrian") or address.get("footway") or ""
+
+            combined = _normalize_key(display)
+            if (_normalize_key(candidate_city) == city_key or city_key in combined) and (
+                not road or _normalize_key(road) in street_key or street_key in _normalize_key(road) or street_key in combined
+            ):
+                result = {"ok": True, "reason": "ok", "display": street}
+                _STREET_VALIDATION_CACHE[cache_key] = result
+                return result
+
+        result = {"ok": False, "reason": "not_found", "display": street}
+        _STREET_VALIDATION_CACHE[cache_key] = result
+        return result
+
+    except Exception:
+        # במקרה שאין אינטרנט/requests/שירות נפל — לא מפילים את הבוט.
+        result = {"ok": True, "reason": "unverified", "display": street}
+        _STREET_VALIDATION_CACHE[cache_key] = result
+        return result
+
+
 def debug_delivery_region(city):
     normalized = normalize_israel_location(city)
     region = get_region_for_location(city)
