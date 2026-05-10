@@ -361,7 +361,7 @@ async def notify_admin_ticket_closed_by_customer(bot, ticket_number, user_full_n
 users = {}
 
 RTL = "\u200F"
-UI_WIDE_LINE = "━━━━━━━━━━━━━━━━━━━━"
+UI_WIDE_LINE = ""
 
 
 # ================== SAFE INPUT CLEANUP ==================
@@ -1463,10 +1463,36 @@ class CustomerCallbackMessage:
         self.chat = callback.message.chat
 
     async def answer(self, *args, **kwargs):
-        return await self.message.answer(*args, **kwargs)
+        # Inline UI: בכל מעבר מסך מוחקים את המסך הפעיל הקודם ושומרים את החדש.
+        try:
+            await delete_temp_bot_messages(self.bot, self.from_user.id)
+        except Exception:
+            pass
+
+        sent = await self.message.answer(*args, **kwargs)
+
+        try:
+            users.setdefault(self.from_user.id, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+        except Exception:
+            pass
+
+        return sent
 
     async def answer_photo(self, *args, **kwargs):
-        return await self.message.answer_photo(*args, **kwargs)
+        # אותו עיקרון גם לתמונות מוצר/באנרים.
+        try:
+            await delete_temp_bot_messages(self.bot, self.from_user.id)
+        except Exception:
+            pass
+
+        sent = await self.message.answer_photo(*args, **kwargs)
+
+        try:
+            users.setdefault(self.from_user.id, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+        except Exception:
+            pass
+
+        return sent
 
     async def delete(self):
         # אין הודעת משתמש למחיקה ב־Inline Callback.
@@ -1839,7 +1865,6 @@ async def start(message: Message):
             f"<b>👋 ברוך הבא {h(customer_name)}</b>\n\n"
             "<b>🛍️ Vendora Shop</b>\n"
             "חנות דיגיטלית חכמה להזמנות, משלוחים ואיסוף עצמי.\n\n"
-            f"{UI_WIDE_LINE}\n"
             "בחר פעולה מהתפריט:"
         ),
         reply_markup=main_keyboard(message.from_user.id),
@@ -1891,7 +1916,7 @@ async def shop(message: Message):
 
     await send_temp_message(
         message,
-        rtl(f"<b>🛒 החנות</b>\n\n{UI_WIDE_LINE}\nבחר קטגוריה:"),
+        rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
@@ -1949,7 +1974,7 @@ async def back_categories(message: Message):
     users[uid]["step"] = "browse_products"
     await send_temp_message(
         message,
-        rtl(f"<b>📂 קטגוריות</b>\n\n{UI_WIDE_LINE}\nבחר קטגוריה:"),
+        rtl("<b>📂 קטגוריות</b>\n\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
@@ -1963,7 +1988,7 @@ async def add_more(message: Message):
     users[uid]["step"] = "browse_products"
     await send_temp_message(
         message,
-        rtl(f"<b>➕ הוספת מוצר</b>\n\n{UI_WIDE_LINE}\nבחר קטגוריה:"),
+        rtl("<b>➕ הוספת מוצר</b>\n\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
@@ -2428,7 +2453,7 @@ async def quantity_inline_action(callback: CallbackQuery):
         proxy = CustomerCallbackMessage(callback, "⬅️ חזרה למוצרים")
         await send_temp_message(
             proxy,
-            rtl(f"<b>📂 {h(category or 'קטגוריה')}</b>\n\n{UI_WIDE_LINE}\nבחר מוצר:"),
+            rtl(f"<b>📂 {h(category or 'קטגוריה')}</b>\n\nבחר מוצר:"),
             reply_markup=products_keyboard(category),
             parse_mode="HTML"
         )
@@ -2720,7 +2745,7 @@ async def back_to_main_menu(message: Message):
 
     await send_temp_message(
         message,
-        rtl(f"<b>🏠 תפריט ראשי</b>\n\n{UI_WIDE_LINE}\nבחר פעולה מהתפריט:"),
+        rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט:"),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
@@ -2824,7 +2849,7 @@ async def handle_shop(message: Message):
         await consume_customer_click(message)
         await send_temp_message(
             message,
-            rtl(f"<b>📂 {h(txt)}</b>\n\n{UI_WIDE_LINE}\nבחר מוצר:"),
+            rtl(f"<b>📂 {h(txt)}</b>\n\nבחר מוצר:"),
             reply_markup=products_keyboard(txt),
             parse_mode="HTML"
         )
