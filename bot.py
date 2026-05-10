@@ -1,5 +1,6 @@
 import asyncio
 from aiogram import Bot, Dispatcher
+from aiogram.types import BotCommand, MenuButtonCommands
 
 from config import BOT_TOKEN
 from database import create_tables
@@ -15,6 +16,14 @@ dp.include_router(shop_router)
 
 async def main():
     create_tables()
+
+    await bot.set_my_commands([
+        BotCommand(command="start", description="התחלה"),
+        BotCommand(command="menu", description="תפריט ראשי"),
+    ])
+
+    await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+
     print("Vendora Shop Running...")
     await dp.start_polling(bot)
 
