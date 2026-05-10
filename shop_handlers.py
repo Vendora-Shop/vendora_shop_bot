@@ -1770,7 +1770,7 @@ def address_actions_keyboard():
 
 def address_edit_keyboard():
     return _inline(_wide_buttons([
-        _btn("🏷️ שינוי שם כתובת", "ui:addr:edit_field:label"),
+        _btn("🏷️ שינוי שם הכתובת", "ui:addr:edit_field:label"),
         _btn("📍 שינוי עיר / יישוב", "ui:addr:edit_field:city"),
         _btn("🏠 שינוי רחוב ומספר בית", "ui:addr:edit_field:street"),
         _btn("🏢 שינוי קומה", "ui:addr:edit_field:floor"),
@@ -1815,6 +1815,11 @@ async def show_selected_address_profile_by_message(message, uid, address_id):
     data = users.setdefault(uid, {"cart": []})
     address = get_customer_address_by_id(uid, int(address_id)) if address_id else None
 
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
     await delete_temp_bot_messages(message.bot, uid)
 
     if not address:
@@ -1843,6 +1848,11 @@ async def show_address_edit_menu_by_message(message, uid):
     data = users.setdefault(uid, {"cart": []})
     address_id = data.get("selected_address_id")
     address = get_customer_address_by_id(uid, address_id)
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
 
     await delete_temp_bot_messages(message.bot, uid)
 
@@ -2238,7 +2248,7 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             return
 
         prompts = {
-            "label": ("edit_address_label", "<b>🏷️ שינוי שם כתובת</b>\n\nרשום שם חדש לכתובת.\nלדוגמה: בית / עבודה / הורים"),
+            "label": ("edit_address_label", "<b>🏷️ שינוי שם הכתובת</b>\n\nרשום שם חדש לכתובת.\nלדוגמה: בית / עבודה / הורים"),
             "city": ("edit_address_city", "<b>📍 שינוי עיר / יישוב</b>\n\nרשום את שם העיר, המושב, הקיבוץ או היישוב."),
             "street": ("edit_address_street", "<b>🏠 שינוי רחוב ומספר בית</b>\n\nרשום רחוב ומספר בית.\nלדוגמה: הרצל 10"),
             "floor": ("edit_address_floor", "<b>🏢 שינוי קומה</b>\n\nרשום מספר קומה.\nאם אין, רשום 0."),
