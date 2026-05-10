@@ -42,26 +42,34 @@ def is_admin_panel_active_for_shop_guard(user_id):
         return False
 
 
-async def safe_send_order_pdf(message, order_id):
-    try:
-        pdf_path = create_order_pdf(order_id)
 
-        if not pdf_path:
-            return False
+class CallbackMessageProxy:
+    def __init__(self, callback: CallbackQuery, text: str):
+        self._callback = callback
+        self._message = callback.message
+        self.from_user = callback.from_user
+        self.bot = callback.message.bot
+        self.chat = callback.message.chat
+        self.text = text
 
-        from aiogram.types import FSInputFile
-        await message.answer_document(
-            FSInputFile(pdf_path),
-            caption=wide_rtl(f"<b>📄 סיכום הזמנה {h(order_id)}</b>"),
-            parse_mode="HTML",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        return True
+    async def answer(self, *args, **kwargs):
+        return await self._message.answer(*args, **kwargs)
 
-    except Exception:
-        # לא מפילים את ההזמנה בגלל תקלה רגעית ביצירת PDF.
-        return False
+    async def answer_photo(self, *args, **kwargs):
+        return await self._message.answer_photo(*args, **kwargs)
 
+    async def answer_document(self, *args, **kwargs):
+        return await self._message.answer_document(*args, **kwargs)
+
+    async def delete(self):
+        try:
+            return await self._message.delete()
+        except Exception:
+            return None
+
+
+def callback_proxy(callback: CallbackQuery, text: str):
+    return CallbackMessageProxy(callback, text)
 
 
 @router.message(F.text == "✅ הבעיה נפתרה")
@@ -699,10 +707,7 @@ def rtl(text):
     return "\u202B" + str(text) + "\u202C" + RTL
 
 
-
-
-
-WIDE_PAD = "⠀" * 42
+WIDE_PAD = "⠀" * 44
 
 def wide_rtl(text):
     return rtl(str(text) + "\n" + WIDE_PAD)
@@ -715,7 +720,6 @@ def wide_inline_keyboard(rows):
             for text, callback_data in rows
         ]
     )
-
 
 def main_menu_inline_keyboard(user_id=None):
     rows = [
@@ -730,6 +734,12 @@ def main_menu_inline_keyboard(user_id=None):
         rows.append(("פאנל ניהול 🔐", "main_menu:admin"))
 
     return wide_inline_keyboard(rows)
+
+def empty_cart_keyboard():
+    return wide_inline_keyboard([
+        ("🛍️ עבור לחנות", "cust_btn:add_more"),
+        ("❌ בטל הזמנה", "cust_btn:cancel_order"),
+    ])
 
 def saved_details_keyboard():
     return wide_inline_keyboard([
@@ -836,7 +846,6 @@ def admin_new_order_keyboard(order_number):
     )
 
 
-
 def categories_keyboard():
     products = get_active_products()
     rows = [(cat, f"shop_cat:{i}") for i, cat in enumerate(products.keys())]
@@ -848,10 +857,10 @@ def categories_keyboard():
 def products_keyboard(category):
     products = get_active_products()
     items = products.get(category, [])
-    keys = list(products.keys())
+    categories = list(products.keys())
 
     try:
-        category_index = keys.index(category)
+        category_index = categories.index(category)
     except ValueError:
         category_index = 0
 
@@ -867,12 +876,6 @@ def products_keyboard(category):
     rows.append(("⬅️ חזרה לקטגוריות", "cust_btn:back_categories"))
     return wide_inline_keyboard(rows)
 
-
-def empty_cart_keyboard():
-    return wide_inline_keyboard([
-        ("🛍️ עבור לחנות", "cust_btn:add_more"),
-        ("❌ בטל הזמנה", "cust_btn:cancel_order"),
-    ])
 
 def cart_keyboard():
     return wide_inline_keyboard([
@@ -922,7 +925,6 @@ def quantity_inline_keyboard(selected_qty):
             ]
         ]
     )
-
 
 
 def confirm_keyboard():
@@ -1597,7 +1599,7 @@ async def open_inline_main_menu(message: Message):
     await delete_main_menu_message(message.bot, uid)
 
     sent = await message.answer(
-        wide_rtl("<b>☰ תפריט ראשי</b>\n\nבחר פעולה מתוך האפשרויות:"),
+        main_menu_text(),
         reply_markup=main_menu_inline_keyboard(uid),
         parse_mode="HTML"
     )
@@ -1651,7 +1653,7 @@ async def shop(message: Message):
 
     await send_temp_message(
         message,
-        wide_wide_rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"),
+        wide_rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
@@ -1815,7 +1817,7 @@ async def checkout(message: Message):
 
     if not data or not data.get("cart"):
         await message.answer(
-            wide_wide_rtl("<b>🛒 הסל שלך ריק.</b>\n\nקודם בחר מוצר."),
+            wide_rtl("<b>🛒 הסל שלך ריק.</b>\n\nקודם בחר מוצר."),
             parse_mode="HTML"
         )
         return
@@ -1827,7 +1829,7 @@ async def checkout(message: Message):
 
     await send_temp_message(
         message,
-        wide_rtl(
+        rtl(
             "<b>📦 איך תרצה לקבל את ההזמנה?</b>\n\n"
             "בחר אחת מהאפשרויות:"
         ),
@@ -1956,14 +1958,13 @@ async def submit_paid_order(message: Message, data):
             pdf_path = create_invoice_pdf(saved_order)
             await message.answer_document(
                 FSInputFile(pdf_path),
-                caption=wide_rtl(f"📄 <b>סיכום הזמנה</b> {h(order_number)}"),
+                caption=rtl(f"📄 <b>סיכום הזמנה</b> {h(order_number)}"),
                 parse_mode="HTML"
             )
         except Exception:
             await message.answer(
                 rtl("<b>⚠️ ההזמנה נשמרה, אבל לא הצלחתי ליצור PDF כרגע.</b>"),
-                parse_mode="HTML",
-                reply_markup=ReplyKeyboardRemove()
+                parse_mode="HTML"
             )
 
     users.pop(uid, None)
@@ -2027,7 +2028,7 @@ async def back_to_fulfillment_choice(message: Message):
 
     await send_temp_message(
         message,
-        wide_rtl(
+        rtl(
             "<b>📦 איך תרצה לקבל את ההזמנה?</b>\n\n"
             "בחר אחת מהאפשרויות:"
         ),
@@ -2087,7 +2088,7 @@ async def back_from_order_summary_to_previous_step(message: Message):
 
     await send_temp_message(
         message,
-        wide_rtl(
+        rtl(
             "<b>📦 איך תרצה לקבל את ההזמנה?</b>\n\n"
             "בחר אחת מהאפשרויות:"
         ),
@@ -2144,7 +2145,7 @@ async def confirm_order(message: Message):
     order_type_text = "🛍️ איסוף עצמי" if is_pickup_order(data) else "🚚 משלוח עד הבית"
 
     await message.answer(
-        wide_rtl(
+        rtl(
             "<b>💳 תשלום הזמנה</b>\n\n"
             f"{field('סוג הזמנה', order_type_text)}\n"
             f"{field('סה״כ לתשלום', money(final_total))}\n\n"
@@ -2260,7 +2261,7 @@ async def quantity_inline_action(callback: CallbackQuery):
         data["selected_qty"] = selected_qty
 
         await callback.message.edit_text(
-            wide_rtl(
+            rtl(
                 "<b>🔢 בחירת כמות</b>\n\n"
                 f"{field('כמות נבחרת', selected_qty)}\n\n"
                 "בחר את הכמות הרצויה להזמנה.\n"
@@ -2281,7 +2282,7 @@ async def quantity_inline_action(callback: CallbackQuery):
         data["selected_qty"] = selected_qty
 
         await callback.message.edit_text(
-            wide_rtl(
+            rtl(
                 "<b>🔢 בחירת כמות</b>\n\n"
                 f"{field('כמות נבחרת', selected_qty)}\n\n"
                 "בחר את הכמות הרצויה להזמנה.\n"
@@ -2407,7 +2408,7 @@ async def support(message: Message):
     }
 
     await message.answer(
-        wide_rtl(
+        rtl(
             "<b>📞 שירות לקוחות</b>\n\n"
             "בחר את נושא הפנייה:"
         ),
@@ -2545,109 +2546,89 @@ async def add_address_start(message: Message):
     )
 
 
-class CallbackMessageProxy:
-    def __init__(self, callback: CallbackQuery, text: str):
-        self._callback = callback
-        self._message = callback.message
-        self.from_user = callback.from_user
-        self.bot = callback.message.bot
-        self.chat = callback.message.chat
-        self.text = text
 
-    async def answer(self, *args, **kwargs):
-        return await self._message.answer(*args, **kwargs)
-
-    async def answer_photo(self, *args, **kwargs):
-        return await self._message.answer_photo(*args, **kwargs)
-
-    async def delete(self):
-        try:
-            return await self._message.delete()
-        except Exception:
-            return None
-
-
-def callback_proxy(callback: CallbackQuery, text: str):
-    return CallbackMessageProxy(callback, text)
-
-
-
-
+CUSTOMER_BUTTON_ACTIONS = {
+    "cart": "🛒 הסל שלי",
+    "back": "⬅️ חזרה",
+    "back_categories": "⬅️ חזרה לקטגוריות",
+    "add_more": "➕ הוסף עוד מוצר",
+    "checkout": "✅ המשך להזמנה",
+    "clear_cart": "🧹 רוקן סל",
+    "cancel_order": "❌ בטל הזמנה",
+    "delivery": "🚚 משלוח עד הבית",
+    "pickup": "🛍️ איסוף עצמי מהחנות",
+    "back_cart": "⬅️ חזרה לסל",
+    "back_fulfillment": "⬅️ חזרה לבחירת משלוח / איסוף",
+    "saved_details_continue": "✅ המשך עם הפרטים השמורים",
+    "new_details": "✏️ הזן פרטים חדשים",
+    "confirm_order": "✅ אשר הזמנה",
+    "edit_details": "✏️ שנה פרטים",
+    "back_prev": "⬅️ חזרה לשלב קודם",
+    "pay_success": "✅ סימולציית תשלום הצליחה",
+    "back_summary": "⬅️ חזרה לסיכום הזמנה",
+    "cancel_payment": "❌ ביטול תשלום",
+    "main_menu": "⬅️ חזרה לתפריט",
+    "reorder": "🔁 הזמן שוב",
+    "show_addresses": "📋 הצג כתובות",
+    "add_address": "➕ הוסף כתובת",
+}
 
 
-
+CUSTOMER_TEXT_ACTIONS = {
+    "support_order": "📦 שאלה על הזמנה קיימת",
+    "support_fulfillment": "🚚 משלוח / איסוף",
+    "support_payment": "💳 תשלום",
+    "support_product": "🛍️ מוצר / מלאי",
+    "support_details": "📝 שינוי פרטים",
+    "support_other": "❓ אחר",
+}
 
 
 @router.callback_query(F.data.startswith("main_menu:"))
 async def inline_main_menu_action(callback: CallbackQuery):
     uid = callback.from_user.id
     action = (callback.data or "").split(":", 1)[1]
-
     users.setdefault(uid, {"cart": [], "step": None})
-
     proxy = callback_proxy(callback, "")
 
     if action == "shop":
         users[uid]["step"] = "category_select"
         await delete_temp_bot_messages(callback.message.bot, uid)
-
         try:
             await callback.message.delete()
         except Exception:
             pass
-
-        await send_temp_message(
-            proxy,
-            wide_rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"),
-            reply_markup=categories_keyboard(),
-            parse_mode="HTML"
-        )
+        await send_temp_message(proxy, wide_wide_rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"), reply_markup=categories_keyboard(), parse_mode="HTML")
         await callback.answer()
         return
 
-    if action == "orders":
-        proxy.text = "📦 ההזמנות שלי"
-        await handle_shop(proxy)
-        await callback.answer()
-        return
-
-    if action == "profile":
-        proxy.text = "👤 הפרטים שלי"
-        await handle_shop(proxy)
-        await callback.answer()
-        return
-
-    if action == "addresses":
-        proxy.text = "🏠 הכתובות שלי"
-        await handle_shop(proxy)
-        await callback.answer()
-        return
+    mapping = {
+        "orders": "📦 ההזמנות שלי",
+        "profile": "👤 הפרטים שלי",
+        "addresses": "🏠 הכתובות שלי",
+        "admin": "🔐 פאנל ניהול",
+    }
 
     if action == "support":
         users[uid]["step"] = "support_subject"
         await delete_temp_bot_messages(callback.message.bot, uid)
-
         try:
             await callback.message.delete()
         except Exception:
             pass
-
-        await send_temp_message(
-            proxy,
-            wide_rtl("<b>📞 שירות לקוחות</b>\n\nבחר את נושא הפנייה:"),
-            reply_markup=support_subject_keyboard(),
-            parse_mode="HTML"
-        )
+        await send_temp_message(proxy, wide_rtl("<b>📞 שירות לקוחות</b>\n\nבחר את נושא הפנייה:"), reply_markup=support_subject_keyboard(), parse_mode="HTML")
         await callback.answer()
         return
 
-    if action == "admin":
-        proxy.text = "🔐 פאנל ניהול"
+    text = mapping.get(action)
+    if text:
+        proxy.text = text
         await handle_shop(proxy)
         await callback.answer()
         return
 
     await callback.answer("פעולה לא תקינה.", show_alert=True)
+
 
 @router.callback_query(F.data.startswith("shop_cat:"))
 async def inline_shop_category(callback: CallbackQuery):
@@ -2656,34 +2637,25 @@ async def inline_shop_category(callback: CallbackQuery):
     categories = list(products.keys())
 
     try:
-        index = int((callback.data or "").split(":", 1)[1])
-        category = categories[index]
+        category = categories[int((callback.data or "").split(":", 1)[1])]
     except Exception:
         await callback.answer("קטגוריה לא נמצאה.", show_alert=True)
         return
 
     users.setdefault(uid, {"cart": [], "step": None})
-    users[uid]["step"] = "product_select"
     users[uid]["category"] = category
+    users[uid]["step"] = "product_select"
 
     await delete_temp_bot_messages(callback.message.bot, uid)
-
     proxy = callback_proxy(callback, category)
-    await send_temp_message(
-        proxy,
-        wide_wide_rtl(f"<b>📂 {h(category)}</b>\n\nבחר מוצר:"),
-        reply_markup=products_keyboard(category),
-        parse_mode="HTML"
-    )
 
     try:
         await callback.message.delete()
     except Exception:
         pass
 
+    await send_temp_message(proxy, wide_wide_rtl(f"<b>📂 {h(category)}</b>\n\nבחר מוצר:"), reply_markup=products_keyboard(category), parse_mode="HTML")
     await callback.answer()
-
-
 
 
 @router.callback_query(F.data.startswith("shop_prod:"))
@@ -2692,19 +2664,14 @@ async def inline_shop_product(callback: CallbackQuery):
     products = get_active_products()
 
     try:
-        parts = (callback.data or "").split(":")
-        category_index = int(parts[1])
-        product_index = int(parts[2])
-
-        categories = list(products.keys())
-        category = categories[category_index]
-        product = products[category][product_index]
+        _, category_index, product_index = (callback.data or "").split(":")
+        category = list(products.keys())[int(category_index)]
+        product = products[category][int(product_index)]
     except Exception:
         await callback.answer("המוצר לא נמצא.", show_alert=True)
         return
 
-    stock = int(product.get("stock", 0) or 0)
-    if stock <= 0:
+    if int(product.get("stock", 0) or 0) <= 0:
         await callback.answer("המוצר אזל מהמלאי.", show_alert=True)
         return
 
@@ -2714,16 +2681,14 @@ async def inline_shop_product(callback: CallbackQuery):
     users[uid]["selected_qty"] = 1
     users[uid]["step"] = "qty"
 
-    proxy = callback_proxy(callback, product.get("name", ""))
-
     await delete_temp_bot_messages(callback.message.bot, uid)
+    proxy = callback_proxy(callback, product.get("name", ""))
 
     try:
         await callback.message.delete()
     except Exception:
         pass
 
-    # שולח כרטיס מוצר, אבל גם אם יש בעיה בתמונה/כרטיס — ממשיך לכמות ולא נתקע.
     try:
         await send_product_card(proxy, product)
     except Exception:
@@ -2731,19 +2696,13 @@ async def inline_shop_product(callback: CallbackQuery):
 
     await send_temp_message(
         proxy,
-        wide_rtl(
-            "<b>🔢 בחירת כמות</b>\n\n"
-            f"{field('כמות נבחרת', 1)}\n\n"
-            "בחר את הכמות הרצויה להזמנה.\n"
-            "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
-            "לאחר מכן לחץ על 🛒 הוסף לסל."
-        ),
+        wide_rtl("<b>🔢 בחירת כמות</b>\n\n" + field("כמות נבחרת", 1) + "\n\nבחר את הכמות הרצויה להזמנה.\nלאחר מכן לחץ על 🛒 הוסף לסל."),
         reply_markup=quantity_inline_keyboard(1),
         parse_mode="HTML",
         clear_previous=False
     )
-
     await callback.answer()
+
 
 @router.callback_query(F.data == "shop_out_of_stock")
 async def inline_shop_out_of_stock(callback: CallbackQuery):
@@ -2761,26 +2720,37 @@ async def inline_customer_button(callback: CallbackQuery):
 
     proxy = callback_proxy(callback, text)
 
-    direct_handlers = {
-        "🛒 הסל שלי": show_cart,
-        "⬅️ חזרה": back_main,
-        "⬅️ חזרה לקטגוריות": back_categories,
-        "➕ הוסף עוד מוצר": add_more,
-        "✅ המשך להזמנה": checkout,
-        "🧹 רוקן סל": clear_cart,
-        "❌ בטל הזמנה": cancel_order,
-        "✅ אשר הזמנה": confirm_order,
-        "✏️ שנה פרטים": edit_details,
-        "🔁 הזמן שוב": reorder_choose_order,
-        "⬅️ חזרה לתפריט": back_to_main_menu,
-        "📋 הצג כתובות": show_my_addresses,
-        "➕ הוסף כתובת": add_address_start,
-    }
-
-    handler = direct_handlers.get(text)
-
-    if handler:
-        await handler(proxy)
+    if action == "cart":
+        await show_cart(proxy)
+    elif action == "back":
+        await back_main(proxy)
+    elif action == "back_categories":
+        await back_categories(proxy)
+    elif action == "add_more":
+        await add_more(proxy)
+    elif action == "checkout":
+        if not users.get(callback.from_user.id, {}).get("cart"):
+            await callback.answer("הסל ריק. קודם בחר מוצר.", show_alert=True)
+            return
+        await checkout(proxy)
+    elif action == "clear_cart":
+        await clear_cart(proxy)
+    elif action == "cancel_order":
+        await cancel_order(proxy)
+    elif action == "confirm_order":
+        await confirm_order(proxy)
+    elif action == "edit_details":
+        await edit_details(proxy)
+    elif action in {"delivery", "pickup", "back_cart", "back_fulfillment", "saved_details_continue", "new_details", "back_prev", "pay_success", "back_summary", "cancel_payment"}:
+        await handle_shop(proxy)
+    elif action == "main_menu":
+        await back_to_main_menu(proxy)
+    elif action == "reorder":
+        await reorder_choose_order(proxy)
+    elif action == "show_addresses":
+        await show_my_addresses(proxy)
+    elif action == "add_address":
+        await add_address_start(proxy)
     else:
         await handle_shop(proxy)
 
@@ -2801,18 +2771,15 @@ async def inline_customer_text(callback: CallbackQuery):
     await callback.answer()
 
 
-
 @router.callback_query(F.data.startswith("support_question:"))
 async def inline_support_question(callback: CallbackQuery):
     uid = callback.from_user.id
     data = users.get(uid, {})
     subject = data.get("support_subject") or "❓ אחר"
-
-    questions = SUPPORT_FAQ_BY_SUBJECT.get(subject, []) + SUPPORT_FAQ_BY_SUBJECT.get("❓ אחר", [])
+    questions = SUPPORT_FAQ_BY_SUBJECT.get(subject, SUPPORT_FAQ_BY_SUBJECT.get("❓ אחר", []))
 
     try:
-        index = int((callback.data or "").split(":", 1)[1])
-        question = questions[index]
+        question = questions[int((callback.data or "").split(":", 1)[1])]
     except Exception:
         await callback.answer("שאלה לא נמצאה.", show_alert=True)
         return
@@ -2824,29 +2791,21 @@ async def inline_support_question(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("support_action:"))
 async def inline_support_action(callback: CallbackQuery):
-    uid = callback.from_user.id
     action = (callback.data or "").split(":", 1)[1]
+    mapping = {
+        "close_ticket": "✅ הבעיה נפתרה",
+        "agent": "✍️ פנייה לנציג שירות",
+        "back_topics": "⬅️ חזרה לנושאים",
+    }
 
-    if action == "close_ticket":
-        proxy = callback_proxy(callback, "✅ הבעיה נפתרה")
-        await handle_shop(proxy)
-        await callback.answer()
+    text = mapping.get(action)
+    if not text:
+        await callback.answer("פעולה לא תקינה.", show_alert=True)
         return
 
-    if action == "agent":
-        proxy = callback_proxy(callback, "✍️ פנייה לנציג שירות")
-        await handle_shop(proxy)
-        await callback.answer()
-        return
-
-    if action == "back_topics":
-        proxy = callback_proxy(callback, "⬅️ חזרה לנושאים")
-        await handle_shop(proxy)
-        await callback.answer()
-        return
-
-    await callback.answer("פעולה לא תקינה.", show_alert=True)
-
+    proxy = callback_proxy(callback, text)
+    await handle_shop(proxy)
+    await callback.answer()
 
 
 @router.message()
@@ -2944,7 +2903,7 @@ async def handle_shop(message: Message):
 
         await send_temp_message(
             message,
-            wide_rtl(
+            rtl(
                 "<b>🔢 בחירת כמות</b>\n\n"
                 f"{field('כמות נבחרת', data['selected_qty'])}\n\n"
                 "בחר את הכמות הרצויה להזמנה.\n"
