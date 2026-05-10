@@ -1,0 +1,47 @@
+{
+  "_info": "כאן מגדירים מחיר משלוח לפי אזור רחב. שנה את המחירים לפי העסק שלך. null = לא מוגדר/לתיאום מול נציג.",
+  "צפון": {
+    "price": null,
+    "active": true
+  },
+  "חיפה והכרמל": {
+    "price": null,
+    "active": true
+  },
+  "שרון": {
+    "price": null,
+    "active": true
+  },
+  "גוש דן": {
+    "price": null,
+    "active": true
+  },
+  "מרכז": {
+    "price": null,
+    "active": true
+  },
+  "שפלה": {
+    "price": null,
+    "active": true
+  },
+  "דרום": {
+    "price": null,
+    "active": true
+  },
+  "הנגב": {
+    "price": null,
+    "active": true
+  },
+  "ירושלים והסביבה": {
+    "price": null,
+    "active": true
+  },
+  "יהודה ושומרון": {
+    "price": null,
+    "active": true
+  },
+  "לא משויך": {
+    "price": null,
+    "active": false
+  }
+}
