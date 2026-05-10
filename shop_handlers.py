@@ -363,7 +363,7 @@ users = {}
 RTL = "\u200F"
 # שורת רווחים בלתי נראית שמרחיבה את בועת ההודעה בטלגרם כאשר יש Inline Keyboard.
 # לא משנה טקסטים קיימים ולא מוצגת כטקסט רגיל ללקוח.
-UI_WIDE_LINE = "\u2800" * 34
+UI_WIDE_LINE = "\u2800" * 52
 
 
 def widen_inline_screen_text(text):
@@ -524,7 +524,7 @@ async def reset_callback_customer_to_main_menu(callback, text):
         pass
 
     await callback.message.answer(
-        rtl(text),
+        widen_inline_screen_text(rtl(text)),
         reply_markup=main_keyboard(callback.from_user.id),
         parse_mode="HTML"
     )
@@ -1885,7 +1885,7 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         await callback.answer("אירעה שגיאה בפעולה. נסה שוב.", show_alert=True)
         try:
             await callback.message.answer(
-                rtl("<b>⚠️ לא הצלחתי לבצע את הפעולה.</b>\nנסה לחזור לתפריט הראשי."),
+                widen_inline_screen_text(rtl("<b>⚠️ לא הצלחתי לבצע את הפעולה.</b>\nנסה לחזור לתפריט הראשי.")),
                 reply_markup=main_keyboard(callback.from_user.id),
                 parse_mode="HTML"
             )
@@ -2544,7 +2544,7 @@ async def quantity_inline_action(callback: CallbackQuery):
         data.pop("selected_product", None)
         data.pop("selected_qty", None)
         await callback.message.answer(
-            rtl("<b>📦 כל המלאי הזמין של המוצר כבר נמצא אצלך בסל.</b>"),
+            widen_inline_screen_text(rtl("<b>📦 כל המלאי הזמין של המוצר כבר נמצא אצלך בסל.</b>")),
             reply_markup=cart_keyboard(),
             parse_mode="HTML"
         )
@@ -2684,7 +2684,7 @@ async def quantity_inline_action(callback: CallbackQuery):
         await delete_temp_bot_messages(callback.message.bot, uid)
 
         sent = await callback.message.answer(
-            cart_text(data["cart"], title="✅ נוסף לסל"),
+            widen_inline_screen_text(cart_text(data["cart"], title="✅ נוסף לסל")),
             reply_markup=cart_keyboard(),
             parse_mode="HTML"
         )
