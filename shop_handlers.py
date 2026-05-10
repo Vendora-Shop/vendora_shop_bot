@@ -363,7 +363,7 @@ users = {}
 RTL = "\u200F"
 # שורת רווחים בלתי נראית שמרחיבה את בועת ההודעה בטלגרם כאשר יש Inline Keyboard.
 # לא משנה טקסטים קיימים ולא מוצגת כטקסט רגיל ללקוח.
-UI_WIDE_LINE = "\u2800" * 52
+UI_WIDE_LINE = "\u2800" * 78
 
 
 def widen_inline_screen_text(text):
@@ -2047,7 +2047,7 @@ async def show_cart(message: Message):
     await send_temp_message(
         message,
         cart_text(data["cart"]),
-        reply_markup=cart_keyboard(),
+        reply_markup=cart_keyboard() if data.get("cart") else categories_keyboard(),
         parse_mode="HTML"
     )
 
@@ -2124,8 +2124,11 @@ async def checkout(message: Message):
     data = users.get(uid)
 
     if not data or not data.get("cart"):
-        await message.answer(
+        await delete_temp_bot_messages(message.bot, uid)
+        await send_temp_message(
+            message,
             rtl("<b>🛒 הסל שלך ריק.</b>\n\nקודם בחר מוצר."),
+            reply_markup=categories_keyboard(),
             parse_mode="HTML"
         )
         return
