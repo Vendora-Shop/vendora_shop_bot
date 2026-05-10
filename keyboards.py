@@ -17,14 +17,8 @@ def support_tickets_button_text():
 
 
 def compact_menu_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="תפריט ☰")]
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=False,
-        input_field_placeholder="פתח תפריט"
-    )
+    from aiogram.types import ReplyKeyboardRemove
+    return ReplyKeyboardRemove()
 
 
 def main_menu_inline_keyboard(user_id=None):
