@@ -2021,9 +2021,9 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         elif raw == "ui:saved:new": text = "✏️ הזן פרטים חדשים"
 
         elif raw == "ui:orders:reorder":
-            await show_reorder_choose_inline(callback)
-            await callback.answer()
-            return
+            # משתמשים בלוגיקה המקורית של "🔁 הזמן שוב" במקום מסלול עוקף,
+            # כדי לא לשבור את שחזור ההזמנות הקיים.
+            text = "🔁 הזמן שוב"
         elif raw == "ui:orders:back_my_orders":
             await show_my_orders_inline(callback)
             await callback.answer()
@@ -2055,9 +2055,17 @@ async def customer_inline_ui_router(callback: CallbackQuery):
                 text = items[idx].get("name")
 
         elif raw.startswith("ui:reorder:"):
+            # מחזירים את הבחירה לפורמט הכפתור המקורי של הלוגיקה הישנה:
+            # "🔁 V1024 | 899₪ | הושלמה"
+            # כך extract_order_number_from_reorder_button + clone_cart_from_order עובדים בדיוק כמו בקובץ המקורי.
             order_number = raw.split(":", 2)[2]
-            await restore_reorder_from_inline(callback, order_number)
-            return
+            order = get_order_by_number(order_number)
+            if order:
+                total = int(float(order.get("final_total") or 0))
+                status = translate_order_status_for_keyboard(order.get("status"))
+                text = f"🔁 {order_number} | {total}₪ | {status}"
+            else:
+                text = order_number
 
         elif raw.startswith("ui:support:subject:"):
             subjects = ["📦 שאלה על הזמנה קיימת", "🚚 משלוח / איסוף", "💳 תשלום", "🛍️ מוצר / מלאי", "📝 שינוי פרטים", "❓ אחר"]
