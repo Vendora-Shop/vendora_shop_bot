@@ -948,22 +948,24 @@ SUPPORT_FAQ_BY_SUBJECT = {
 def support_faq_keyboard(subject):
     questions = SUPPORT_FAQ_BY_SUBJECT.get(subject, SUPPORT_FAQ_BY_SUBJECT.get("❓ אחר", []))
 
-    keyboard = [[KeyboardButton(text=q)] for q in questions]
-    keyboard.append([KeyboardButton(text="✍️ פנייה לנציג שירות")])
-    keyboard.append([KeyboardButton(text="⬅️ חזרה לנושאים")])
-    keyboard.append([KeyboardButton(text="⬅️ חזרה לתפריט")])
+    keyboard = []
+    for i, question in enumerate(questions):
+        keyboard.append([InlineKeyboardButton(text=question, callback_data=f"support_question:{i}")])
 
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+    keyboard.append([InlineKeyboardButton(text="✍️ פנייה לנציג שירות", callback_data="support_action:agent")])
+    keyboard.append([InlineKeyboardButton(text="⬅️ חזרה לנושאים", callback_data="support_action:back_topics")])
+    keyboard.append([InlineKeyboardButton(text="⬅️ חזרה לתפריט", callback_data="cust_btn:main_menu")])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 def support_faq_after_answer_keyboard(subject):
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="✍️ פנייה לנציג שירות")],
-            [KeyboardButton(text="⬅️ חזרה לנושאים")],
-            [KeyboardButton(text="⬅️ חזרה לתפריט")]
-        ],
-        resize_keyboard=True
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✍️ פנייה לנציג שירות", callback_data="support_action:agent")],
+            [InlineKeyboardButton(text="⬅️ חזרה לנושאים", callback_data="support_action:back_topics")],
+            [InlineKeyboardButton(text="⬅️ חזרה לתפריט", callback_data="cust_btn:main_menu")]
+        ]
     )
 
 
@@ -1196,14 +1198,12 @@ def support_faq_answer_text(user_id, subject, question):
 
 
 def support_customer_keyboard(user_id=None):
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="✅ הבעיה נפתרה")],
-            [KeyboardButton(text="⬅️ חזרה לתפריט")]
-        ],
-        resize_keyboard=True
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✅ הבעיה נפתרה", callback_data="support_action:close_ticket")],
+            [InlineKeyboardButton(text="⬅️ חזרה לתפריט", callback_data="cust_btn:main_menu")]
+        ]
     )
-
 
 
 def fulfillment_keyboard():
@@ -1532,7 +1532,7 @@ async def start(message: Message):
             f"<b>👋 ברוך הבא {h(customer_name)}</b>\n\n"
             "לחץ על כפתור <b>Menu</b> הכחול כדי לפתוח את התפריט הראשי."
         ),
-        reply_markup=compact_menu_keyboard(),
+        reply_markup=ReplyKeyboardRemove(),
         parse_mode="HTML"
     )
 
@@ -1604,13 +1604,13 @@ async def inline_main_menu_action(callback: CallbackQuery):
                     "אין פרטים שמורים עדיין.\n"
                     "אחרי ההזמנה הראשונה, הבוט ישמור את הפרטים שלך להזמנות הבאות."
                 ),
-                reply_markup=compact_menu_keyboard(),
+                reply_markup=ReplyKeyboardRemove(),
                 parse_mode="HTML"
             )
         else:
             await callback.message.answer(
                 saved_profile_text(profile),
-                reply_markup=compact_menu_keyboard(),
+                reply_markup=ReplyKeyboardRemove(),
                 parse_mode="HTML"
             )
 
@@ -2482,7 +2482,7 @@ async def support(message: Message):
     }
 
     await message.answer(
-        rtl(
+        wide_rtl(
             "<b>📞 שירות לקוחות</b>\n\n"
             "בחר את נושא הפנייה:"
         ),
@@ -2631,6 +2631,9 @@ class CallbackMessageProxy:
 
     async def answer(self, *args, **kwargs):
         return await self._message.answer(*args, **kwargs)
+
+    async def answer_photo(self, *args, **kwargs):
+        return await self._message.answer_photo(*args, **kwargs)
 
     async def delete(self):
         try:
@@ -2819,6 +2822,53 @@ async def inline_customer_text(callback: CallbackQuery):
     proxy = callback_proxy(callback, text)
     await handle_shop(proxy)
     await callback.answer()
+
+
+
+@router.callback_query(F.data.startswith("support_question:"))
+async def inline_support_question(callback: CallbackQuery):
+    uid = callback.from_user.id
+    data = users.get(uid, {})
+    subject = data.get("support_subject") or "❓ אחר"
+
+    questions = SUPPORT_FAQ_BY_SUBJECT.get(subject, []) + SUPPORT_FAQ_BY_SUBJECT.get("❓ אחר", [])
+
+    try:
+        index = int((callback.data or "").split(":", 1)[1])
+        question = questions[index]
+    except Exception:
+        await callback.answer("שאלה לא נמצאה.", show_alert=True)
+        return
+
+    proxy = callback_proxy(callback, question)
+    await handle_shop(proxy)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("support_action:"))
+async def inline_support_action(callback: CallbackQuery):
+    uid = callback.from_user.id
+    action = (callback.data or "").split(":", 1)[1]
+
+    if action == "close_ticket":
+        proxy = callback_proxy(callback, "✅ הבעיה נפתרה")
+        await handle_shop(proxy)
+        await callback.answer()
+        return
+
+    if action == "agent":
+        proxy = callback_proxy(callback, "✍️ פנייה לנציג שירות")
+        await handle_shop(proxy)
+        await callback.answer()
+        return
+
+    if action == "back_topics":
+        proxy = callback_proxy(callback, "⬅️ חזרה לנושאים")
+        await handle_shop(proxy)
+        await callback.answer()
+        return
+
+    await callback.answer("פעולה לא תקינה.", show_alert=True)
 
 
 
