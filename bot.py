@@ -17,6 +17,10 @@ dp.include_router(shop_router)
 async def main():
     create_tables()
 
+    # מנקה פקודות ישנות כדי ש-/start לא יופיע בכפתור הכחול.
+    await bot.delete_my_commands()
+
+    # בכפתור Menu הרשמי של Telegram תופיע רק פקודת התפריט הראשי.
     await bot.set_my_commands([
         BotCommand(command="menu", description="תפריט ראשי"),
     ])
