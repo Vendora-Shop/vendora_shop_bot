@@ -1626,6 +1626,13 @@ def cart_keyboard():
     ]))
 
 
+def empty_cart_keyboard():
+    return _inline(_wide_buttons([
+        _btn("🛒 חנות", "ui:main:shop"),
+        _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
+    ]))
+
+
 def confirm_keyboard():
     return _inline(_wide_buttons([
         _btn("✅ אשר הזמנה", "ui:order:confirm"),
@@ -2075,10 +2082,22 @@ async def show_cart(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
     data = users.setdefault(uid, {"cart": [], "step": None})
+
+    if not data.get("cart"):
+        data["step"] = "main"
+        await send_temp_message(
+            message,
+            cart_text([], title="🛒 הסל שלך"),
+            reply_markup=empty_cart_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    data["step"] = "cart"
     await send_temp_message(
         message,
         cart_text(data["cart"]),
-        reply_markup=cart_keyboard() if data.get("cart") else categories_keyboard(),
+        reply_markup=cart_keyboard(),
         parse_mode="HTML"
     )
 
