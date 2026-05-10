@@ -17,8 +17,14 @@ def support_tickets_button_text():
 
 
 def compact_menu_keyboard():
-    from aiogram.types import ReplyKeyboardRemove
-    return ReplyKeyboardRemove()
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="תפריט ☰")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=False,
+        input_field_placeholder="פתח תפריט"
+    )
 
 
 def main_menu_inline_keyboard(user_id=None):
@@ -34,65 +40,6 @@ def main_menu_inline_keyboard(user_id=None):
 
     if user_id == ADMIN_ID:
         keyboard.append([InlineKeyboardButton(text="פאנל ניהול 🔐", callback_data="main_menu:admin")])
-
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
-
-
-
-
-def shop_categories_inline_keyboard():
-    try:
-        from database import get_active_products
-        products = get_active_products()
-    except Exception:
-        products = {}
-
-    keyboard = []
-
-    for category in products.keys():
-        keyboard.append([
-            InlineKeyboardButton(
-                text=str(category),
-                callback_data=f"shop_category:{category}"
-            )
-        ])
-
-    keyboard.append([InlineKeyboardButton(text="הסל שלי 🛒", callback_data="shop_cart:open")])
-    keyboard.append([InlineKeyboardButton(text="חזרה לתפריט הראשי ↩️", callback_data="main_menu:open")])
-
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
-
-
-def shop_products_inline_keyboard(category):
-    try:
-        from database import get_active_products
-        products = get_active_products()
-    except Exception:
-        products = {}
-
-    keyboard = []
-
-    for product in products.get(category, []):
-        stock = int(product.get("stock", 0) or 0)
-        name = product.get("name") or ""
-
-        if stock <= 0:
-            keyboard.append([
-                InlineKeyboardButton(
-                    text=f"❌ {name} - אזל מהמלאי",
-                    callback_data="shop_product:out_of_stock"
-                )
-            ])
-        else:
-            keyboard.append([
-                InlineKeyboardButton(
-                    text=name,
-                    callback_data=f"shop_product:{name}"
-                )
-            ])
-
-    keyboard.append([InlineKeyboardButton(text="הסל שלי 🛒", callback_data="shop_cart:open")])
-    keyboard.append([InlineKeyboardButton(text="חזרה לקטגוריות ↩️", callback_data="shop_back:categories")])
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
