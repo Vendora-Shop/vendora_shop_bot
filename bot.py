@@ -18,7 +18,6 @@ async def main():
     create_tables()
 
     await bot.set_my_commands([
-        BotCommand(command="start", description="התחלה"),
         BotCommand(command="menu", description="תפריט ראשי"),
     ])
 
