@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from html import escape
 import asyncio
@@ -495,39 +495,65 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
 
 
 async def reset_customer_to_main_menu(message, text):
-    await delete_temp_bot_messages(message.bot, message.from_user.id)
+    uid = message.from_user.id
+    await delete_temp_bot_messages(message.bot, uid)
 
+    # סוגר מקלדת Reply ישנה בלי להשאיר בלון ריק בצ׳אט.
     try:
-        await message.answer(
-            " ",
+        sent_cleanup = await message.answer(
+            "\u2063",
             reply_markup=ReplyKeyboardRemove()
         )
+        try:
+            await sent_cleanup.delete()
+        except Exception:
+            pass
     except Exception:
         pass
 
-    await message.answer(
+    users.setdefault(uid, {"cart": []})
+    users[uid]["step"] = "main"
+    users[uid].setdefault("temp_bot_messages", [])
+
+    sent = await message.answer(
         rtl(text),
-        reply_markup=main_keyboard(message.from_user.id),
+        reply_markup=main_keyboard(uid),
         parse_mode="HTML"
     )
+
+    users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
+    return sent
 
 
 async def reset_callback_customer_to_main_menu(callback, text):
-    await delete_temp_bot_messages(callback.message.bot, callback.from_user.id)
+    uid = callback.from_user.id
+    await delete_temp_bot_messages(callback.message.bot, uid)
 
+    # סוגר מקלדת Reply ישנה בלי להשאיר בלון ריק בצ׳אט.
     try:
-        await callback.message.answer(
-            " ",
+        sent_cleanup = await callback.message.answer(
+            "\u2063",
             reply_markup=ReplyKeyboardRemove()
         )
+        try:
+            await sent_cleanup.delete()
+        except Exception:
+            pass
     except Exception:
         pass
 
-    await callback.message.answer(
+    users.setdefault(uid, {"cart": []})
+    users[uid]["step"] = "main"
+    users[uid].setdefault("temp_bot_messages", [])
+
+    sent = await callback.message.answer(
         widen_inline_screen_text(rtl(text)),
-        reply_markup=main_keyboard(callback.from_user.id),
+        reply_markup=main_keyboard(uid),
         parse_mode="HTML"
     )
+
+    users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
+    return sent
 
 
 def is_button_only_step_for_customer(step):
@@ -1917,6 +1943,11 @@ async def start(message: Message):
     )
 
 
+@router.message(Command("menu"))
+async def menu_command(message: Message):
+    await start(message)
+
+
 @router.message(F.text == "👤 הפרטים שלי")
 async def my_details(message: Message):
     uid = message.from_user.id
@@ -2086,12 +2117,13 @@ async def cancel_order(message: Message):
 
     uid = message.from_user.id
 
+    # מנקים קודם את מצב ההזמנה, ואז שולחים תפריט חדש שנשמר כמסך פעיל.
+    users.pop(uid, None)
+
     await reset_customer_to_main_menu(
         message,
         "<b>❌ ההזמנה בוטלה.</b>"
     )
-
-    users.pop(uid, None)
 
 
 @router.message(F.text == "✏️ שנה פרטים")
@@ -2514,12 +2546,13 @@ async def quantity_inline_action(callback: CallbackQuery):
         except Exception:
             pass
 
+        # מנקים קודם את מצב ההזמנה, ואז שולחים תפריט חדש שנשמר כמסך פעיל.
+        users.pop(uid, None)
+
         await reset_callback_customer_to_main_menu(
             callback,
             "<b>❌ ההזמנה בוטלה.</b>"
         )
-
-        users.pop(uid, None)
 
         await callback.answer()
         return
