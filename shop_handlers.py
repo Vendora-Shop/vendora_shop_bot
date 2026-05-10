@@ -2110,21 +2110,23 @@ async def clear_cart(message: Message):
 
     await delete_temp_bot_messages(message.bot, uid)
 
+    # אחרי ריקון סל לא פותחים אוטומטית קטגוריות.
+    # נשאר מסך נקי עם פעולה ברורה: חזרה לחנות או לתפריט.
     if not data or not data.get("cart"):
-        users[uid] = {"cart": [], "step": "browse_products"}
+        users[uid] = {"cart": [], "step": "main"}
         await send_temp_message(
             message,
-            rtl("<b>🛒 הסל שלך כבר ריק.</b>\n\nבחר מוצר:"),
-            reply_markup=categories_keyboard(),
+            cart_text([], title="🛒 הסל שלך"),
+            reply_markup=empty_cart_keyboard(),
             parse_mode="HTML"
         )
         return
 
-    users[uid] = {"cart": [], "step": "browse_products"}
+    users[uid] = {"cart": [], "step": "main"}
     await send_temp_message(
         message,
-        rtl("<b>🧹 הסל התרוקן בהצלחה.</b>\n\nבחר מוצר:"),
-        reply_markup=categories_keyboard(),
+        rtl("<b>🧹 הסל התרוקן בהצלחה.</b>"),
+        reply_markup=empty_cart_keyboard(),
         parse_mode="HTML"
     )
 
