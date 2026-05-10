@@ -361,7 +361,17 @@ async def notify_admin_ticket_closed_by_customer(bot, ticket_number, user_full_n
 users = {}
 
 RTL = "\u200F"
-UI_WIDE_LINE = ""
+# שורת רווחים בלתי נראית שמרחיבה את בועת ההודעה בטלגרם כאשר יש Inline Keyboard.
+# לא משנה טקסטים קיימים ולא מוצגת כטקסט רגיל ללקוח.
+UI_WIDE_LINE = "\u2800" * 34
+
+
+def widen_inline_screen_text(text):
+    text = str(text or "")
+    # לא מוסיפים פעמיים, כדי שלא יווצרו רווחים כפולים או מסכים ארוכים מדי.
+    if UI_WIDE_LINE and UI_WIDE_LINE not in text:
+        return text + "\n" + UI_WIDE_LINE
+    return text
 
 
 # ================== SAFE INPUT CLEANUP ==================
