@@ -22,6 +22,7 @@ from database import (
     create_support_ticket,
     add_support_message,
     get_open_support_ticket_by_user,
+    get_support_ticket,
     close_support_ticket,
 )
 from delivery import get_delivery_price
@@ -61,7 +62,7 @@ async def customer_cancel_payment_button(message: Message):
 
         await message.answer(
             build_order_summary(data),
-            reply_markup=confirm_order_keyboard(),
+            reply_markup=order_summary_keyboard(data),
             parse_mode="HTML",
             disable_web_page_preview=True
         )
@@ -1904,7 +1905,7 @@ async def restore_reorder_from_inline(callback: CallbackQuery, order_number: str
         parse_mode="HTML"
     )
     data.setdefault("temp_bot_messages", []).append(sent.message_id)
-    await callback.answer()
+    # callback כבר קיבל answer בתחילת הלחיצה על הזמנה חוזרת.
 
 
 
@@ -2072,8 +2073,14 @@ async def customer_inline_ui_router(callback: CallbackQuery):
                 text = items[idx].get("name")
 
         elif raw.startswith("ui:reorder:"):
-            # שחזור הזמנה ישירות לפי מספר ההזמנה.
-            # זה עוקף את מסלול הטקסט הישן שגרם ל־"אירעה שגיאה בפעולה".
+            # חשוב: לענות ל־callback מיד לפני פעולת שחזור/מחיקת הודעות.
+            # אחרת Telegram iOS עלול להציג Alert של "אירעה שגיאה בפעולה"
+            # גם כשהשחזור עצמו מצליח, בגלל שהמענה ל־callback הגיע מאוחר מדי.
+            try:
+                await callback.answer()
+            except Exception:
+                pass
+
             order_number = raw.split(":", 2)[2]
             await restore_reorder_from_inline(callback, order_number)
             return
@@ -2339,8 +2346,15 @@ async def cancel_order(message: Message):
 
     uid = message.from_user.id
 
-    # מנקים קודם את מצב ההזמנה, ואז שולחים תפריט חדש שנשמר כמסך פעיל.
-    users.pop(uid, None)
+    # חשוב: קודם מוחקים את כל המסכים הפעילים של ההזמנה ורק אחרי זה מאפסים state.
+    # אם עושים users.pop לפני המחיקה — נאבד את temp_bot_messages ונשאר חלון ישן במסך
+    # כמו שקרה אחרי "הזמן שוב" ואז "בטל הזמנה".
+    try:
+        await delete_temp_bot_messages(message.bot, uid)
+    except Exception:
+        pass
+
+    users[uid] = {"cart": [], "step": "main", "temp_bot_messages": []}
 
     await reset_customer_to_main_menu(
         message,
@@ -3360,9 +3374,8 @@ async def handle_shop(message: Message):
                     f"{pickup_text()}\n\n"
                     "<b>📝 פרטי לקוח</b>\n"
                     "רשום את השם המלא שלך:"
-                ,
-                reply_markup=ReplyKeyboardRemove()
-            ),
+                ),
+                reply_markup=ReplyKeyboardRemove(),
                 parse_mode="HTML",
                 disable_web_page_preview=True
             )
@@ -3713,9 +3726,7 @@ async def handle_shop(message: Message):
                     f"{field('נושא הפנייה', subject)}\n\n"
                     "רשום מספר פלאפון תקין.\n"
                     "לדוגמה: 0547937503"
-                ,
-                reply_markup=ReplyKeyboardRemove()
-            ),
+                ),
                 reply_markup=support_customer_keyboard(message.from_user.id),
                 parse_mode="HTML"
             )
@@ -3791,8 +3802,6 @@ async def handle_shop(message: Message):
                 f"{field('נושא הפנייה', data.get('support_subject', '-'))}\n"
                 f"{field('פלאפון', phone)}\n\n"
                 "כתוב עכשיו את ההודעה שלך ונעביר אותה לנציג שירות."
-            ,
-                reply_markup=ReplyKeyboardRemove()
             ),
             reply_markup=support_customer_keyboard(message.from_user.id),
             parse_mode="HTML"
@@ -4276,9 +4285,8 @@ async def handle_shop(message: Message):
                 "<b>📍 עיר / יישוב למשלוח</b>\n\n"
                 "רשום את שם העיר, המושב או הקיבוץ למשלוח.\n"
                 "לדוגמה: אשדוד"
-            ,
-                reply_markup=ReplyKeyboardRemove()
             ),
+            reply_markup=ReplyKeyboardRemove(),
             parse_mode="HTML"
         )
         return
@@ -4324,9 +4332,8 @@ async def handle_shop(message: Message):
                 delivery_message
                 + "<b>📍 כתובת למשלוח</b>\n"
                 "רשום רחוב ומספר בית."
-            ,
-                reply_markup=ReplyKeyboardRemove()
             ),
+            reply_markup=ReplyKeyboardRemove(),
             parse_mode="HTML"
         )
         return
