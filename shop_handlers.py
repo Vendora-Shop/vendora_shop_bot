@@ -3274,8 +3274,13 @@ async def add_address_start(message: Message):
         message,
         rtl(
             "<b>➕ הוספת כתובת חדשה</b>\n\n"
-            "רשום שם לכתובת.\n"
-            "לדוגמה: בית / עבודה / הורים"
+            "רשום שם קצר שיעזור לך לזהות את הכתובת.\n\n"
+            "לדוגמה:\n"
+            "🏠 בית\n"
+            "🏢 עבודה\n"
+            "👨‍👩‍👧 הורים\n"
+            "📦 מחסן\n\n"
+            "השם יופיע ברשימת הכתובות השמורות שלך."
         ),
         reply_markup=add_address_cancel_keyboard(),
         parse_mode="HTML"
