@@ -1891,6 +1891,80 @@ async def restore_reorder_from_inline(callback: CallbackQuery, order_number: str
     data.setdefault("temp_bot_messages", []).append(sent.message_id)
     await callback.answer()
 
+
+
+async def show_my_details_inline(callback: CallbackQuery):
+    """מסך פרטים שלי ישירות מ־Inline — בלי proxy כדי למנוע שגיאות וכפילות תפריטים."""
+    uid = callback.from_user.id
+    users.setdefault(uid, {"cart": []})
+    profile = get_customer_profile(uid)
+    await delete_temp_bot_messages(callback.message.bot, uid)
+
+    if not profile:
+        body = rtl(
+            "<b>👤 הפרטים שלי</b>\n\n"
+            "אין פרטים שמורים עדיין.\n"
+            "אחרי ההזמנה הראשונה, הבוט ישמור את הפרטים שלך להזמנות הבאות."
+        )
+    else:
+        body = saved_profile_text(profile)
+
+    sent = await callback.message.answer(
+        widen_inline_screen_text(body),
+        reply_markup=back_only_main_keyboard(),
+        parse_mode="HTML"
+    )
+    users.setdefault(uid, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+
+
+async def show_my_orders_inline(callback: CallbackQuery):
+    """מסך הזמנות שלי ישירות מ־Inline — שומר לוגיקה ומונע נפילה ב־proxy."""
+    uid = callback.from_user.id
+    data = users.setdefault(uid, {"cart": []})
+    orders = get_orders_by_customer_telegram_id(uid, 10)
+
+    if orders:
+        data["last_order_number"] = orders[0].get("order_number")
+
+    data["step"] = "my_orders"
+    await delete_temp_bot_messages(callback.message.bot, uid)
+
+    sent = await callback.message.answer(
+        widen_inline_screen_text(customer_orders_text(orders)),
+        reply_markup=my_orders_keyboard(),
+        parse_mode="HTML"
+    )
+    data.setdefault("temp_bot_messages", []).append(sent.message_id)
+
+
+async def show_reorder_choose_inline(callback: CallbackQuery):
+    """פתיחת בחירת הזמנה חוזרת ישירות מכפתור Inline."""
+    uid = callback.from_user.id
+    data = users.setdefault(uid, {"cart": []})
+    orders = get_orders_by_customer_telegram_id(uid, 10)
+    await delete_temp_bot_messages(callback.message.bot, uid)
+
+    if not orders:
+        data["step"] = "my_orders"
+        sent = await callback.message.answer(
+            widen_inline_screen_text(rtl(
+                "<b>⚠️ אין הזמנות קודמות לשחזור.</b>\n\n"
+                "אפשר להיכנס לחנות ולבצע הזמנה חדשה."
+            )),
+            reply_markup=main_keyboard(callback.from_user.id),
+            parse_mode="HTML"
+        )
+        data.setdefault("temp_bot_messages", []).append(sent.message_id)
+        return
+
+    data["step"] = "reorder_select"
+    sent = await callback.message.answer(
+        widen_inline_screen_text(reorder_orders_list_text(orders)),
+        reply_markup=reorder_select_keyboard(orders),
+        parse_mode="HTML"
+    )
+    data.setdefault("temp_bot_messages", []).append(sent.message_id)
+
 @router.callback_query(F.data.startswith("ui:"))
 async def customer_inline_ui_router(callback: CallbackQuery):
     uid = callback.from_user.id
@@ -1910,8 +1984,14 @@ async def customer_inline_ui_router(callback: CallbackQuery):
 
     try:
         if raw == "ui:main:shop": text = "🛒 חנות"
-        elif raw == "ui:main:details": text = "👤 הפרטים שלי"
-        elif raw == "ui:main:orders": text = "📦 ההזמנות שלי"
+        elif raw == "ui:main:details":
+            await show_my_details_inline(callback)
+            await callback.answer()
+            return
+        elif raw == "ui:main:orders":
+            await show_my_orders_inline(callback)
+            await callback.answer()
+            return
         elif raw == "ui:main:addresses": text = "🏠 הכתובות שלי"
         elif raw == "ui:main:support": text = "📞 שירות לקוחות"
         elif raw == "ui:main:admin": text = "🔐 פאנל ניהול"
@@ -1941,11 +2021,11 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         elif raw == "ui:saved:new": text = "✏️ הזן פרטים חדשים"
 
         elif raw == "ui:orders:reorder":
-            await _dispatch_customer_inline(callback, "🔁 הזמן שוב")
+            await show_reorder_choose_inline(callback)
             await callback.answer()
             return
         elif raw == "ui:orders:back_my_orders":
-            await _dispatch_customer_inline(callback, "📦 ההזמנות שלי")
+            await show_my_orders_inline(callback)
             await callback.answer()
             return
 
@@ -2003,7 +2083,8 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         await _dispatch_customer_inline(callback, text)
         await callback.answer()
 
-    except Exception:
+    except Exception as e:
+        print(f"CUSTOMER_INLINE_UI_ERROR: {type(e).__name__}: {e}")
         # לא שולחים כאן תפריט נוסף, כדי לא ליצור כפילות מסכים.
         # רק מציגים Alert לטלגרם; המשתמש יכול ללחוץ שוב או לחזור דרך הכפתור הקיים.
         try:
