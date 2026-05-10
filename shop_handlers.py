@@ -2684,56 +2684,66 @@ async def inline_shop_category(callback: CallbackQuery):
     await callback.answer()
 
 
+
+
 @router.callback_query(F.data.startswith("shop_prod:"))
 async def inline_shop_product(callback: CallbackQuery):
     uid = callback.from_user.id
     products = get_active_products()
 
     try:
-        _, category_index, product_index = (callback.data or "").split(":")
-        category = list(products.keys())[int(category_index)]
-        product = products.get(category, [])[int(product_index)]
+        parts = (callback.data or "").split(":")
+        category_index = int(parts[1])
+        product_index = int(parts[2])
+
+        categories = list(products.keys())
+        category = categories[category_index]
+        product = products[category][product_index]
     except Exception:
         await callback.answer("המוצר לא נמצא.", show_alert=True)
         return
 
-    if int(product.get("stock", 0) or 0) <= 0:
+    stock = int(product.get("stock", 0) or 0)
+    if stock <= 0:
         await callback.answer("המוצר אזל מהמלאי.", show_alert=True)
         return
 
     users.setdefault(uid, {"cart": [], "step": None})
-    data = users[uid]
-    data["selected_product"] = product
-    data["selected_qty"] = 1
-    data["step"] = "qty"
+    users[uid]["category"] = category
+    users[uid]["selected_product"] = product
+    users[uid]["selected_qty"] = 1
+    users[uid]["step"] = "qty"
 
-    await delete_temp_bot_messages(callback.message.bot, uid)
     proxy = callback_proxy(callback, product.get("name", ""))
 
-    await send_product_card(proxy, product)
-
-    await send_temp_message(
-        proxy,
-        wide_rtl(
-            "<b>🔢 בחירת כמות</b>\n\n"
-            f"{field('כמות נבחרת', data['selected_qty'])}\n\n"
-            "בחר את הכמות הרצויה להזמנה.\n"
-            "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
-            "רק לאחר בחירת הכמות ולחיצה על 🛒 הוסף לסל,\n"
-            "המוצרים יתווספו לסל ותוכל להמשיך למשלוח או לאיסוף."
-        ),
-        reply_markup=quantity_inline_keyboard(data["selected_qty"]),
-        parse_mode="HTML",
-        clear_previous=False
-    )
+    await delete_temp_bot_messages(callback.message.bot, uid)
 
     try:
         await callback.message.delete()
     except Exception:
         pass
 
-    await callback.answer()
+    # שולח כרטיס מוצר, אבל גם אם יש בעיה בתמונה/כרטיס — ממשיך לכמות ולא נתקע.
+    try:
+        await send_product_card(proxy, product)
+    except Exception:
+        pass
 
+    await send_temp_message(
+        proxy,
+        wide_rtl(
+            "<b>🔢 בחירת כמות</b>\n\n"
+            f"{field('כמות נבחרת', 1)}\n\n"
+            "בחר את הכמות הרצויה להזמנה.\n"
+            "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
+            "לאחר מכן לחץ על 🛒 הוסף לסל."
+        ),
+        reply_markup=quantity_inline_keyboard(1),
+        parse_mode="HTML",
+        clear_previous=False
+    )
+
+    await callback.answer()
 
 @router.callback_query(F.data == "shop_out_of_stock")
 async def inline_shop_out_of_stock(callback: CallbackQuery):
