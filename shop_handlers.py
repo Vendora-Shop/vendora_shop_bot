@@ -1515,7 +1515,7 @@ async def start(message: Message):
     await message.answer(
         rtl(
             f"<b>👋 ברוך הבא {h(customer_name)}</b>\n\n"
-            "לחץ על <b>תפריט ☰</b> כדי לפתוח את האפשרויות."
+            "לחץ על כפתור <b>Menu</b> הכחול כדי לפתוח את התפריט הראשי."
         ),
         reply_markup=compact_menu_keyboard(),
         parse_mode="HTML"
