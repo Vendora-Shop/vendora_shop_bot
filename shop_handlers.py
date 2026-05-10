@@ -1513,6 +1513,17 @@ class CustomerCallbackMessage:
         self.message_id = callback.message.message_id
         self.chat = callback.message.chat
 
+        # חשוב: גם אם המסך שנלחץ לא נשמר ברשימת temp_bot_messages בגלל מעבר קודם,
+        # מוסיפים אותו כאן כדי שהמסך הישן יימחק לפני פתיחת המסך הבא.
+        # זה מונע מצב שבו נכנסים ל״פרטים שלי״ / ״הזמנות שלי״ והתפריט הראשי נשאר פתוח למטה.
+        try:
+            data = users.setdefault(self.from_user.id, {"cart": []})
+            temp = data.setdefault("temp_bot_messages", [])
+            if self.message_id not in temp:
+                temp.append(self.message_id)
+        except Exception:
+            pass
+
     async def answer(self, *args, **kwargs):
         # Inline UI: בכל מעבר מסך מוחקים את המסך הפעיל הקודם ושומרים את החדש.
         # כש-send_temp_message נקרא עם clear_previous=False שומרים גם את ההודעה הקודמת
@@ -1887,6 +1898,14 @@ async def customer_inline_ui_router(callback: CallbackQuery):
     raw = callback.data or ""
     parts = raw.split(":")
 
+    # רשת ביטחון: כל מסך שממנו לוחצים Inline נחשב למסך פעיל למחיקה במעבר הבא.
+    try:
+        temp = data.setdefault("temp_bot_messages", [])
+        if callback.message and callback.message.message_id not in temp:
+            temp.append(callback.message.message_id)
+    except Exception:
+        pass
+
     text = None
 
     try:
@@ -1984,14 +2003,11 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         await _dispatch_customer_inline(callback, text)
         await callback.answer()
 
-    except Exception as e:
-        await callback.answer("אירעה שגיאה בפעולה. נסה שוב.", show_alert=True)
+    except Exception:
+        # לא שולחים כאן תפריט נוסף, כדי לא ליצור כפילות מסכים.
+        # רק מציגים Alert לטלגרם; המשתמש יכול ללחוץ שוב או לחזור דרך הכפתור הקיים.
         try:
-            await callback.message.answer(
-                widen_inline_screen_text(rtl("<b>⚠️ לא הצלחתי לבצע את הפעולה.</b>\nנסה לחזור לתפריט הראשי.")),
-                reply_markup=main_keyboard(callback.from_user.id),
-                parse_mode="HTML"
-            )
+            await callback.answer("אירעה שגיאה בפעולה. נסה שוב.", show_alert=True)
         except Exception:
             pass
 
@@ -2853,7 +2869,8 @@ async def support(message: Message):
             "support_subject": existing_ticket.get("subject") or ""
         }
 
-        await message.answer(
+        await send_temp_message(
+            message,
             rtl(
                 "<b>📞 שירות לקוחות</b>\n\n"
                 f"{field('מספר פנייה', existing_ticket['ticket_number'])}\n"
@@ -2870,7 +2887,8 @@ async def support(message: Message):
         "step": "support_subject"
     }
 
-    await message.answer(
+    await send_temp_message(
+        message,
         rtl(
             "<b>📞 שירות לקוחות</b>\n\n"
             "בחר את נושא הפנייה:"
@@ -2911,7 +2929,8 @@ async def reorder_choose_order(message: Message):
     orders = get_orders_by_customer_telegram_id(uid, 10)
 
     if not orders:
-        await message.answer(
+        await send_temp_message(
+            message,
             rtl(
                 "<b>⚠️ אין הזמנות קודמות לשחזור.</b>\n\n"
                 "אפשר להיכנס לחנות ולבצע הזמנה חדשה."
@@ -2956,7 +2975,8 @@ async def my_addresses(message: Message):
 
     users[uid]["step"] = "addresses_menu"
 
-    await message.answer(
+    await send_temp_message(
+        message,
         rtl("<b>🏠 הכתובות שלי</b>\n\nבחר פעולה מהתפריט."),
         reply_markup=addresses_menu_keyboard(),
         parse_mode="HTML"
@@ -2970,7 +2990,8 @@ async def show_my_addresses(message: Message):
     addresses = get_customer_addresses(uid, 10)
 
     if not addresses:
-        await message.answer(
+        await send_temp_message(
+            message,
             rtl(
                 "<b>🏠 הכתובות שלי</b>\n\n"
                 "לא שמורות עדיין כתובות בחשבון שלך."
@@ -2983,7 +3004,8 @@ async def show_my_addresses(message: Message):
     users.setdefault(uid, {"cart": []})
     users[uid]["step"] = "address_select"
 
-    await message.answer(
+    await send_temp_message(
+        message,
         rtl(
             "<b>🏠 הכתובות שלי</b>\n\n"
             "בחר כתובת מהרשימה כדי לצפות בפרטים."
