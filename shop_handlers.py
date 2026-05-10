@@ -398,6 +398,26 @@ async def delete_temp_bot_messages(bot, user_id):
 
 
 
+async def delete_main_menu_message(bot, user_id):
+    data = users.get(user_id)
+
+    if not data:
+        return
+
+    message_id = data.get("main_menu_message_id")
+
+    if not message_id:
+        return
+
+    try:
+        await bot.delete_message(user_id, message_id)
+    except Exception:
+        pass
+
+    data.pop("main_menu_message_id", None)
+
+
+
 
 async def force_close_phone_keyboard(message: Message):
     """
@@ -1454,31 +1474,40 @@ async def start(message: Message):
     customer_name = message.from_user.first_name or "לקוח יקר"
 
     await message.answer(
-        rtl(f"<b>👋 ברוך הבא {h(customer_name)}</b>"),
+        rtl(
+            f"<b>👋 ברוך הבא {h(customer_name)}</b>\n\n"
+            "לחץ על <b>☰ תפריט</b> כדי לפתוח את האפשרויות."
+        ),
         reply_markup=compact_menu_keyboard(),
-        parse_mode="HTML"
-    )
-
-    await message.answer(
-        rtl("<b>☰ תפריט ראשי</b>\n\nבחר פעולה:"),
-        reply_markup=main_menu_inline_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
 
 @router.message(F.text == "☰ תפריט")
 async def open_inline_main_menu(message: Message):
-    await message.answer(
+    uid = message.from_user.id
+
+    users.setdefault(uid, {"cart": [], "step": "main"})
+    users[uid]["step"] = "main"
+
+    await delete_main_menu_message(message.bot, uid)
+
+    sent = await message.answer(
         rtl("<b>☰ תפריט ראשי</b>\n\nבחר פעולה:"),
-        reply_markup=main_menu_inline_keyboard(message.from_user.id),
+        reply_markup=main_menu_inline_keyboard(uid),
         parse_mode="HTML"
     )
+
+    users[uid]["main_menu_message_id"] = sent.message_id
 
 
 @router.callback_query(F.data.startswith("main_menu:"))
 async def inline_main_menu_action(callback: CallbackQuery):
     uid = callback.from_user.id
     action = (callback.data or "").split(":", 1)[1]
+
+    users.setdefault(uid, {"cart": [], "step": None})
+    users[uid].pop("main_menu_message_id", None)
 
     if action == "shop":
         users.setdefault(uid, {"cart": [], "step": None})
