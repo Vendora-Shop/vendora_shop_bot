@@ -361,6 +361,7 @@ async def notify_admin_ticket_closed_by_customer(bot, ticket_number, user_full_n
 users = {}
 
 RTL = "\u200F"
+UI_WIDE_LINE = "━━━━━━━━━━━━━━━━━━━━"
 
 
 # ================== SAFE INPUT CLEANUP ==================
@@ -1770,6 +1771,7 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             idx = int(parts[-1])
             if 0 <= idx < len(cats):
                 data["current_category"] = cats[idx]
+                data["category"] = cats[idx]
                 text = cats[idx]
 
         elif raw.startswith("ui:prod:"):
@@ -1831,11 +1833,13 @@ async def start(message: Message):
 
     await force_close_phone_keyboard(message)
 
-    await message.answer(
+    await send_temp_message(
+        message,
         rtl(
             f"<b>👋 ברוך הבא {h(customer_name)}</b>\n\n"
             "<b>🛍️ Vendora Shop</b>\n"
             "חנות דיגיטלית חכמה להזמנות, משלוחים ואיסוף עצמי.\n\n"
+            f"{UI_WIDE_LINE}\n"
             "בחר פעולה מהתפריט:"
         ),
         reply_markup=main_keyboard(message.from_user.id),
@@ -1887,7 +1891,7 @@ async def shop(message: Message):
 
     await send_temp_message(
         message,
-        rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"),
+        rtl(f"<b>🛒 החנות</b>\n\n{UI_WIDE_LINE}\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
@@ -1945,7 +1949,7 @@ async def back_categories(message: Message):
     users[uid]["step"] = "browse_products"
     await send_temp_message(
         message,
-        rtl("<b>📂 קטגוריות</b>\n\nבחר קטגוריה:"),
+        rtl(f"<b>📂 קטגוריות</b>\n\n{UI_WIDE_LINE}\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
@@ -1959,7 +1963,7 @@ async def add_more(message: Message):
     users[uid]["step"] = "browse_products"
     await send_temp_message(
         message,
-        rtl("<b>➕ הוספת מוצר</b>\n\nבחר קטגוריה:"),
+        rtl(f"<b>➕ הוספת מוצר</b>\n\n{UI_WIDE_LINE}\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
@@ -2201,6 +2205,7 @@ async def submit_paid_order(message: Message, data):
                 parse_mode="HTML"
             )
 
+    await delete_temp_bot_messages(message.bot, uid)
     users.pop(uid, None)
 
     if is_pickup_order(data):
@@ -2220,7 +2225,9 @@ async def submit_paid_order(message: Message, data):
             f"{field('מספר הזמנה', order_number)}"
         )
 
-    await message.answer(
+    users[uid] = {"cart": [], "step": "main"}
+    await send_temp_message(
+        message,
         rtl(customer_success_text),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
@@ -2407,7 +2414,7 @@ async def quantity_inline_action(callback: CallbackQuery):
     action = (callback.data or "").split(":", 1)[1]
 
     if action == "back_products":
-        category = data.get("category")
+        category = data.get("current_category") or data.get("category") or (data.get("selected_product") or {}).get("category")
         data["step"] = "product_select"
         data.pop("selected_product", None)
         data.pop("selected_qty", None)
@@ -2418,8 +2425,10 @@ async def quantity_inline_action(callback: CallbackQuery):
 
         await delete_temp_bot_messages(callback.message.bot, uid)
 
-        await callback.message.answer(
-            rtl("<b>בחר מוצר:</b>"),
+        proxy = CustomerCallbackMessage(callback, "⬅️ חזרה למוצרים")
+        await send_temp_message(
+            proxy,
+            rtl(f"<b>📂 {h(category or 'קטגוריה')}</b>\n\n{UI_WIDE_LINE}\nבחר מוצר:"),
             reply_markup=products_keyboard(category),
             parse_mode="HTML"
         )
@@ -2711,7 +2720,7 @@ async def back_to_main_menu(message: Message):
 
     await send_temp_message(
         message,
-        rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט למטה."),
+        rtl(f"<b>🏠 תפריט ראשי</b>\n\n{UI_WIDE_LINE}\nבחר פעולה מהתפריט:"),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
@@ -2810,10 +2819,12 @@ async def handle_shop(message: Message):
     if txt in products:
         users.setdefault(uid, {"cart": [], "step": None})
         users[uid]["step"] = "product_select"
+        users[uid]["current_category"] = txt
+        users[uid]["category"] = txt
         await consume_customer_click(message)
         await send_temp_message(
             message,
-            rtl(f"<b>📂 {h(txt)}</b>\n\nבחר מוצר:"),
+            rtl(f"<b>📂 {h(txt)}</b>\n\n{UI_WIDE_LINE}\nבחר מוצר:"),
             reply_markup=products_keyboard(txt),
             parse_mode="HTML"
         )
