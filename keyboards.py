@@ -19,7 +19,7 @@ def support_tickets_button_text():
 def main_keyboard(user_id=None):
     keyboard = [
         [KeyboardButton(text="🛒 חנות")],
-        [KeyboardButton(text="👤 הפרטים שלי"), KeyboardButton(text="📦 ההזמנות שלי")],
+        [KeyboardButton(text="📦 ההזמנות שלי"), KeyboardButton(text="👤 הפרטים שלי")],
         [KeyboardButton(text="🏠 הכתובות שלי")],
         [KeyboardButton(text="📞 שירות לקוחות")]
     ]
@@ -29,7 +29,9 @@ def main_keyboard(user_id=None):
 
     return ReplyKeyboardMarkup(
         keyboard=keyboard,
-        resize_keyboard=True
+        resize_keyboard=True,
+        one_time_keyboard=False,
+        input_field_placeholder="בחר פעולה מהתפריט"
     )
 
 
