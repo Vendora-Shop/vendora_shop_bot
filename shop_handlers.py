@@ -677,6 +677,13 @@ def rtl(text):
     return "\u202B" + str(text) + "\u202C" + RTL
 
 
+
+def wide_rtl(text):
+    # מרחיב את בועת ההודעה כדי שכפתורי Inline יהיו רחבים כמו בדוגמה.
+    # התווים האלו כמעט בלתי נראים, אבל נותנים רוחב לבועה.
+    return rtl(str(text) + "\n" + ("⠀" * 34))
+
+
 def main_menu_text():
     return rtl(
         "<b>☰ תפריט ראשי</b>\n\n"
@@ -1541,7 +1548,7 @@ async def open_inline_main_menu(message: Message):
     await delete_main_menu_message(message.bot, uid)
 
     sent = await message.answer(
-        main_menu_text(),
+        wide_rtl("<b>☰ תפריט ראשי</b>\n\nבחר פעולה מתוך האפשרויות:"),
         reply_markup=main_menu_inline_keyboard(uid),
         parse_mode="HTML"
     )
@@ -1579,7 +1586,7 @@ async def inline_main_menu_action(callback: CallbackQuery):
         await delete_temp_bot_messages(callback.message.bot, uid)
 
         sent = await callback.message.answer(
-            rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"),
+            wide_rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"),
             reply_markup=categories_keyboard(),
             parse_mode="HTML"
         )
@@ -1642,7 +1649,7 @@ async def inline_main_menu_action(callback: CallbackQuery):
         }
 
         await callback.message.answer(
-            rtl("<b>📞 שירות לקוחות</b>\n\nבחר נושא לפנייה:"),
+            wide_rtl("<b>📞 שירות לקוחות</b>\n\nבחר נושא לפנייה:"),
             reply_markup=support_subject_keyboard(),
             parse_mode="HTML"
         )
@@ -1720,7 +1727,7 @@ async def shop(message: Message):
 
     await send_temp_message(
         message,
-        rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"),
+        wide_rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"),
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
@@ -1896,7 +1903,7 @@ async def checkout(message: Message):
 
     await send_temp_message(
         message,
-        rtl(
+        wide_rtl(
             "<b>📦 איך תרצה לקבל את ההזמנה?</b>\n\n"
             "בחר אחת מהאפשרויות:"
         ),
@@ -2095,7 +2102,7 @@ async def back_to_fulfillment_choice(message: Message):
 
     await send_temp_message(
         message,
-        rtl(
+        wide_rtl(
             "<b>📦 איך תרצה לקבל את ההזמנה?</b>\n\n"
             "בחר אחת מהאפשרויות:"
         ),
@@ -2155,7 +2162,7 @@ async def back_from_order_summary_to_previous_step(message: Message):
 
     await send_temp_message(
         message,
-        rtl(
+        wide_rtl(
             "<b>📦 איך תרצה לקבל את ההזמנה?</b>\n\n"
             "בחר אחת מהאפשרויות:"
         ),
@@ -2212,7 +2219,7 @@ async def confirm_order(message: Message):
     order_type_text = "🛍️ איסוף עצמי" if is_pickup_order(data) else "🚚 משלוח עד הבית"
 
     await message.answer(
-        rtl(
+        wide_rtl(
             "<b>💳 תשלום הזמנה</b>\n\n"
             f"{field('סוג הזמנה', order_type_text)}\n"
             f"{field('סה״כ לתשלום', money(final_total))}\n\n"
@@ -2328,7 +2335,7 @@ async def quantity_inline_action(callback: CallbackQuery):
         data["selected_qty"] = selected_qty
 
         await callback.message.edit_text(
-            rtl(
+            wide_rtl(
                 "<b>🔢 בחירת כמות</b>\n\n"
                 f"{field('כמות נבחרת', selected_qty)}\n\n"
                 "בחר את הכמות הרצויה להזמנה.\n"
@@ -2349,7 +2356,7 @@ async def quantity_inline_action(callback: CallbackQuery):
         data["selected_qty"] = selected_qty
 
         await callback.message.edit_text(
-            rtl(
+            wide_rtl(
                 "<b>🔢 בחירת כמות</b>\n\n"
                 f"{field('כמות נבחרת', selected_qty)}\n\n"
                 "בחר את הכמות הרצויה להזמנה.\n"
@@ -2638,6 +2645,7 @@ def callback_proxy(callback: CallbackQuery, text: str):
 
 @router.callback_query(F.data.startswith("shop_cat:"))
 async def inline_shop_category(callback: CallbackQuery):
+    uid = callback.from_user.id
     products = get_active_products()
     categories = list(products.keys())
 
@@ -2648,26 +2656,78 @@ async def inline_shop_category(callback: CallbackQuery):
         await callback.answer("קטגוריה לא נמצאה.", show_alert=True)
         return
 
+    users.setdefault(uid, {"cart": [], "step": None})
+    users[uid]["step"] = "product_select"
+    users[uid]["category"] = category
+
+    await delete_temp_bot_messages(callback.message.bot, uid)
+
     proxy = callback_proxy(callback, category)
-    await handle_shop(proxy)
+    await send_temp_message(
+        proxy,
+        wide_rtl(f"<b>📂 {h(category)}</b>\n\nבחר מוצר:"),
+        reply_markup=products_keyboard(category),
+        parse_mode="HTML"
+    )
+
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("shop_prod:"))
 async def inline_shop_product(callback: CallbackQuery):
+    uid = callback.from_user.id
     products = get_active_products()
 
     try:
         _, category_index, product_index = (callback.data or "").split(":")
         category = list(products.keys())[int(category_index)]
         product = products.get(category, [])[int(product_index)]
-        product_name = product.get("name")
     except Exception:
         await callback.answer("המוצר לא נמצא.", show_alert=True)
         return
 
-    proxy = callback_proxy(callback, product_name)
-    await handle_shop(proxy)
+    stock = int(product.get("stock", 0) or 0)
+    if stock <= 0:
+        await callback.answer("המוצר אזל מהמלאי.", show_alert=True)
+        return
+
+    users.setdefault(uid, {"cart": [], "step": None})
+    data = users[uid]
+    data["selected_product"] = product
+    data["selected_qty"] = 1
+    data["step"] = "qty"
+
+    await delete_temp_bot_messages(callback.message.bot, uid)
+
+    proxy = callback_proxy(callback, product.get("name", ""))
+
+    await send_product_card(proxy, product)
+
+    await send_temp_message(
+        proxy,
+        wide_rtl(
+            "<b>🔢 בחירת כמות</b>\n\n"
+            f"{field('כמות נבחרת', data['selected_qty'])}\n\n"
+            "בחר את הכמות הרצויה להזמנה.\n"
+            "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
+            "רק לאחר בחירת הכמות ולחיצה על 🛒 הוסף לסל,\n"
+            "המוצרים יתווספו לסל ותוכל להמשיך למשלוח או לאיסוף."
+        ),
+        reply_markup=quantity_inline_keyboard(data["selected_qty"]),
+        parse_mode="HTML",
+        clear_previous=False
+    )
+
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
     await callback.answer()
 
 
@@ -2857,7 +2917,7 @@ async def handle_shop(message: Message):
 
         await send_temp_message(
             message,
-            rtl(
+            wide_rtl(
                 "<b>🔢 בחירת כמות</b>\n\n"
                 f"{field('כמות נבחרת', data['selected_qty'])}\n\n"
                 "בחר את הכמות הרצויה להזמנה.\n"
