@@ -23,32 +23,29 @@ def compact_menu_keyboard():
 
 def main_menu_inline_keyboard(user_id=None):
     keyboard = [
-        [InlineKeyboardButton(text="חנות 🛒", callback_data="main_menu:shop")],
-        [
-            InlineKeyboardButton(text="ההזמנות שלי 📦", callback_data="main_menu:orders"),
-            InlineKeyboardButton(text="הפרטים שלי 👤", callback_data="main_menu:profile")
-        ],
-        [InlineKeyboardButton(text="הכתובות שלי 🏠", callback_data="main_menu:addresses")],
-        [InlineKeyboardButton(text="שירות לקוחות 📞", callback_data="main_menu:support")]
+        [InlineKeyboardButton(text="פתיחת החנות ובחירת מוצרים 🛒", callback_data="main_menu:shop")],
+        [InlineKeyboardButton(text="ההזמנות שלי ומעקב הזמנות 📦", callback_data="main_menu:orders")],
+        [InlineKeyboardButton(text="הפרטים האישיים שלי 👤", callback_data="main_menu:profile")],
+        [InlineKeyboardButton(text="הכתובות השמורות שלי 🏠", callback_data="main_menu:addresses")],
+        [InlineKeyboardButton(text="שירות לקוחות ותמיכה 📞", callback_data="main_menu:support")]
     ]
 
     if user_id == ADMIN_ID:
-        keyboard.append([InlineKeyboardButton(text="פאנל ניהול 🔐", callback_data="main_menu:admin")])
+        keyboard.append([InlineKeyboardButton(text="כניסה לפאנל ניהול 🔐", callback_data="main_menu:admin")])
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
-
 def main_keyboard(user_id=None):
     keyboard = [
-        [KeyboardButton(text="חנות 🛒")],
-        [KeyboardButton(text="ההזמנות שלי 📦"), KeyboardButton(text="הפרטים שלי 👤")],
-        [KeyboardButton(text="הכתובות שלי 🏠")],
-        [KeyboardButton(text="שירות לקוחות 📞")]
+        [KeyboardButton(text="פתיחת החנות ובחירת מוצרים 🛒")],
+        [KeyboardButton(text="ההזמנות שלי ומעקב הזמנות 📦"), KeyboardButton(text="הפרטים האישיים שלי 👤")],
+        [KeyboardButton(text="הכתובות השמורות שלי 🏠")],
+        [KeyboardButton(text="שירות לקוחות ותמיכה 📞")]
     ]
 
     if user_id == ADMIN_ID:
-        keyboard.append([KeyboardButton(text="פאנל ניהול 🔐")])
+        keyboard.append([KeyboardButton(text="כניסה לפאנל ניהול 🔐")])
 
     return ReplyKeyboardMarkup(
         keyboard=keyboard,
