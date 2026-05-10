@@ -69,7 +69,7 @@ async def customer_cancel_payment_button(message: Message):
 
     await message.answer(
         rtl("<b>ℹ️ אין תשלום פעיל לביטול.</b>"),
-        reply_markup=main_keyboard(message.from_user.id),
+        reply_markup=main_menu_inline_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
@@ -293,7 +293,7 @@ async def close_customer_open_support_ticket(message: Message, data=None):
                 "<b>ℹ️ אין פנייה פתוחה לסגירה.</b>\n"
                 "חזרת לתפריט הראשי."
             ),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=main_menu_inline_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return True
@@ -310,7 +310,7 @@ async def close_customer_open_support_ticket(message: Message, data=None):
                 "<b>ℹ️ הפנייה כבר סגורה.</b>\n"
                 "חזרת לתפריט הראשי."
             ),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=main_menu_inline_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return True
@@ -333,7 +333,7 @@ async def close_customer_open_support_ticket(message: Message, data=None):
             "<b>✅ הפנייה נסגרה.</b>\n"
             "תודה שפנית לשירות הלקוחות של Vendora."
         ),
-        reply_markup=main_keyboard(message.from_user.id),
+        reply_markup=main_menu_inline_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
     return True
@@ -501,7 +501,7 @@ async def reset_customer_to_main_menu(message, text):
 
     await message.answer(
         rtl(text),
-        reply_markup=main_keyboard(message.from_user.id),
+        reply_markup=main_menu_inline_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
@@ -519,7 +519,7 @@ async def reset_callback_customer_to_main_menu(callback, text):
 
     await callback.message.answer(
         rtl(text),
-        reply_markup=main_keyboard(callback.from_user.id),
+        reply_markup=main_menu_inline_keyboard(callback.from_user.id),
         parse_mode="HTML"
     )
 
@@ -680,7 +680,7 @@ def rtl(text):
 def main_menu_text():
     return rtl(
         "<b>☰ תפריט ראשי</b>\n\n"
-        "בחר פעולה מתוך האפשרויות:"
+        "בחר פעולה מתוך האפשרויות של Vendora:"
     )
 
 
@@ -688,49 +688,32 @@ def ui_text(text):
     text = str(text or "").replace("\u200f", "").replace("\u200e", "").strip()
 
     aliases = {
-        "פתיחת החנות ובחירת מוצרים 🛒": "🛒 חנות",
         "חנות 🛒": "🛒 חנות",
-        "הסל שלי והמשך הזמנה 🛒": "🛒 הסל שלי",
         "הסל שלי 🛒": "🛒 הסל שלי",
-        "ההזמנות שלי ומעקב הזמנות 📦": "📦 ההזמנות שלי",
         "ההזמנות שלי 📦": "📦 ההזמנות שלי",
-        "הפרטים האישיים שלי 👤": "👤 הפרטים שלי",
         "הפרטים שלי 👤": "👤 הפרטים שלי",
-        "הכתובות השמורות שלי 🏠": "🏠 הכתובות שלי",
         "הכתובות שלי 🏠": "🏠 הכתובות שלי",
-        "שירות לקוחות ותמיכה 📞": "📞 שירות לקוחות",
         "שירות לקוחות 📞": "📞 שירות לקוחות",
-        "כניסה לפאנל ניהול 🔐": "🔐 פאנל ניהול",
         "פאנל ניהול 🔐": "🔐 פאנל ניהול",
-        "טאבלטים ומכשירי טאבלט": "טאבלטים",
-        "תיקי משלוחים ואביזרים": "תיקי משלוחים",
-        "חזרה לשלב הקודם ↩️": "⬅️ חזרה",
         "חזרה ↩️": "⬅️ חזרה",
-        "חזרה לרשימת הקטגוריות ↩️": "⬅️ חזרה לקטגוריות",
         "חזרה לקטגוריות ↩️": "⬅️ חזרה לקטגוריות",
         "חזרה לתפריט הראשי ↩️": "⬅️ חזרה לתפריט",
-        "הוסף עוד מוצר להזמנה ➕": "➕ הוסף עוד מוצר",
         "הוסף עוד מוצר ➕": "➕ הוסף עוד מוצר",
-        "המשך לסיכום ההזמנה ✅": "✅ המשך להזמנה",
         "המשך להזמנה ✅": "✅ המשך להזמנה",
-        "רוקן את כל הסל 🧹": "🧹 רוקן סל",
         "רוקן סל 🧹": "🧹 רוקן סל",
-        "בטל את ההזמנה ❌": "❌ בטל הזמנה",
         "בטל הזמנה ❌": "❌ בטל הזמנה",
-        "בחירת משלוח עד הבית 🚚": "🚚 משלוח עד הבית",
-        "משלוח עד הבית 🚚": "🚚 משלוח עד הבית",
-        "בחירת איסוף עצמי מהחנות 🛍️": "🛍️ איסוף עצמי מהחנות",
-        "איסוף עצמי מהחנות 🛍️": "🛍️ איסוף עצמי מהחנות",
-        "הזנת פרטים חדשים להזמנה ✏️": "✏️ הזן פרטים חדשים",
-        "הזן פרטים חדשים ✏️": "✏️ הזן פרטים חדשים",
-        "אישור ושליחת ההזמנה ✅": "✅ אשר הזמנה",
         "אשר הזמנה ✅": "✅ אשר הזמנה",
-        "שינוי פרטי ההזמנה ✏️": "✏️ שנה פרטים",
         "שנה פרטים ✏️": "✏️ שנה פרטים",
+        "משלוח עד הבית 🚚": "🚚 משלוח עד הבית",
+        "איסוף עצמי מהחנות 🛍️": "🛍️ איסוף עצמי מהחנות",
+        "המשך עם הפרטים השמורים ✅": "✅ המשך עם הפרטים השמורים",
+        "הזן פרטים חדשים ✏️": "✏️ הזן פרטים חדשים",
+        "חזרה לבחירת משלוח / איסוף ↩️": "⬅️ חזרה לבחירת משלוח / איסוף",
+        "חזרה לסיכום הזמנה ↩️": "⬅️ חזרה לסיכום הזמנה",
+        "ביטול תשלום ❌": "❌ ביטול תשלום",
     }
 
     return aliases.get(text, text)
-
 
 
 def money(value):
@@ -780,42 +763,52 @@ def admin_new_order_keyboard(order_number):
     )
 
 
+
 def categories_keyboard():
     products = get_active_products()
 
-    keyboard = [[KeyboardButton(text=cat)] for cat in products.keys()]
-    keyboard.append([KeyboardButton(text="🛒 הסל שלי")])
-    keyboard.append([KeyboardButton(text="⬅️ חזרה")])
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+    keyboard = [[InlineKeyboardButton(text=cat, callback_data=f"shop_cat:{i}")] for i, cat in enumerate(products.keys())]
+    keyboard.append([InlineKeyboardButton(text="🛒 הסל שלי", callback_data="cust_btn:cart")])
+    keyboard.append([InlineKeyboardButton(text="⬅️ חזרה", callback_data="cust_btn:back")])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
 
 
 def products_keyboard(category):
     products = get_active_products()
+    items = products.get(category, [])
     keyboard = []
 
-    for product in products.get(category, []):
+    category_keys = list(products.keys())
+    try:
+        category_index = category_keys.index(category)
+    except ValueError:
+        category_index = 0
+
+    for i, product in enumerate(items):
         stock = int(product.get("stock", 0))
         if stock <= 0:
-            keyboard.append([KeyboardButton(text=f"❌ {product['name']} - אזל מהמלאי")])
+            keyboard.append([InlineKeyboardButton(text=f"❌ {product['name']} - אזל מהמלאי", callback_data="shop_out_of_stock")])
         else:
-            keyboard.append([KeyboardButton(text=product["name"])])
+            keyboard.append([InlineKeyboardButton(text=product["name"], callback_data=f"shop_prod:{category_index}:{i}")])
 
-    keyboard.append([KeyboardButton(text="🛒 הסל שלי")])
-    keyboard.append([KeyboardButton(text="⬅️ חזרה לקטגוריות")])
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+    keyboard.append([InlineKeyboardButton(text="🛒 הסל שלי", callback_data="cust_btn:cart")])
+    keyboard.append([InlineKeyboardButton(text="⬅️ חזרה לקטגוריות", callback_data="cust_btn:back_categories")])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
 
 
 def cart_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="➕ הוסף עוד מוצר")],
-            [KeyboardButton(text="✅ המשך להזמנה")],
-            [KeyboardButton(text="🧹 רוקן סל")],
-            [KeyboardButton(text="❌ בטל הזמנה")]
-        ],
-        resize_keyboard=True
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="➕ הוסף עוד מוצר", callback_data="cust_btn:add_more")],
+            [InlineKeyboardButton(text="✅ המשך להזמנה", callback_data="cust_btn:checkout")],
+            [InlineKeyboardButton(text="🧹 רוקן סל", callback_data="cust_btn:clear_cart")],
+            [InlineKeyboardButton(text="❌ בטל הזמנה", callback_data="cust_btn:cancel_order")]
+        ]
     )
-
 
 
 def quantity_keyboard(selected_qty, available_left, max_qty):
@@ -859,27 +852,26 @@ def quantity_inline_keyboard(selected_qty):
     )
 
 
+
 def confirm_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="✅ אשר הזמנה")],
-            [KeyboardButton(text="✏️ שנה פרטים")],
-            [KeyboardButton(text="⬅️ חזרה לשלב קודם")],
-            [KeyboardButton(text="❌ בטל הזמנה")]
-        ],
-        resize_keyboard=True
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✅ אשר הזמנה", callback_data="cust_btn:confirm_order")],
+            [InlineKeyboardButton(text="✏️ שנה פרטים", callback_data="cust_btn:edit_details")],
+            [InlineKeyboardButton(text="⬅️ חזרה לשלב קודם", callback_data="cust_btn:back_prev")],
+            [InlineKeyboardButton(text="❌ בטל הזמנה", callback_data="cust_btn:cancel_order")]
+        ]
     )
 
 
 
 def payment_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="✅ סימולציית תשלום הצליחה")],
-            [KeyboardButton(text="⬅️ חזרה לסיכום הזמנה")],
-            [KeyboardButton(text="❌ ביטול תשלום")]
-        ],
-        resize_keyboard=True
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✅ סימולציית תשלום הצליחה", callback_data="cust_btn:pay_success")],
+            [InlineKeyboardButton(text="⬅️ חזרה לסיכום הזמנה", callback_data="cust_btn:back_summary")],
+            [InlineKeyboardButton(text="❌ ביטול תשלום", callback_data="cust_btn:cancel_payment")]
+        ]
     )
 
 
@@ -1206,16 +1198,15 @@ def support_customer_keyboard(user_id=None):
     )
 
 
+
 def fulfillment_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🚚 משלוח עד הבית")],
-            [KeyboardButton(text="🛍️ איסוף עצמי מהחנות")],
-            [KeyboardButton(text="⬅️ חזרה לסל")],
-            [KeyboardButton(text="❌ בטל הזמנה")]
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=False
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🚚 משלוח עד הבית", callback_data="cust_btn:delivery")],
+            [InlineKeyboardButton(text="🛍️ איסוף עצמי מהחנות", callback_data="cust_btn:pickup")],
+            [InlineKeyboardButton(text="⬅️ חזרה לסל", callback_data="cust_btn:back_cart")],
+            [InlineKeyboardButton(text="❌ בטל הזמנה", callback_data="cust_btn:cancel_order")]
+        ]
     )
 
 
@@ -1651,7 +1642,7 @@ async def inline_main_menu_action(callback: CallbackQuery):
         }
 
         await callback.message.answer(
-            rtl("<b>📞 שירות לקוחות</b>\n\nאיך נוכל לעזור?\nבחר נושא לפנייה:"),
+            rtl("<b>📞 שירות לקוחות</b>\n\nבחר נושא לפנייה:"),
             reply_markup=support_subject_keyboard(),
             parse_mode="HTML"
         )
@@ -1697,15 +1688,15 @@ async def my_details(message: Message):
                 "אין פרטים שמורים עדיין.\n"
                 "אחרי ההזמנה הראשונה, הבוט ישמור את הפרטים שלך להזמנות הבאות."
             ),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=main_menu_inline_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
 
-    await message.answer(saved_profile_text(profile), reply_markup=main_keyboard(message.from_user.id), parse_mode="HTML")
+    await message.answer(saved_profile_text(profile), reply_markup=main_menu_inline_keyboard(message.from_user.id), parse_mode="HTML")
 
 
-@router.message(F.text.in_({"🛒 חנות", "חנות 🛒", "פתיחת החנות ובחירת מוצרים 🛒"}))
+@router.message(F.text.in_({"🛒 חנות", "חנות 🛒"}))
 async def shop(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
@@ -1775,7 +1766,7 @@ async def back_main(message: Message):
     await send_temp_message(
         message,
         rtl("<b>↩️ חזרת לתפריט הראשי</b>"),
-        reply_markup=main_keyboard(message.from_user.id),
+        reply_markup=main_menu_inline_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
@@ -1807,7 +1798,7 @@ async def add_more(message: Message):
     )
 
 
-@router.message(F.text.in_({"🛒 הסל שלי", "הסל שלי 🛒", "הסל שלי והמשך הזמנה 🛒"}))
+@router.message(F.text.in_({"🛒 הסל שלי", "הסל שלי 🛒"}))
 async def show_cart(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
@@ -1870,7 +1861,7 @@ async def edit_details(message: Message):
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=main_menu_inline_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -1922,7 +1913,7 @@ async def submit_paid_order(message: Message, data):
                 "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
                 "ההזמנה כבר נקלטה במערכת ונמצאת בטיפול."
             ),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=main_menu_inline_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -2064,7 +2055,7 @@ async def submit_paid_order(message: Message, data):
 
     await message.answer(
         rtl(customer_success_text),
-        reply_markup=main_keyboard(message.from_user.id),
+        reply_markup=main_menu_inline_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
@@ -2078,7 +2069,7 @@ async def back_to_fulfillment_choice(message: Message):
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=main_menu_inline_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -2122,7 +2113,7 @@ async def back_from_order_summary_to_previous_step(message: Message):
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=main_menu_inline_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -2185,7 +2176,7 @@ async def confirm_order(message: Message):
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=main_menu_inline_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -2205,7 +2196,7 @@ async def confirm_order(message: Message):
                 "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
                 "ההזמנה כבר נקלטה במערכת ונמצאת בטיפול."
             ),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=main_menu_inline_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -2451,7 +2442,7 @@ async def quantity_inline_action(callback: CallbackQuery):
     await callback.answer("פעולה לא תקינה.", show_alert=True)
 
 
-@router.message(F.text.in_({"📞 שירות לקוחות", "שירות לקוחות 📞", "שירות לקוחות ותמיכה 📞"}))
+@router.message(F.text.in_({"📞 שירות לקוחות", "שירות לקוחות 📞"}))
 async def support(message: Message):
     uid = message.from_user.id
 
@@ -2492,7 +2483,7 @@ async def support(message: Message):
         parse_mode="HTML"
     )
 
-@router.message(F.text.in_({"📦 ההזמנות שלי", "ההזמנות שלי 📦", "ההזמנות שלי ומעקב הזמנות 📦"}))
+@router.message(F.text.in_({"📦 ההזמנות שלי", "ההזמנות שלי 📦"}))
 async def my_orders(message: Message):
     uid = message.from_user.id
 
@@ -2528,7 +2519,7 @@ async def reorder_choose_order(message: Message):
                 "<b>⚠️ אין הזמנות קודמות לשחזור.</b>\n\n"
                 "אפשר להיכנס לחנות ולבצע הזמנה חדשה."
             ),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=main_menu_inline_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -2554,7 +2545,7 @@ async def back_to_main_menu(message: Message):
     await send_temp_message(
         message,
         rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט למטה."),
-        reply_markup=main_keyboard(message.from_user.id),
+        reply_markup=main_menu_inline_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
@@ -2620,6 +2611,155 @@ async def add_address_start(message: Message):
         ),
         parse_mode="HTML"
     )
+
+
+class CallbackMessageProxy:
+    def __init__(self, callback: CallbackQuery, text: str):
+        self._callback = callback
+        self._message = callback.message
+        self.from_user = callback.from_user
+        self.bot = callback.message.bot
+        self.chat = callback.message.chat
+        self.text = text
+
+    async def answer(self, *args, **kwargs):
+        return await self._message.answer(*args, **kwargs)
+
+    async def delete(self):
+        try:
+            return await self._message.delete()
+        except Exception:
+            return None
+
+
+def callback_proxy(callback: CallbackQuery, text: str):
+    return CallbackMessageProxy(callback, text)
+
+
+@router.callback_query(F.data.startswith("shop_cat:"))
+async def inline_shop_category(callback: CallbackQuery):
+    products = get_active_products()
+    categories = list(products.keys())
+
+    try:
+        index = int((callback.data or "").split(":", 1)[1])
+        category = categories[index]
+    except Exception:
+        await callback.answer("קטגוריה לא נמצאה.", show_alert=True)
+        return
+
+    proxy = callback_proxy(callback, category)
+    await handle_shop(proxy)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("shop_prod:"))
+async def inline_shop_product(callback: CallbackQuery):
+    products = get_active_products()
+
+    try:
+        _, category_index, product_index = (callback.data or "").split(":")
+        category = list(products.keys())[int(category_index)]
+        product = products.get(category, [])[int(product_index)]
+        product_name = product.get("name")
+    except Exception:
+        await callback.answer("המוצר לא נמצא.", show_alert=True)
+        return
+
+    proxy = callback_proxy(callback, product_name)
+    await handle_shop(proxy)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "shop_out_of_stock")
+async def inline_shop_out_of_stock(callback: CallbackQuery):
+    await callback.answer("המוצר אזל מהמלאי.", show_alert=True)
+
+
+CUSTOMER_BUTTON_ACTIONS = {
+    "cart": "🛒 הסל שלי",
+    "back": "⬅️ חזרה",
+    "back_categories": "⬅️ חזרה לקטגוריות",
+    "add_more": "➕ הוסף עוד מוצר",
+    "checkout": "✅ המשך להזמנה",
+    "clear_cart": "🧹 רוקן סל",
+    "cancel_order": "❌ בטל הזמנה",
+    "delivery": "🚚 משלוח עד הבית",
+    "pickup": "🛍️ איסוף עצמי מהחנות",
+    "back_cart": "⬅️ חזרה לסל",
+    "confirm_order": "✅ אשר הזמנה",
+    "edit_details": "✏️ שנה פרטים",
+    "back_prev": "⬅️ חזרה לשלב קודם",
+    "pay_success": "✅ סימולציית תשלום הצליחה",
+    "back_summary": "⬅️ חזרה לסיכום הזמנה",
+    "cancel_payment": "❌ ביטול תשלום",
+    "main_menu": "⬅️ חזרה לתפריט",
+    "reorder": "🔁 הזמן שוב",
+    "show_addresses": "📋 הצג כתובות",
+    "add_address": "➕ הוסף כתובת",
+}
+
+
+CUSTOMER_TEXT_ACTIONS = {
+    "support_order": "📦 שאלה על הזמנה קיימת",
+    "support_fulfillment": "🚚 משלוח / איסוף",
+    "support_payment": "💳 תשלום",
+    "support_product": "🛍️ מוצר / מלאי",
+    "support_details": "📝 שינוי פרטים",
+    "support_other": "❓ אחר",
+}
+
+
+@router.callback_query(F.data.startswith("cust_btn:"))
+async def inline_customer_button(callback: CallbackQuery):
+    action = (callback.data or "").split(":", 1)[1]
+    text = CUSTOMER_BUTTON_ACTIONS.get(action)
+
+    if not text:
+        await callback.answer("פעולה לא תקינה.", show_alert=True)
+        return
+
+    proxy = callback_proxy(callback, text)
+
+    direct_handlers = {
+        "🛒 הסל שלי": show_cart,
+        "⬅️ חזרה": back_main,
+        "⬅️ חזרה לקטגוריות": back_categories,
+        "➕ הוסף עוד מוצר": add_more,
+        "✅ המשך להזמנה": checkout,
+        "🧹 רוקן סל": clear_cart,
+        "❌ בטל הזמנה": cancel_order,
+        "✅ אשר הזמנה": confirm_order,
+        "✏️ שנה פרטים": edit_details,
+        "🔁 הזמן שוב": reorder_choose_order,
+        "⬅️ חזרה לתפריט": back_to_main_menu,
+        "📋 הצג כתובות": show_my_addresses,
+        "➕ הוסף כתובת": add_address_start,
+    }
+
+    handler = direct_handlers.get(text)
+
+    if handler:
+        await handler(proxy)
+    else:
+        await handle_shop(proxy)
+
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("cust_text:"))
+async def inline_customer_text(callback: CallbackQuery):
+    action = (callback.data or "").split(":", 1)[1]
+    text = CUSTOMER_TEXT_ACTIONS.get(action)
+
+    if not text:
+        await callback.answer("פעולה לא תקינה.", show_alert=True)
+        return
+
+    proxy = callback_proxy(callback, text)
+    await handle_shop(proxy)
+    await callback.answer()
+
 
 
 @router.message()
@@ -3230,7 +3370,7 @@ async def handle_shop(message: Message):
 
             await message.answer(
                 rtl("<b>✅ הפנייה בוטלה.</b>\nחזרת לתפריט הראשי."),
-                reply_markup=main_keyboard(message.from_user.id),
+                reply_markup=main_menu_inline_keyboard(message.from_user.id),
                 parse_mode="HTML"
             )
             return
@@ -3311,7 +3451,7 @@ async def handle_shop(message: Message):
                         "<b>ℹ️ הפנייה כבר סגורה.</b>\n"
                         "חזרת לתפריט הראשי."
                     ),
-                    reply_markup=main_keyboard(message.from_user.id),
+                    reply_markup=main_menu_inline_keyboard(message.from_user.id),
                     parse_mode="HTML"
                 )
                 return
@@ -3336,7 +3476,7 @@ async def handle_shop(message: Message):
 
                 await message.answer(
                     rtl("<b>✅ הפנייה נסגרה.</b>\nתודה שפנית לשירות הלקוחות של Vendora."),
-                    reply_markup=main_keyboard(message.from_user.id),
+                    reply_markup=main_menu_inline_keyboard(message.from_user.id),
                     parse_mode="HTML"
                 )
                 return
@@ -3348,7 +3488,7 @@ async def handle_shop(message: Message):
                     "<b>ℹ️ הפנייה כבר סגורה.</b>\n"
                     "חזרת לתפריט הראשי."
                 ),
-                reply_markup=main_keyboard(message.from_user.id),
+                reply_markup=main_menu_inline_keyboard(message.from_user.id),
                 parse_mode="HTML"
             )
             return
