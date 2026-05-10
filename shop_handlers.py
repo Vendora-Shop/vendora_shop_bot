@@ -52,7 +52,7 @@ async def safe_send_order_pdf(message, order_id):
         from aiogram.types import FSInputFile
         await message.answer_document(
             FSInputFile(pdf_path),
-            caption=rtl(f"<b>📄 סיכום הזמנה {h(order_id)}</b>"),
+            caption=wide_rtl(f"<b>📄 סיכום הזמנה {h(order_id)}</b>"),
             parse_mode="HTML",
             reply_markup=ReplyKeyboardRemove()
         )
@@ -1913,7 +1913,7 @@ async def checkout(message: Message):
 
     if not data or not data.get("cart"):
         await message.answer(
-            rtl("<b>🛒 הסל שלך ריק.</b>\n\nקודם בחר מוצר."),
+            wide_rtl("<b>🛒 הסל שלך ריק.</b>\n\nקודם בחר מוצר."),
             parse_mode="HTML"
         )
         return
@@ -2054,7 +2054,7 @@ async def submit_paid_order(message: Message, data):
             pdf_path = create_invoice_pdf(saved_order)
             await message.answer_document(
                 FSInputFile(pdf_path),
-                caption=rtl(f"📄 <b>סיכום הזמנה</b> {h(order_number)}"),
+                caption=wide_rtl(f"📄 <b>סיכום הזמנה</b> {h(order_number)}"),
                 parse_mode="HTML"
             )
         except Exception:
