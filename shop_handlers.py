@@ -684,6 +684,38 @@ def main_menu_text():
     )
 
 
+def ui_text(text):
+    text = str(text or "").replace("\u200f", "").replace("\u200e", "").strip()
+
+    aliases = {
+        "חנות 🛒": "🛒 חנות",
+        "הסל שלי 🛒": "🛒 הסל שלי",
+        "ההזמנות שלי 📦": "📦 ההזמנות שלי",
+        "הפרטים שלי 👤": "👤 הפרטים שלי",
+        "הכתובות שלי 🏠": "🏠 הכתובות שלי",
+        "שירות לקוחות 📞": "📞 שירות לקוחות",
+        "פאנל ניהול 🔐": "🔐 פאנל ניהול",
+        "חזרה ↩️": "⬅️ חזרה",
+        "חזרה לקטגוריות ↩️": "⬅️ חזרה לקטגוריות",
+        "חזרה לתפריט הראשי ↩️": "⬅️ חזרה לתפריט",
+        "הוסף עוד מוצר ➕": "➕ הוסף עוד מוצר",
+        "המשך להזמנה ✅": "✅ המשך להזמנה",
+        "רוקן סל 🧹": "🧹 רוקן סל",
+        "בטל הזמנה ❌": "❌ בטל הזמנה",
+        "אשר הזמנה ✅": "✅ אשר הזמנה",
+        "שנה פרטים ✏️": "✏️ שנה פרטים",
+        "משלוח עד הבית 🚚": "🚚 משלוח עד הבית",
+        "איסוף עצמי מהחנות 🛍️": "🛍️ איסוף עצמי מהחנות",
+        "המשך עם הפרטים השמורים ✅": "✅ המשך עם הפרטים השמורים",
+        "הזן פרטים חדשים ✏️": "✏️ הזן פרטים חדשים",
+        "חזרה לבחירת משלוח / איסוף ↩️": "⬅️ חזרה לבחירת משלוח / איסוף",
+        "חזרה לסיכום הזמנה ↩️": "⬅️ חזרה לסיכום הזמנה",
+        "ביטול תשלום ❌": "❌ ביטול תשלום",
+    }
+
+    return aliases.get(text, text)
+
+
 def money(value):
     value = float(value)
     if value.is_integer():
@@ -1636,7 +1668,7 @@ async def inline_main_menu_action(callback: CallbackQuery):
     await callback.answer("פעולה לא תקינה.", show_alert=True)
 
 
-@router.message(F.text == "👤 הפרטים שלי")
+@router.message(F.text.in_({"👤 הפרטים שלי", "הפרטים שלי 👤"}))
 async def my_details(message: Message):
     uid = message.from_user.id
     profile = get_customer_profile(uid)
@@ -1656,7 +1688,7 @@ async def my_details(message: Message):
     await message.answer(saved_profile_text(profile), reply_markup=main_keyboard(message.from_user.id), parse_mode="HTML")
 
 
-@router.message(F.text == "🛒 חנות")
+@router.message(F.text.in_({"🛒 חנות", "חנות 🛒"}))
 async def shop(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
@@ -1702,7 +1734,7 @@ async def back_to_admin_panel_from_shop(message: Message):
     )
 
 
-@router.message(F.text == "⬅️ חזרה")
+@router.message(F.text.in_({"⬅️ חזרה", "חזרה ↩️"}))
 async def back_main(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
@@ -1730,7 +1762,7 @@ async def back_main(message: Message):
         parse_mode="HTML"
     )
 
-@router.message(F.text == "⬅️ חזרה לקטגוריות")
+@router.message(F.text.in_({"⬅️ חזרה לקטגוריות", "חזרה לקטגוריות ↩️"}))
 async def back_categories(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
@@ -1744,7 +1776,7 @@ async def back_categories(message: Message):
     )
 
 
-@router.message(F.text == "➕ הוסף עוד מוצר")
+@router.message(F.text.in_({"➕ הוסף עוד מוצר", "הוסף עוד מוצר ➕"}))
 async def add_more(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
@@ -1758,7 +1790,7 @@ async def add_more(message: Message):
     )
 
 
-@router.message(F.text == "🛒 הסל שלי")
+@router.message(F.text.in_({"🛒 הסל שלי", "הסל שלי 🛒"}))
 async def show_cart(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
@@ -1771,7 +1803,7 @@ async def show_cart(message: Message):
     )
 
 
-@router.message(F.text == "🧹 רוקן סל")
+@router.message(F.text.in_({"🧹 רוקן סל", "רוקן סל 🧹"}))
 async def clear_cart(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
@@ -1798,7 +1830,7 @@ async def clear_cart(message: Message):
     )
 
 
-@router.message(F.text == "❌ בטל הזמנה")
+@router.message(F.text.in_({"❌ בטל הזמנה", "בטל הזמנה ❌"}))
 async def cancel_order(message: Message):
     if is_admin_panel_active_for_shop_guard(message.from_user.id):
         return
@@ -1813,7 +1845,7 @@ async def cancel_order(message: Message):
     users.pop(uid, None)
 
 
-@router.message(F.text == "✏️ שנה פרטים")
+@router.message(F.text.in_({"✏️ שנה פרטים", "שנה פרטים ✏️"}))
 async def edit_details(message: Message):
     uid = message.from_user.id
     data = users.get(uid)
@@ -1836,7 +1868,7 @@ async def edit_details(message: Message):
     )
 
 
-@router.message(F.text == "✅ המשך להזמנה")
+@router.message(F.text.in_({"✅ המשך להזמנה", "המשך להזמנה ✅"}))
 async def checkout(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
@@ -2402,7 +2434,7 @@ async def quantity_inline_action(callback: CallbackQuery):
     await callback.answer("פעולה לא תקינה.", show_alert=True)
 
 
-@router.message(F.text == "📞 שירות לקוחות")
+@router.message(F.text.in_({"📞 שירות לקוחות", "שירות לקוחות 📞"}))
 async def support(message: Message):
     uid = message.from_user.id
 
@@ -2443,7 +2475,7 @@ async def support(message: Message):
         parse_mode="HTML"
     )
 
-@router.message(F.text == "📦 ההזמנות שלי")
+@router.message(F.text.in_({"📦 ההזמנות שלי", "ההזמנות שלי 📦"}))
 async def my_orders(message: Message):
     uid = message.from_user.id
 
@@ -2493,7 +2525,7 @@ async def reorder_choose_order(message: Message):
     )
 
 
-@router.message(F.text == "⬅️ חזרה לתפריט")
+@router.message(F.text.in_({"⬅️ חזרה לתפריט", "חזרה לתפריט הראשי ↩️"}))
 async def back_to_main_menu(message: Message):
     uid = message.from_user.id
 
@@ -2509,7 +2541,7 @@ async def back_to_main_menu(message: Message):
         parse_mode="HTML"
     )
 
-@router.message(F.text == "🏠 הכתובות שלי")
+@router.message(F.text.in_({"🏠 הכתובות שלי", "הכתובות שלי 🏠"}))
 async def my_addresses(message: Message):
     uid = message.from_user.id
 
@@ -2576,7 +2608,7 @@ async def add_address_start(message: Message):
 @router.message()
 async def handle_shop(message: Message):
     uid = message.from_user.id
-    txt = (message.text or "").strip()
+    txt = ui_text(message.text)
     data = users.get(uid)
 
     products = get_active_products()
