@@ -677,6 +677,13 @@ def rtl(text):
     return RTL + str(text)
 
 
+def main_menu_text():
+    return rtl(
+        "<b>☰ תפריט ראשי</b>\n\n"
+        "בחר פעולה מתוך האפשרויות של Vendora:"
+    )
+
+
 def money(value):
     value = float(value)
     if value.is_integer():
@@ -1476,14 +1483,14 @@ async def start(message: Message):
     await message.answer(
         rtl(
             f"<b>👋 ברוך הבא {h(customer_name)}</b>\n\n"
-            "לחץ על <b>☰ תפריט</b> כדי לפתוח את האפשרויות."
+            "לחץ על <b>תפריט ☰</b> כדי לפתוח את האפשרויות."
         ),
         reply_markup=compact_menu_keyboard(),
         parse_mode="HTML"
     )
 
 
-@router.message(F.text == "☰ תפריט")
+@router.message(F.text.in_({"☰ תפריט", "תפריט ☰"}))
 async def open_inline_main_menu(message: Message):
     uid = message.from_user.id
 
@@ -1493,7 +1500,7 @@ async def open_inline_main_menu(message: Message):
     await delete_main_menu_message(message.bot, uid)
 
     sent = await message.answer(
-        rtl("<b>☰ תפריט ראשי</b>\n\nבחר פעולה:"),
+        main_menu_text(),
         reply_markup=main_menu_inline_keyboard(uid),
         parse_mode="HTML"
     )
@@ -1508,6 +1515,11 @@ async def inline_main_menu_action(callback: CallbackQuery):
 
     users.setdefault(uid, {"cart": [], "step": None})
     users[uid].pop("main_menu_message_id", None)
+
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
 
     if action == "shop":
         users.setdefault(uid, {"cart": [], "step": None})
