@@ -674,7 +674,7 @@ def h(text):
 
 
 def rtl(text):
-    return RTL + str(text)
+    return "\u202B" + str(text) + "\u202C" + RTL
 
 
 def main_menu_text():
