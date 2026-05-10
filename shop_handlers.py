@@ -5,7 +5,7 @@ from html import escape
 import asyncio
 
 from config import ADMIN_ID
-from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard, support_subject_keyboard
+from keyboards import main_keyboard, compact_menu_keyboard, main_menu_inline_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard, support_subject_keyboard
 from database import (
     get_active_products,
     get_product_by_name,
@@ -1455,9 +1455,143 @@ async def start(message: Message):
 
     await message.answer(
         rtl(f"<b>👋 ברוך הבא {h(customer_name)}</b>"),
-        reply_markup=main_keyboard(message.from_user.id),
+        reply_markup=compact_menu_keyboard(),
         parse_mode="HTML"
     )
+
+    await message.answer(
+        rtl("<b>☰ תפריט ראשי</b>\n\nבחר פעולה:"),
+        reply_markup=main_menu_inline_keyboard(message.from_user.id),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "☰ תפריט")
+async def open_inline_main_menu(message: Message):
+    await message.answer(
+        rtl("<b>☰ תפריט ראשי</b>\n\nבחר פעולה:"),
+        reply_markup=main_menu_inline_keyboard(message.from_user.id),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data.startswith("main_menu:"))
+async def inline_main_menu_action(callback: CallbackQuery):
+    uid = callback.from_user.id
+    action = (callback.data or "").split(":", 1)[1]
+
+    if action == "shop":
+        users.setdefault(uid, {"cart": [], "step": None})
+        users[uid]["step"] = "browse_products"
+
+        products = get_active_products()
+
+        if not products:
+            await callback.message.answer(
+                rtl("<b>🛒 החנות</b>\n\nכרגע אין מוצרים זמינים בחנות."),
+                parse_mode="HTML"
+            )
+            await callback.answer()
+            return
+
+        await delete_temp_bot_messages(callback.message.bot, uid)
+
+        sent = await callback.message.answer(
+            rtl("<b>🛒 החנות</b>\n\nבחר קטגוריה:"),
+            reply_markup=categories_keyboard(),
+            parse_mode="HTML"
+        )
+        users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
+        await callback.answer()
+        return
+
+    if action == "profile":
+        profile = get_customer_profile(uid)
+
+        if not profile:
+            await callback.message.answer(
+                rtl(
+                    "<b>👤 הפרטים שלי</b>\n\n"
+                    "אין פרטים שמורים עדיין.\n"
+                    "אחרי ההזמנה הראשונה, הבוט ישמור את הפרטים שלך להזמנות הבאות."
+                ),
+                reply_markup=compact_menu_keyboard(),
+                parse_mode="HTML"
+            )
+        else:
+            await callback.message.answer(
+                saved_profile_text(profile),
+                reply_markup=compact_menu_keyboard(),
+                parse_mode="HTML"
+            )
+
+        await callback.answer()
+        return
+
+    if action == "orders":
+        orders = get_orders_by_customer_telegram_id(uid, 5)
+
+        await callback.message.answer(
+            customer_orders_text(orders),
+            reply_markup=my_orders_keyboard(),
+            parse_mode="HTML"
+        )
+        await callback.answer()
+        return
+
+    if action == "addresses":
+        users[uid] = {
+            "cart": users.get(uid, {}).get("cart", []),
+            "step": "addresses_menu"
+        }
+
+        await callback.message.answer(
+            rtl("<b>🏠 הכתובות שלי</b>\n\nבחר פעולה:"),
+            reply_markup=addresses_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        await callback.answer()
+        return
+
+    if action == "support":
+        users[uid] = {
+            "cart": users.get(uid, {}).get("cart", []),
+            "step": "support_subject"
+        }
+
+        await callback.message.answer(
+            rtl("<b>📞 שירות לקוחות</b>\n\nבחר נושא לפנייה:"),
+            reply_markup=support_subject_keyboard(),
+            parse_mode="HTML"
+        )
+        await callback.answer()
+        return
+
+    if action == "admin":
+        if uid != ADMIN_ID:
+            await callback.answer("אין לך הרשאה.", show_alert=True)
+            return
+
+        try:
+            from keyboards import admin_keyboard
+            from admin_handlers import admin_states
+            admin_states[uid] = {"step": "admin"}
+
+            await callback.message.answer(
+                rtl("<b>🔐 פאנל ניהול Vendora</b>\n\nבחר פעולה מהתפריט למטה."),
+                reply_markup=admin_keyboard(),
+                parse_mode="HTML"
+            )
+        except Exception:
+            await callback.message.answer(
+                rtl("<b>⚠️ לא הצלחתי לפתוח את פאנל הניהול.</b>"),
+                parse_mode="HTML"
+            )
+
+        await callback.answer()
+        return
+
+    await callback.answer("פעולה לא תקינה.", show_alert=True)
 
 
 @router.message(F.text == "👤 הפרטים שלי")
