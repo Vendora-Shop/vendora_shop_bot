@@ -1653,7 +1653,6 @@ def empty_cart_keyboard():
 def confirm_keyboard():
     return _inline(_wide_buttons([
         _btn("✅ אשר הזמנה", "ui:order:confirm"),
-        _btn("✏️ שנה פרטים", "ui:order:edit"),
         _btn("⬅️ חזרה לשלב קודם", "ui:order:back_prev"),
         _btn("❌ בטל הזמנה", "ui:nav:cancel"),
     ]))
@@ -2311,7 +2310,26 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         elif raw == "ui:nav:cancel": text = "❌ בטל הזמנה"
 
         elif raw == "ui:order:confirm": text = "✅ אשר הזמנה"
-        elif raw == "ui:order:edit": text = "✏️ שנה פרטים"
+        elif raw == "ui:order:edit":
+            await callback.answer()
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            await delete_temp_bot_messages(callback.message.bot, uid)
+
+            data["step"] = "name"
+            data["editing_details"] = True
+
+            sent = await callback.message.answer(
+                widen_inline_screen_text(
+                    rtl("<b>📝 פרטים חדשים להזמנה</b>\n\nרשום את השם המלא שלך:")
+                ),
+                reply_markup=manual_details_keyboard(),
+                parse_mode="HTML"
+            )
+            data.setdefault("temp_bot_messages", []).append(sent.message_id)
+            return
         elif raw == "ui:order:back_prev": text = "⬅️ חזרה לשלב קודם"
 
         elif raw == "ui:payment:ok": text = "✅ סימולציית תשלום הצליחה"
@@ -2324,7 +2342,26 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         elif raw == "ui:fulfillment:back": text = "⬅️ חזרה לבחירת משלוח / איסוף"
 
         elif raw == "ui:saved:continue": text = "✅ המשך עם הפרטים השמורים"
-        elif raw == "ui:saved:new": text = "✏️ הזן פרטים חדשים"
+        elif raw == "ui:saved:new":
+            await callback.answer()
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            await delete_temp_bot_messages(callback.message.bot, uid)
+
+            data["step"] = "name"
+            data["editing_details"] = True
+
+            sent = await callback.message.answer(
+                widen_inline_screen_text(
+                    rtl("<b>📝 פרטים חדשים להזמנה</b>\n\nרשום את השם המלא שלך:")
+                ),
+                reply_markup=manual_details_keyboard(),
+                parse_mode="HTML"
+            )
+            data.setdefault("temp_bot_messages", []).append(sent.message_id)
+            return
 
         elif raw == "ui:orders:reorder":
             # פתיחה ישירה של מסך בחירת הזמנה חוזרת.
@@ -2668,20 +2705,26 @@ async def edit_details(message: Message):
     data = users.get(uid)
 
     if not data or not data.get("cart"):
-        await message.answer(
+        await delete_temp_bot_messages(message.bot, uid)
+        await send_temp_message(
+            message,
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
             reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
 
+    await consume_customer_click(message)
+    await delete_temp_bot_messages(message.bot, uid)
+
     data["step"] = "name"
     data["editing_details"] = True
 
-    await message.answer(
-        rtl("<b>✏️ עדכון פרטים</b>\n\nרשום את השם המלא שלך:"),
-        reply_markup=ReplyKeyboardRemove(),
-                parse_mode="HTML"
+    await send_temp_message(
+        message,
+        rtl("<b>📝 פרטים חדשים להזמנה</b>\n\nרשום את השם המלא שלך:"),
+        reply_markup=manual_details_keyboard(),
+        parse_mode="HTML"
     )
 
 
@@ -4265,9 +4308,15 @@ async def handle_shop(message: Message):
             return
 
         if txt == "✏️ הזן פרטים חדשים":
+            await consume_customer_click(message)
+            await delete_temp_bot_messages(message.bot, uid)
+
             data["step"] = "name"
-            await message.answer(
-                rtl("<b>📝 פרטי הזמנה חדשים</b>\n\nרשום את השם המלא שלך:"),
+            data["editing_details"] = True
+
+            await send_temp_message(
+                message,
+                rtl("<b>📝 פרטים חדשים להזמנה</b>\n\nרשום את השם המלא שלך:"),
                 reply_markup=manual_details_keyboard(),
                 parse_mode="HTML"
             )
