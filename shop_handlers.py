@@ -680,7 +680,7 @@ def rtl(text):
 def main_menu_text():
     return rtl(
         "<b>☰ תפריט ראשי</b>\n\n"
-        "בחר פעולה מתוך האפשרויות של Vendora:"
+        "בחר פעולה מתוך האפשרויות:"
     )
 
 
