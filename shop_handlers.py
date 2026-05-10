@@ -1756,7 +1756,28 @@ def address_select_keyboard(addresses):
 
 def address_actions_keyboard():
     return _inline(_wide_buttons([
+        _btn("✏️ ערוך כתובת", "ui:addr:edit"),
         _btn("🗑️ מחק כתובת", "ui:addr:delete"),
+        _btn("⬅️ חזרה לרשימת כתובות", "ui:addr:back_list"),
+        _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
+    ]))
+
+
+def address_edit_keyboard():
+    return _inline(_wide_buttons([
+        _btn("🏷️ שנה שם כתובת", "ui:addr:edit_field:label"),
+        _btn("📍 שנה עיר / יישוב", "ui:addr:edit_field:city"),
+        _btn("🏠 שנה רחוב ומספר בית", "ui:addr:edit_field:street"),
+        _btn("⬆️ שנה קומה", "ui:addr:edit_field:floor"),
+        _btn("🚪 שנה דירה", "ui:addr:edit_field:apartment"),
+        _btn("⬅️ חזרה לפרטי הכתובת", "ui:addr:edit_back_profile"),
+        _btn("⬅️ חזרה לרשימת כתובות", "ui:addr:back_list"),
+    ]))
+
+
+def address_edit_back_keyboard():
+    return _inline(_wide_buttons([
+        _btn("⬅️ חזרה לעריכת כתובת", "ui:addr:edit"),
         _btn("⬅️ חזרה לרשימת כתובות", "ui:addr:back_list"),
         _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
     ]))
@@ -2089,6 +2110,181 @@ async def show_reorder_choose_inline(callback: CallbackQuery):
     )
     data.setdefault("temp_bot_messages", []).append(sent.message_id)
 
+
+def update_customer_address_record(telegram_id, address_id, label, city, street, floor="", apartment=""):
+    """עדכון כתובת קיימת בלי לגעת ב-database.py."""
+    try:
+        import database
+        from datetime import datetime
+
+        if hasattr(database, "create_customer_addresses_table"):
+            database.create_customer_addresses_table()
+
+        now = database.israel_now_str() if hasattr(database, "israel_now_str") else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        conn = database.get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE customer_addresses
+            SET label = ?, city = ?, street = ?, floor = ?, apartment = ?, updated_at = ?
+            WHERE telegram_id = ? AND id = ?
+            """,
+            (label, city, street, floor, apartment, now, int(telegram_id), int(address_id))
+        )
+        conn.commit()
+        changed = cur.rowcount
+        conn.close()
+        return changed > 0
+    except Exception as e:
+        print(f"UPDATE_CUSTOMER_ADDRESS_ERROR: {type(e).__name__}: {e}")
+        return False
+
+
+async def show_address_profile_inline(callback: CallbackQuery, address_id=None):
+    uid = callback.from_user.id
+    data = users.setdefault(uid, {"cart": []})
+    address_id = address_id or data.get("selected_address_id")
+    address = get_customer_address_by_id(uid, address_id)
+
+    await delete_temp_bot_messages(callback.message.bot, uid)
+
+    if not address:
+        data["step"] = "addresses_menu"
+        sent = await callback.message.answer(
+            widen_inline_screen_text(rtl("<b>⚠️ הכתובת לא נמצאה.</b>")),
+            reply_markup=addresses_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        data.setdefault("temp_bot_messages", []).append(sent.message_id)
+        return
+
+    data["step"] = "address_profile"
+    data["selected_address_id"] = address_id
+
+    sent = await callback.message.answer(
+        widen_inline_screen_text(address_profile_text(address)),
+        reply_markup=address_actions_keyboard(),
+        parse_mode="HTML"
+    )
+    data.setdefault("temp_bot_messages", []).append(sent.message_id)
+
+
+async def show_address_edit_menu_inline(callback: CallbackQuery):
+    uid = callback.from_user.id
+    data = users.setdefault(uid, {"cart": []})
+    address_id = data.get("selected_address_id")
+    address = get_customer_address_by_id(uid, address_id)
+
+    await delete_temp_bot_messages(callback.message.bot, uid)
+
+    if not address:
+        data["step"] = "addresses_menu"
+        sent = await callback.message.answer(
+            widen_inline_screen_text(rtl("<b>⚠️ הכתובת לא נמצאה.</b>")),
+            reply_markup=addresses_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        data.setdefault("temp_bot_messages", []).append(sent.message_id)
+        return
+
+    data["step"] = "address_edit_menu"
+
+    sent = await callback.message.answer(
+        widen_inline_screen_text(rtl(
+            "<b>✏️ עריכת כתובת</b>\n\n"
+            f"{format_address(address)}\n\n"
+            "בחר איזה פרט תרצה לעדכן:"
+        )),
+        reply_markup=address_edit_keyboard(),
+        parse_mode="HTML"
+    )
+    data.setdefault("temp_bot_messages", []).append(sent.message_id)
+
+
+async def start_edit_address_field_inline(callback: CallbackQuery, field_name: str):
+    uid = callback.from_user.id
+    data = users.setdefault(uid, {"cart": []})
+    address_id = data.get("selected_address_id")
+    address = get_customer_address_by_id(uid, address_id)
+
+    await delete_temp_bot_messages(callback.message.bot, uid)
+
+    if not address:
+        data["step"] = "addresses_menu"
+        sent = await callback.message.answer(
+            widen_inline_screen_text(rtl("<b>⚠️ הכתובת לא נמצאה.</b>")),
+            reply_markup=addresses_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        data.setdefault("temp_bot_messages", []).append(sent.message_id)
+        return
+
+    data["edit_address_id"] = address_id
+    data["edit_address_field"] = field_name
+    data.pop("address_numeric_warning_sent", None)
+    data.pop("address_numeric_warning_id", None)
+    data.pop("address_street_warning_sent", None)
+    data.pop("address_street_warning_id", None)
+    clear_city_autocomplete_state(data)
+
+    prompts = {
+        "label": "<b>🏷️ שם כתובת</b>\n\nרשום שם קצר חדש לכתובת.\nלדוגמה: בית / עבודה / הורים",
+        "city": "<b>📍 עיר / יישוב</b>\n\nרשום עיר, מושב, קיבוץ או יישוב חדשים.\nלאחר שינוי עיר נבקש גם רחוב ומספר בית מחדש.",
+        "street": "<b>🏠 רחוב ומספר בית</b>\n\nרשום רחוב ומספר בית חדשים.\nלדוגמה: הרצל 10",
+        "floor": "<b>⬆️ קומה</b>\n\nרשום קומה חדשה במספרים בלבד.\nאם אין, רשום 0.",
+        "apartment": "<b>🚪 דירה</b>\n\nרשום מספר דירה חדש במספרים בלבד.\nאם אין, רשום 0.",
+    }
+
+    data["step"] = f"edit_address_{field_name}"
+
+    sent = await callback.message.answer(
+        widen_inline_screen_text(rtl(prompts.get(field_name, "<b>✏️ עריכת כתובת</b>\n\nרשום את הפרט החדש."))),
+        reply_markup=address_edit_back_keyboard(),
+        parse_mode="HTML"
+    )
+    data.setdefault("temp_bot_messages", []).append(sent.message_id)
+
+
+async def finish_address_edit(message: Message, data, updated_address, success_text="<b>✅ הכתובת עודכנה בהצלחה.</b>"):
+    uid = message.from_user.id
+    ok = update_customer_address_record(
+        uid,
+        data.get("edit_address_id") or data.get("selected_address_id"),
+        updated_address.get("label") or "כתובת",
+        updated_address.get("city") or "-",
+        updated_address.get("street") or "-",
+        updated_address.get("floor") or "0",
+        updated_address.get("apartment") or "0",
+    )
+
+    data.pop("edit_address_id", None)
+    data.pop("edit_address_field", None)
+    data.pop("edit_pending_city", None)
+    data["step"] = "address_profile"
+
+    address_id = data.get("selected_address_id")
+    address = get_customer_address_by_id(uid, address_id)
+
+    await delete_temp_bot_messages(message.bot, uid)
+
+    if not ok or not address:
+        await send_temp_message(
+            message,
+            rtl("<b>⚠️ לא הצלחתי לעדכן את הכתובת.</b>\nנסה שוב."),
+            reply_markup=address_edit_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    await send_temp_message(
+        message,
+        rtl(f"{success_text}\n\n{address_profile_text(address).replace(RTL, '')}"),
+        reply_markup=address_actions_keyboard(),
+        parse_mode="HTML"
+    )
+
+
 @router.callback_query(F.data.startswith("ui:"))
 async def customer_inline_ui_router(callback: CallbackQuery):
     uid = callback.from_user.id
@@ -2158,6 +2354,18 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         elif raw == "ui:addr:show": text = "📋 הצג כתובות"
         elif raw == "ui:addr:add": text = "➕ הוסף כתובת"
         elif raw == "ui:addr:menu": text = "⬅️ חזרה לכתובות"
+        elif raw == "ui:addr:edit":
+            await show_address_edit_menu_inline(callback)
+            await callback.answer()
+            return
+        elif raw == "ui:addr:edit_back_profile":
+            await show_address_profile_inline(callback)
+            await callback.answer()
+            return
+        elif raw.startswith("ui:addr:edit_field:"):
+            await start_edit_address_field_inline(callback, parts[-1])
+            await callback.answer()
+            return
         elif raw == "ui:addr:delete": text = "🗑️ מחק כתובת"
         elif raw == "ui:addr:back_list": text = "⬅️ חזרה לרשימת כתובות"
         elif raw == "ui:addr:cancel_add": text = "⬅️ חזרה לכתובות"
@@ -3670,6 +3878,32 @@ async def handle_shop(message: Message):
         return
 
     if data.get("step") == "address_profile":
+        if txt == "✏️ ערוך כתובת":
+            address_id = data.get("selected_address_id")
+            address = get_customer_address_by_id(uid, address_id)
+            if not address:
+                data["step"] = "addresses_menu"
+                await send_temp_message(
+                    message,
+                    rtl("<b>⚠️ הכתובת לא נמצאה.</b>"),
+                    reply_markup=addresses_menu_keyboard(),
+                    parse_mode="HTML"
+                )
+                return
+
+            data["step"] = "address_edit_menu"
+            await send_temp_message(
+                message,
+                rtl(
+                    "<b>✏️ עריכת כתובת</b>\n\n"
+                    f"{format_address(address)}\n\n"
+                    "בחר איזה פרט תרצה לעדכן:"
+                ),
+                reply_markup=address_edit_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
         if txt == "⬅️ חזרה לרשימת כתובות":
             addresses = get_customer_addresses(uid, 10)
             data["step"] = "address_select"
@@ -3700,6 +3934,143 @@ async def handle_shop(message: Message):
 
         await delete_customer_message(message)
         return
+
+    if data.get("step") in {"edit_address_label", "edit_address_city", "edit_address_street", "edit_address_street_after_city", "edit_address_floor", "edit_address_apartment"}:
+        address_id = data.get("edit_address_id") or data.get("selected_address_id")
+        address = get_customer_address_by_id(uid, address_id)
+
+        if not address:
+            data["step"] = "addresses_menu"
+            await send_temp_message(
+                message,
+                rtl("<b>⚠️ הכתובת לא נמצאה.</b>"),
+                reply_markup=addresses_menu_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        if txt in {"⬅️ חזרה לעריכת כתובת", "⬅️ חזרה לרשימת כתובות", "⬅️ חזרה לתפריט"}:
+            await delete_customer_message(message)
+            return
+
+        if data.get("step") == "edit_address_label":
+            label = txt.strip()
+            if len(label) < 2:
+                await delete_customer_message(message)
+                if not data.get("address_label_warning_sent"):
+                    sent = await message.answer(
+                        rtl("<b>⚠️ שם כתובת קצר מדי.</b>\nרשום לפחות 2 תווים."),
+                        parse_mode="HTML"
+                    )
+                    data["address_label_warning_sent"] = True
+                    data["address_label_warning_id"] = sent.message_id
+                    data.setdefault("temp_bot_messages", []).append(sent.message_id)
+                return
+
+            await consume_customer_click(message)
+            data.pop("address_label_warning_sent", None)
+            updated = dict(address)
+            updated["label"] = label
+            await finish_address_edit(message, data, updated)
+            return
+
+        if data.get("step") == "edit_address_city":
+            city = txt.strip()
+            normalized_city = normalize_israel_location(city)
+
+            if len(city) < 2 or has_digit(city) or not normalized_city:
+                await delete_customer_message(message)
+                await send_city_not_found_message(message, data, city, mode="address")
+                return
+
+            await consume_customer_click(message)
+            clear_city_autocomplete_state(data)
+            data["edit_pending_city"] = normalized_city
+            data["step"] = "edit_address_street_after_city"
+
+            await send_temp_message(
+                message,
+                rtl("<b>🏠 רחוב ומספר בית</b>\n\nרשום רחוב ומספר בית בעיר החדשה.\nלדוגמה: הרצל 10"),
+                reply_markup=address_edit_back_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        if data.get("step") in {"edit_address_street", "edit_address_street_after_city"}:
+            street = txt.strip()
+            city = data.get("edit_pending_city") or address.get("city")
+            street_status = validate_street_address(city, street)
+
+            if len(street) < 2 or not street_status.get("ok"):
+                await delete_customer_message(message)
+                if not data.get("address_street_warning_sent"):
+                    if street_status.get("reason") == "missing_number":
+                        warning_text = "<b>⚠️ נא לרשום רחוב ומספר בית.</b>\n\nלדוגמה: הרצל 10"
+                    elif street_status.get("reason") == "not_found":
+                        warning_text = (
+                            "<b>⚠️ הכתובת לא נמצאה בעיר שבחרת.</b>\n\n"
+                            "בדוק:\n"
+                            "• שם רחוב\n"
+                            "• מספר בית\n"
+                            "• שגיאות כתיב\n\n"
+                            "ונסה שוב."
+                        )
+                    else:
+                        warning_text = "<b>⚠️ כתובת לא תקינה.</b>\n\nנא לרשום רחוב ומספר בית.\nלדוגמה: הרצל 10"
+
+                    sent = await message.answer(rtl(warning_text), parse_mode="HTML")
+                    data["address_street_warning_sent"] = True
+                    data["address_street_warning_id"] = sent.message_id
+                    data.setdefault("temp_bot_messages", []).append(sent.message_id)
+                return
+
+            await consume_customer_click(message)
+            old_warning_id = data.pop("address_street_warning_id", None)
+            if old_warning_id:
+                try:
+                    await message.bot.delete_message(uid, old_warning_id)
+                except Exception:
+                    pass
+            data.pop("address_street_warning_sent", None)
+
+            updated = dict(address)
+            if data.get("edit_pending_city"):
+                updated["city"] = data.get("edit_pending_city")
+            updated["street"] = street_status.get("display") or street
+            await finish_address_edit(message, data, updated)
+            return
+
+        if data.get("step") in {"edit_address_floor", "edit_address_apartment"}:
+            value = txt.strip()
+            if not value.isdigit():
+                await delete_customer_message(message)
+                if not data.get("address_numeric_warning_sent"):
+                    sent = await message.answer(
+                        rtl("<b>⚠️ רשום מספרים בלבד.</b>\nאם אין, רשום 0."),
+                        parse_mode="HTML"
+                    )
+                    data["address_numeric_warning_sent"] = True
+                    data["address_numeric_warning_id"] = sent.message_id
+                    data.setdefault("temp_bot_messages", []).append(sent.message_id)
+                return
+
+            await consume_customer_click(message)
+            old_warning_id = data.pop("address_numeric_warning_id", None)
+            if old_warning_id:
+                try:
+                    await message.bot.delete_message(uid, old_warning_id)
+                except Exception:
+                    pass
+            data.pop("address_numeric_warning_sent", None)
+
+            updated = dict(address)
+            if data.get("step") == "edit_address_floor":
+                updated["floor"] = value
+            else:
+                updated["apartment"] = value
+
+            await finish_address_edit(message, data, updated)
+            return
 
     if data.get("step") == "add_address_label":
         label = txt.strip()
