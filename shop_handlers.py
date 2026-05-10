@@ -845,7 +845,7 @@ def confirm_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="✅ אשר הזמנה")],
-            [KeyboardButton(text="✏️ שנה פרטים")],
+    
             [KeyboardButton(text="⬅️ חזרה לשלב קודם")],
             [KeyboardButton(text="❌ בטל הזמנה")]
         ],
@@ -1451,19 +1451,27 @@ def fill_saved_profile_into_data(data, profile):
 
 
 async def use_saved_profile_flow(message: Message, data):
-    profile = get_customer_profile(message.from_user.id)
+    uid = message.from_user.id
+
+    try:
+        await consume_customer_click(message)
+    except Exception:
+        pass
+
+    await delete_temp_bot_messages(message.bot, uid)
+
+    profile = get_customer_profile(uid)
 
     if not profile:
-        await message.answer(
+        data["step"] = "name"
+        await send_temp_message(
+            message,
             rtl(
                 "<b>⚠️ אין פרטים שמורים.</b>\n\n"
-                "יש להזין פרטים חדשים כדי להמשיך."
+                "יש להזין פרטים חדשים כדי להמשיך.\n\n"
+                "<b>📝 פרטי הזמנה חדשים</b>\n"
+                "רשום את השם המלא שלך:"
             ),
-            parse_mode="HTML"
-        )
-        data["step"] = "name"
-        await message.answer(
-            rtl("<b>📝 פרטי הזמנה חדשים</b>\n\nרשום את השם המלא שלך:"),
             reply_markup=manual_details_keyboard(),
             parse_mode="HTML"
         )
@@ -1472,16 +1480,15 @@ async def use_saved_profile_flow(message: Message, data):
     ok = fill_saved_profile_into_data(data, profile)
 
     if not ok:
-        await message.answer(
+        data["step"] = "name"
+        await send_temp_message(
+            message,
             rtl(
                 "<b>⚠️ לא ניתן לחשב משלוח לפי הפרטים השמורים.</b>\n\n"
-                "יש להזין פרטים חדשים כדי להמשיך."
+                "יש להזין פרטים חדשים כדי להמשיך.\n\n"
+                "<b>📝 פרטי הזמנה חדשים</b>\n"
+                "רשום את השם המלא שלך:"
             ),
-            parse_mode="HTML"
-        )
-        data["step"] = "name"
-        await message.answer(
-            rtl("<b>📝 פרטי הזמנה חדשים</b>\n\nרשום את השם המלא שלך:"),
             reply_markup=manual_details_keyboard(),
             parse_mode="HTML"
         )
@@ -1490,7 +1497,8 @@ async def use_saved_profile_flow(message: Message, data):
     data["step"] = "confirm"
     data["previous_step_before_confirm"] = "saved_profile_choice"
 
-    await message.answer(
+    await send_temp_message(
+        message,
         build_order_summary(data),
         reply_markup=order_summary_keyboard(data),
         parse_mode="HTML",
@@ -2663,20 +2671,30 @@ async def edit_details(message: Message):
     data = users.get(uid)
 
     if not data or not data.get("cart"):
-        await message.answer(
+        await delete_temp_bot_messages(message.bot, uid)
+        await send_temp_message(
+            message,
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
             reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
 
+    try:
+        await consume_customer_click(message)
+    except Exception:
+        pass
+
+    await delete_temp_bot_messages(message.bot, uid)
+
     data["step"] = "name"
     data["editing_details"] = True
 
-    await message.answer(
-        rtl("<b>✏️ עדכון פרטים</b>\n\nרשום את השם המלא שלך:"),
-        reply_markup=ReplyKeyboardRemove(),
-                parse_mode="HTML"
+    await send_temp_message(
+        message,
+        rtl("<b>📝 פרטי הזמנה חדשים</b>\n\nרשום את השם המלא שלך:"),
+        reply_markup=manual_details_keyboard(),
+        parse_mode="HTML"
     )
 
 
@@ -3470,6 +3488,25 @@ async def handle_shop(message: Message):
         await use_saved_profile_flow(message, data)
         return
 
+    if txt == "✏️ הזן פרטים חדשים" and data and data.get("cart"):
+        try:
+            await consume_customer_click(message)
+        except Exception:
+            pass
+
+        await delete_temp_bot_messages(message.bot, uid)
+
+        data["step"] = "name"
+        data["editing_details"] = True
+
+        await send_temp_message(
+            message,
+            rtl("<b>📝 פרטי הזמנה חדשים</b>\n\nרשום את השם המלא שלך:"),
+            reply_markup=manual_details_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
     if data:
         step = data.get("step")
         if not is_free_text_step_for_customer(step):
@@ -3630,7 +3667,8 @@ async def handle_shop(message: Message):
 
         if txt == "⬅️ חזרה לסיכום הזמנה":
             data["step"] = "confirm"
-            await message.answer(
+            await send_temp_message(
+                message,
                 build_order_summary(data),
                 reply_markup=order_summary_keyboard(data),
                 parse_mode="HTML",
@@ -3690,7 +3728,8 @@ async def handle_shop(message: Message):
                 data["step"] = "saved_profile_choice"
                 data["previous_step_before_confirm"] = "saved_profile_choice"
 
-                await message.answer(
+                await send_temp_message(
+                    message,
                     saved_profile_text(profile),
                     reply_markup=use_saved_details_keyboard(),
                     parse_mode="HTML"
