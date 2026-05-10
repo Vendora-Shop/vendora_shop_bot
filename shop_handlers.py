@@ -1698,6 +1698,21 @@ def my_orders_keyboard():
     ]))
 
 
+def translate_order_status_for_keyboard(status):
+    statuses = {
+        "new": "חדשה",
+        "approved": "אושרה",
+        "processing": "בטיפול",
+        "shipping": "בדרך",
+        "done": "הושלמה",
+        "completed": "הושלמה",
+        "cancelled": "בוטלה",
+        "canceled": "בוטלה"
+    }
+
+    return statuses.get(str(status or "").lower(), str(status or "-"))
+
+
 def back_only_main_keyboard():
     return _inline(_wide_buttons([
         _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
