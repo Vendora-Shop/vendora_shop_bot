@@ -938,7 +938,7 @@ def quantity_inline_keyboard(selected_qty):
         inline_keyboard=[
             [
                 InlineKeyboardButton(text="−", callback_data="qty_action:minus"),
-                InlineKeyboardButton(text=f"כמות: {selected_qty}", callback_data="qty_action:manual"),
+                InlineKeyboardButton(text=f"כמות: {selected_qty}", callback_data="qty_action:noop"),
                 InlineKeyboardButton(text="+", callback_data="qty_action:plus"),
             ],
             [
@@ -3319,99 +3319,80 @@ async def confirm_order(message: Message):
 @router.callback_query(F.data.startswith("qty_action:"))
 async def handle_qty_actions(callback: CallbackQuery):
     data = users.setdefault(callback.from_user.id, {"cart": []})
+    action = callback.data.split(":")[1]
 
     product = data.get("current_product")
     if not product:
         await callback.answer("המוצר לא נמצא", show_alert=False)
         return
 
-    selected_qty = int(data.get("selected_qty", 1))
-    action = callback.data.split(":")[1]
+    selected_qty = int(data.get("selected_qty", 1) or 1)
+
+    if action == "noop":
+        await callback.answer()
+        return
 
     if action == "plus":
         selected_qty += 1
         data["selected_qty"] = selected_qty
 
     elif action == "minus":
-        if selected_qty > 1:
-            selected_qty -= 1
+        selected_qty = max(1, selected_qty - 1)
         data["selected_qty"] = selected_qty
 
-    elif action == "manual":
-        data["waiting_for_qty"] = True
+    elif action == "add":
+        qty = int(data.get("selected_qty", 1) or 1)
+        cart = data.setdefault("cart", [])
 
-        await callback.message.answer(
-            rtl("<b>✏️ הזנת כמות</b>\n\nרשום את הכמות הרצויה במספרים בלבד."),
-            parse_mode="HTML"
-        )
+        existing = next((item for item in cart if item.get("id") == product.get("id")), None)
 
+        if existing:
+            existing["quantity"] = int(existing.get("quantity", 0)) + qty
+        else:
+            cart.append({
+                "id": product.get("id"),
+                "name": product.get("name"),
+                "price": product.get("price"),
+                "quantity": qty,
+            })
+
+        await callback.answer("✅ נוסף לסל", show_alert=False)
+        return
+
+    elif action == "back_products":
+        await callback.answer()
+        # אם יש handler קיים למוצרים, הוא יטופל דרך callback אחר בקוד המקורי.
+        return
+
+    else:
         await callback.answer()
         return
 
-    elif action == "add":
-        qty = int(data.get("selected_qty", 1))
+    stock = int(product.get("stock", 0) or 0)
+    stock_text = "<b>🟢 במלאי</b>" if stock > 0 else "<b>🔴 אזל מהמלאי</b>"
 
-        cart = data.setdefault("cart", [])
-
-        existing = next(
-            (item for item in cart if item["id"] == product["id"]),
-            None
-        )
-
-        if existing:
-            existing["quantity"] += qty
-        else:
-            cart.append({
-                "id": product["id"],
-                "name": product["name"],
-                "price": product["price"],
-                "quantity": qty
-            })
-
-        await callback.answer("🛒 המוצר נוסף לסל")
-        return
-
-    stock = int(product.get("stock", 0))
-    stock_text = "🟢 במלאי" if stock > 0 else "🔴 אזל מהמלאי"
-
-    caption = rtl(
+    new_caption = rtl(
         f"<b>🛍️ {h(product['name'])}</b>\n\n"
         f"{h(product.get('description', ''))}\n\n"
-        f"<b>מחיר:</b> ₪{product['price']}\n\n"
+        f"<b>מחיר:</b> {money(product['price'])}\n\n"
         f"{stock_text}\n\n"
         f"<b>כמות נבחרת:</b> {selected_qty}\n"
         "בחר כמות ואז לחץ על 🛒 הוסף לסל."
     )
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="➖", callback_data="qty_action:minus"),
-                InlineKeyboardButton(text=f"כמות: {selected_qty}", callback_data="qty_action:manual"),
-                InlineKeyboardButton(text="➕", callback_data="qty_action:plus"),
-            ],
-            [
-                InlineKeyboardButton(text="🛒 הוסף לסל", callback_data="qty_action:add")
-            ],
-            [
-                InlineKeyboardButton(text="↩️ מוצרים", callback_data="back_to_products")
-            ]
-        ]
-    )
-
-    media = InputMediaPhoto(
-        media=FSInputFile(product["image"]),
-        caption=caption,
-        parse_mode="HTML"
-    )
-
     try:
-        await callback.message.edit_media(
-            media=media,
-            reply_markup=keyboard
+        await callback.message.edit_caption(
+            caption=new_caption,
+            reply_markup=quantity_inline_keyboard(selected_qty),
+            parse_mode="HTML"
         )
     except Exception:
-        pass
+        try:
+            await callback.message.edit_reply_markup(
+                reply_markup=quantity_inline_keyboard(selected_qty)
+            )
+        except Exception:
+            pass
 
     await callback.answer()
 
@@ -5224,59 +5205,4 @@ async def handle_shop(message: Message):
         await delete_customer_message(message)
         return
 
-
-@router.message()
-async def handle_customer_free_text(message: Message):
-    data = users.setdefault(message.from_user.id, {"cart": []})
-
-    if data.get("waiting_for_qty"):
-        value = (message.text or "").strip()
-
-        try:
-            await message.delete()
-        except Exception:
-            pass
-
-        if not value.isdigit():
-            await send_temp_message(
-                message,
-                rtl("<b>⚠️ רשום את הכמות במספרים בלבד.</b>"),
-                parse_mode="HTML",
-                clear_previous=False
-            )
-            return
-
-        qty = int(value)
-        if qty <= 0:
-            await send_temp_message(
-                message,
-                rtl("<b>⚠️ הכמות חייבת להיות גדולה מ־0.</b>"),
-                parse_mode="HTML",
-                clear_previous=False
-            )
-            return
-
-        data["selected_qty"] = qty
-        data["waiting_for_qty"] = False
-
-        product = data.get("current_product")
-        if product:
-            stock = int(product.get("stock", 0))
-            stock_text = "<b>🟢 במלאי</b>" if stock > 0 else "<b>🔴 אזל מהמלאי</b>"
-            caption = rtl(
-                f"<b>🛍️ {h(product['name'])}</b>\\n\\n"
-                f"{h(product.get('description', ''))}\\n\\n"
-                f"<b>מחיר:</b> {money(product['price'])}\\n\\n"
-                f"{stock_text}\\n\\n"
-                f"<b>כמות נבחרת:</b> {qty}\\n"
-                "בחר כמות ואז לחץ על 🛒 הוסף לסל."
-            )
-            # לא שולחים מסך חדש כדי לא להכפיל חלונות.
-            await send_temp_message(
-                message,
-                rtl(f"✅ הכמות עודכנה ל־{qty}."),
-                parse_mode="HTML",
-                clear_previous=False
-            )
-        return
 
