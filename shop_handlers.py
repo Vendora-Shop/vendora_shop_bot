@@ -396,14 +396,16 @@ users = {}
 RTL = "\u200F"
 # שורת רווחים בלתי נראית שמרחיבה את בועת ההודעה בטלגרם כאשר יש Inline Keyboard.
 # לא משנה טקסטים קיימים ולא מוצגת כטקסט רגיל ללקוח.
-UI_WIDE_LINE = "\u2800" * 78
+UI_WIDE_LINE = " " * 140 * 78
 
 
 def widen_inline_screen_text(text):
     text = str(text or "")
+
     # לא מוסיפים פעמיים, כדי שלא יווצרו רווחים כפולים או מסכים ארוכים מדי.
     if UI_WIDE_LINE and UI_WIDE_LINE not in text:
-        return text + "\n" + UI_WIDE_LINE
+        return text + "\n\n" + UI_WIDE_LINE
+
     return text
 
 
@@ -464,6 +466,14 @@ async def force_close_phone_keyboard(message: Message):
 
 
 async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None):
+    # CUSTOMER_AUTO_WIDEN_INLINE_FIX
+    # כל מסך לקוח עם InlineKeyboardMarkup מקבל רוחב אחיד.
+    try:
+        if isinstance(reply_markup, InlineKeyboardMarkup):
+            text = widen_inline_screen_text(text)
+    except Exception:
+        pass
+
     uid = message.from_user.id
 
     if uid not in users:
