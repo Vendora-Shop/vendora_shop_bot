@@ -938,7 +938,7 @@ def quantity_inline_keyboard(selected_qty):
         inline_keyboard=[
             [
                 InlineKeyboardButton(text="−", callback_data="qty_action:minus"),
-                InlineKeyboardButton(text=f"🔢 {selected_qty}", callback_data="qty_action:manual"),
+                InlineKeyboardButton(text=f"כמות: {selected_qty}", callback_data="qty_action:manual"),
                 InlineKeyboardButton(text="+", callback_data="qty_action:plus"),
             ],
             [
