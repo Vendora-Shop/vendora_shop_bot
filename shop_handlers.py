@@ -1686,17 +1686,17 @@ def main_keyboard(user_id=None):
     rows = [
         [_btn("🛍️ חנות", "ui:main:shop")],
         [
-            _btn("👤 פרופיל", "ui:main:details"),
-            _btn("📋 הזמנות", "ui:main:orders"),
+            _btn("👤 הפרופיל שלי", "ui:main:details"),
+            _btn("📋 ההזמנות שלי", "ui:main:orders"),
         ],
         [
-            _btn("📍 כתובות", "ui:main:addresses"),
-            _btn("💬 שירות", "ui:main:support"),
+            _btn("📍 הכתובות שלי", "ui:main:addresses"),
+            _btn("💬 שירות לקוחות", "ui:main:support"),
         ],
     ]
 
     if user_id == ADMIN_ID:
-        rows.append([_btn("🛡️ ניהול", "ui:main:admin")])
+        rows.append([_btn("🛡️ פאנל ניהול", "ui:main:admin")])
 
     return _inline(rows)
 
@@ -1831,7 +1831,7 @@ def addresses_menu_keyboard():
     # GLASS_COMPACT_V2_ADDRESSES
     return _inline([
         [
-            _btn("📍 כתובות", "ui:addr:show"),
+            _btn("📍 הכתובות שלי", "ui:addr:show"),
             _btn("➕ הוספה", "ui:addr:add"),
         ],
         [_btn("↩️ תפריט", "ui:nav:main")],
