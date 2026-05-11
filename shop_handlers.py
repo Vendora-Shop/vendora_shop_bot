@@ -552,6 +552,15 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
     if clear_previous:
         await delete_temp_bot_messages(message.bot, uid)
 
+    # PHOTO_CAPTION_WIDE_FIX_V1
+    # הרחבה ויזואלית גם ל-caption של תמונת מוצר.
+    # זה מנסה לגרום ל-Telegram iOS לתת לבועת התמונה רוחב קרוב יותר לחלון הטקסט.
+    try:
+        if caption:
+            caption = widen_inline_screen_text(caption)
+    except Exception:
+        pass
+
     sent = await message.answer_photo(
         photo=photo,
         caption=caption,
