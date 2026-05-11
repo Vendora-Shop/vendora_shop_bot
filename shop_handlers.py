@@ -552,15 +552,6 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
     if clear_previous:
         await delete_temp_bot_messages(message.bot, uid)
 
-    # PHOTO_CAPTION_WIDE_FIX_V1
-    # הרחבה ויזואלית גם ל-caption של תמונת מוצר.
-    # זה מנסה לגרום ל-Telegram iOS לתת לבועת התמונה רוחב קרוב יותר לחלון הטקסט.
-    try:
-        if caption:
-            caption = widen_inline_screen_text(caption)
-    except Exception:
-        pass
-
     sent = await message.answer_photo(
         photo=photo,
         caption=caption,
@@ -1377,9 +1368,11 @@ def saved_profile_text(profile):
 
 
 async def send_product_card(message: Message, product):
-    # PRODUCT_PHOTO_SEPARATE_DETAILS_WIDE_FINAL
-    # תמונה בנפרד, פרטי מוצר בחלון טקסט רחב.
-    # לא משתמשים ב-photo+caption כי באייפון זה מכווץ את הרוחב.
+    # PRODUCT_SCREEN_CLEAN_FINAL_AFTER_AUDIT
+    # בדיקה אמיתית בקוד:
+    # חלונות רחבים עובדים רק בהודעות טקסט שעוברות widen_inline_screen_text.
+    # Telegram iOS לא מרחיב photo+caption לפי הטקסט, לכן לא משתמשים ב-spacer ולא ב-caption מלוכלך.
+    # תמונת מוצר נשמרת נקייה, ופרטי המוצר נשלחים מיד מתחת כחלון רחב.
     stock = int(product.get("stock", 0))
 
     if stock <= 0:
@@ -1396,33 +1389,22 @@ async def send_product_card(message: Message, product):
 
     image = product.get("image_file_id")
 
-    # חלון אחד רחב: תמונה + פרטים
-    # טריק הרחבה לאייפון:
-    # מוסיפים spacer שקוף כדי שטלגרם יפתח bubble רחב יותר.
-    wide_spacer = "\u2800" * 120
-
-    combined_caption = (
-        details_text
-        + "\n\n"
-        + f"<tg-spoiler>{wide_spacer}</tg-spoiler>"
-    )
-
     if image:
         await send_temp_photo(
             message,
             photo=image,
-            caption=combined_caption,
+            caption=None,
             reply_markup=ReplyKeyboardRemove(),
             parse_mode="HTML"
         )
-    else:
-        await send_temp_message(
-            message,
-            details_text,
-            reply_markup=ReplyKeyboardRemove(),
-            parse_mode="HTML",
-            clear_previous=False
-        )
+
+    await send_temp_message(
+        message,
+        details_text,
+        reply_markup=ReplyKeyboardRemove(),
+        parse_mode="HTML",
+        clear_previous=False
+    )
 
 
 def set_pickup_details(data):
