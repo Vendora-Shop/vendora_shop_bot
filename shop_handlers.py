@@ -898,14 +898,14 @@ def products_keyboard(category):
 
 
 def cart_keyboard():
-    # GLASS_COMPACT_CART_MENU_TEST
+    # GLASS_COMPACT_V2_CART
     return _inline([
         [
-            _btn("➕ מוצר נוסף", "ui:nav:add_more"),
+            _btn("➕ מוצר", "ui:nav:add_more"),
             _btn("✅ המשך", "ui:nav:checkout"),
         ],
         [
-            _btn("🗑️ ריקון סל", "ui:nav:clear_cart"),
+            _btn("🗑️ ריקון", "ui:nav:clear_cart"),
             _btn("✖️ ביטול", "ui:nav:cancel"),
         ],
     ])
@@ -933,8 +933,7 @@ def quantity_inline_keyboard(selected_qty):
     selected_qty = int(selected_qty)
 
     # PRODUCT_SCREEN_NO_CANCEL_BEFORE_CART_FIX
-    # GLASS_COMPACT_QTY_MENU_TEST
-    # לפני שהלקוח הוסיף מוצר לסל אין עדיין הזמנה לבטל.
+    # GLASS_COMPACT_V2_QTY
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -946,16 +945,16 @@ def quantity_inline_keyboard(selected_qty):
                 InlineKeyboardButton(text="🧺 הוסף לסל", callback_data="qty_action:add")
             ],
             [
-                InlineKeyboardButton(text="↩️ חזרה למוצרים", callback_data="qty_action:back_products")
+                InlineKeyboardButton(text="↩️ מוצרים", callback_data="qty_action:back_products")
             ]
         ]
     )
 
 
 def confirm_keyboard():
-    # GLASS_COMPACT_CONFIRM_MENU_TEST
+    # GLASS_COMPACT_V2_CONFIRM
     return _inline([
-        [_btn("✅ אישור הזמנה", "ui:order:confirm")],
+        [_btn("✅ אשר הזמנה", "ui:order:confirm")],
         [
             _btn("↩️ חזרה", "ui:order:back_prev"),
             _btn("✖️ ביטול", "ui:nav:cancel"),
@@ -964,34 +963,34 @@ def confirm_keyboard():
 
 
 def payment_keyboard():
-    # GLASS_COMPACT_PAYMENT_MENU_TEST
+    # GLASS_COMPACT_V2_PAYMENT
     return _inline([
         [_btn("✅ אישור תשלום", "ui:payment:ok")],
         [
-            _btn("↩️ לסיכום", "ui:payment:back_summary"),
+            _btn("↩️ סיכום", "ui:payment:back_summary"),
             _btn("✖️ ביטול", "ui:payment:cancel"),
         ],
     ])
 
 
 def use_saved_details_keyboard():
-    # GLASS_COMPACT_SAVED_DETAILS_MENU_TEST
+    # GLASS_COMPACT_V2_SAVED
     return _inline([
-        [_btn("✅ המשך עם הפרטים השמורים", "ui:saved:continue")],
+        [_btn("✅ פרטים שמורים", "ui:saved:continue")],
         [_btn("📝 פרטים חדשים", "ui:saved:new")],
         [
-            _btn("↩️ משלוח / איסוף", "ui:fulfillment:back"),
+            _btn("↩️ משלוח/איסוף", "ui:fulfillment:back"),
             _btn("✖️ ביטול", "ui:nav:cancel"),
         ],
     ])
 
 
 def manual_details_keyboard():
-    # GLASS_COMPACT_MANUAL_DETAILS_MENU_TEST
+    # GLASS_COMPACT_V2_MANUAL
     return _inline([
-        [_btn("✅ חזרה לפרטים השמורים", "ui:saved:continue")],
+        [_btn("✅ פרטים שמורים", "ui:saved:continue")],
         [
-            _btn("↩️ משלוח / איסוף", "ui:fulfillment:back"),
+            _btn("↩️ משלוח/איסוף", "ui:fulfillment:back"),
             _btn("✖️ ביטול", "ui:nav:cancel"),
         ],
     ])
@@ -1258,12 +1257,14 @@ def support_customer_keyboard(user_id=None):
 
 
 def fulfillment_keyboard():
-    # GLASS_COMPACT_FULFILLMENT_MENU_TEST
+    # GLASS_COMPACT_V2_FULFILLMENT
     return _inline([
-        [_btn("🚚 משלוח עד הבית", "ui:fulfillment:delivery")],
-        [_btn("🏬 איסוף עצמי", "ui:fulfillment:pickup")],
         [
-            _btn("↩️ חזרה לסל", "ui:fulfillment:back_cart"),
+            _btn("🚚 משלוח", "ui:fulfillment:delivery"),
+            _btn("🏬 איסוף", "ui:fulfillment:pickup"),
+        ],
+        [
+            _btn("↩️ סל", "ui:fulfillment:back_cart"),
             _btn("✖️ ביטול", "ui:nav:cancel"),
         ],
     ])
@@ -1680,11 +1681,10 @@ def _wide_buttons(buttons):
 
 
 def main_keyboard(user_id=None):
-    # GLASS_COMPACT_MAIN_MENU_TEST
-    # מבנה קומפקטי יותר כדי שהכפתורים ייראו קרובים יותר לדוגמה:
-    # פחות גובה, פחות שורות, יותר תחושה של "זכוכית".
+    # GLASS_COMPACT_V2_MAIN_MENU
+    # עיצוב בלבד: תפריט קצר וקומפקטי יותר, דומה יותר למראה "זכוכית".
     rows = [
-        [_btn("🛍️ כניסה לחנות", "ui:main:shop")],
+        [_btn("🛍️ חנות", "ui:main:shop")],
         [
             _btn("👤 פרופיל", "ui:main:details"),
             _btn("📋 הזמנות", "ui:main:orders"),
@@ -1696,7 +1696,7 @@ def main_keyboard(user_id=None):
     ]
 
     if user_id == ADMIN_ID:
-        rows.append([_btn("🛡️ פאנל ניהול", "ui:main:admin")])
+        rows.append([_btn("🛡️ ניהול", "ui:main:admin")])
 
     return _inline(rows)
 
@@ -1733,10 +1733,10 @@ def cart_keyboard():
 
 
 def empty_cart_keyboard():
-    # GLASS_COMPACT_EMPTY_CART_MENU_TEST
+    # GLASS_COMPACT_V2_EMPTY_CART
     return _inline([
-        [_btn("🛍️ כניסה לחנות", "ui:main:shop")],
-        [_btn("↩️ חזרה לתפריט", "ui:nav:main")],
+        [_btn("🛍️ חנות", "ui:main:shop")],
+        [_btn("↩️ תפריט", "ui:nav:main")],
     ])
 
 
@@ -1787,10 +1787,10 @@ def fulfillment_keyboard():
 
 
 def my_orders_keyboard():
-    # GLASS_COMPACT_ORDERS_MENU_TEST
+    # GLASS_COMPACT_V2_ORDERS
     return _inline([
         [_btn("🔁 הזמנה חוזרת", "ui:orders:reorder")],
-        [_btn("↩️ חזרה לתפריט", "ui:nav:main")],
+        [_btn("↩️ תפריט", "ui:nav:main")],
     ])
 
 
@@ -1828,13 +1828,13 @@ def reorder_select_keyboard(orders):
 
 
 def addresses_menu_keyboard():
-    # GLASS_COMPACT_ADDRESSES_MENU_TEST
+    # GLASS_COMPACT_V2_ADDRESSES
     return _inline([
         [
-            _btn("📍 הצגת כתובות", "ui:addr:show"),
-            _btn("➕ הוספת כתובת", "ui:addr:add"),
+            _btn("📍 כתובות", "ui:addr:show"),
+            _btn("➕ הוספה", "ui:addr:add"),
         ],
-        [_btn("↩️ חזרה לתפריט", "ui:nav:main")],
+        [_btn("↩️ תפריט", "ui:nav:main")],
     ])
 
 
@@ -1853,19 +1853,19 @@ def address_select_keyboard(addresses):
 
 
 def address_actions_keyboard():
-    # GLASS_COMPACT_ADDRESS_ACTIONS_MENU_TEST
+    # GLASS_COMPACT_V2_ADDRESS_ACTIONS
     return _inline([
         [
             _btn("📝 עריכה", "ui:addr:edit"),
             _btn("🗑️ מחיקה", "ui:addr:delete"),
         ],
-        [_btn("↩️ לרשימת כתובות", "ui:addr:back_list")],
-        [_btn("↩️ חזרה לתפריט", "ui:nav:main")],
+        [_btn("↩️ רשימה", "ui:addr:back_list")],
+        [_btn("↩️ תפריט", "ui:nav:main")],
     ])
 
 
 def address_edit_keyboard():
-    # GLASS_COMPACT_ADDRESS_EDIT_MENU_TEST
+    # GLASS_COMPACT_V2_ADDRESS_EDIT
     return _inline([
         [
             _btn("🏷️ שם", "ui:addr:edit_field:label"),
@@ -1876,17 +1876,22 @@ def address_edit_keyboard():
             _btn("🏢 קומה", "ui:addr:edit_field:floor"),
         ],
         [_btn("🚪 דירה", "ui:addr:edit_field:apartment")],
-        [_btn("↩️ לפרטי כתובת", "ui:addr:back_profile")],
-        [_btn("↩️ לרשימת כתובות", "ui:addr:back_list")],
+        [
+            _btn("↩️ כתובת", "ui:addr:back_profile"),
+            _btn("↩️ רשימה", "ui:addr:back_list"),
+        ],
     ])
 
 
 def edit_address_back_keyboard():
-    return _inline(_wide_buttons([
-        _btn("⬅️ חזרה לעריכת כתובת", "ui:addr:edit"),
-        _btn("⬅️ חזרה לפרטי כתובת", "ui:addr:back_profile"),
-        _btn("⬅️ חזרה לרשימת כתובות", "ui:addr:back_list"),
-    ]))
+    # GLASS_COMPACT_V2_EDIT_ADDRESS_BACK
+    return _inline([
+        [_btn("↩️ עריכת כתובת", "ui:addr:edit")],
+        [
+            _btn("↩️ פרטי כתובת", "ui:addr:back_profile"),
+            _btn("↩️ רשימה", "ui:addr:back_list"),
+        ],
+    ])
 
 
 def update_customer_address_field(telegram_id, address_id, field_name, value):
@@ -1983,34 +1988,46 @@ async def show_address_edit_menu_by_message(message, uid):
 
 
 def add_address_cancel_keyboard():
-    return _inline(_wide_buttons([
-        _btn("⬅️ חזרה לכתובות", "ui:addr:cancel_add"),
-        _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
-    ]))
+    # GLASS_COMPACT_V2_ADD_ADDRESS_CANCEL
+    return _inline([
+        [
+            _btn("↩️ כתובות", "ui:addr:cancel_add"),
+            _btn("↩️ תפריט", "ui:nav:main"),
+        ],
+    ])
 
 
 def add_address_street_keyboard():
-    return _inline(_wide_buttons([
-        _btn("⬅️ חזרה לעיר / יישוב", "ui:addr:back_city"),
-        _btn("⬅️ חזרה לכתובות", "ui:addr:cancel_add"),
-        _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
-    ]))
+    # GLASS_COMPACT_V2_ADD_ADDRESS_STREET
+    return _inline([
+        [_btn("↩️ עיר / יישוב", "ui:addr:back_city")],
+        [
+            _btn("↩️ כתובות", "ui:addr:cancel_add"),
+            _btn("↩️ תפריט", "ui:nav:main"),
+        ],
+    ])
 
 
 def add_address_floor_keyboard():
-    return _inline(_wide_buttons([
-        _btn("⬅️ חזרה לרחוב", "ui:addr:back_street"),
-        _btn("⬅️ חזרה לכתובות", "ui:addr:cancel_add"),
-        _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
-    ]))
+    # GLASS_COMPACT_V2_ADD_ADDRESS_FLOOR
+    return _inline([
+        [_btn("↩️ רחוב", "ui:addr:back_street")],
+        [
+            _btn("↩️ כתובות", "ui:addr:cancel_add"),
+            _btn("↩️ תפריט", "ui:nav:main"),
+        ],
+    ])
 
 
 def add_address_apartment_keyboard():
-    return _inline(_wide_buttons([
-        _btn("⬅️ חזרה לקומה", "ui:addr:back_floor"),
-        _btn("⬅️ חזרה לכתובות", "ui:addr:cancel_add"),
-        _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
-    ]))
+    # GLASS_COMPACT_V2_ADD_ADDRESS_APARTMENT
+    return _inline([
+        [_btn("↩️ קומה", "ui:addr:back_floor")],
+        [
+            _btn("↩️ כתובות", "ui:addr:cancel_add"),
+            _btn("↩️ תפריט", "ui:nav:main"),
+        ],
+    ])
 
 
 def city_suggestions_keyboard(suggestions, mode="address"):
@@ -2594,7 +2611,7 @@ async def start(message: Message):
         f"<b>👋 ברוך הבא {h(customer_name)}</b>\n\n"
         "<b>🛍️ Vendora Shop</b>\n"
         "חנות דיגיטלית חכמה להזמנות, משלוחים ואיסוף עצמי.\n\n"
-        "בחר פעולה מהתפריט:"
+        "בחר פעולה:"
     )
 
     sent = await message.answer(
@@ -2824,7 +2841,7 @@ async def cancel_order(message: Message):
     if not cart:
         await reset_customer_to_main_menu(
             message,
-            "<b>🏠 חזרת לתפריט הראשי.</b>\n\nבחר פעולה מהתפריט:"
+            "<b>🏠 חזרת לתפריט הראשי.</b>\n\nבחר פעולה:"
         )
         return
 
@@ -3591,7 +3608,7 @@ async def back_to_main_menu(message: Message):
 
     await send_temp_message(
         message,
-        widen_inline_screen_text(widen_inline_screen_text(widen_inline_screen_text(widen_inline_screen_text(rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט:"))))),
+        widen_inline_screen_text(widen_inline_screen_text(widen_inline_screen_text(widen_inline_screen_text(rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה:"))))),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
