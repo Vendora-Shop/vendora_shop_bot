@@ -1385,7 +1385,7 @@ async def send_product_card(message: Message, product):
     caption = rtl(
         f"<b>🛍️ {h(product['name'])}</b>\n\n"
         f"{h(product.get('description', ''))}\n\n"
-        f"<b>מחיר:</b> {money(product['price'])}\n\n"
+        f"<b>מחיר:</b> {money(float(product['price']) * qty)}\n\n"
         f"{stock_text}\n\n"
         f"<b>כמות נבחרת:</b> {selected_qty}\n"
         "בחר כמות ואז לחץ על 🛒 הוסף לסל."
@@ -3390,7 +3390,7 @@ async def quantity_inline_action(callback: CallbackQuery):
         caption = rtl(
             f"<b>🛍️ {h(product['name'])}</b>\n\n"
             f"{h(product.get('description', ''))}\n\n"
-            f"<b>מחיר:</b> {money(product['price'])}\n\n"
+            f"<b>מחיר:</b> {money(float(product['price']) * qty)}\n\n"
             f"{stock_text}\n\n"
             f"<b>כמות נבחרת:</b> {qty}\n"
             "בחר כמות ואז לחץ על 🛒 הוסף לסל."
