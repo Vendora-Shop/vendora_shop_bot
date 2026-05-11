@@ -2695,7 +2695,7 @@ async def cancel_order(message: Message):
 
     await reset_customer_to_main_menu(
         message,
-        "<b>❌ ההזמנה בוטלה.</b>"
+        "<b>❌ ההזמנה בוטלה על ידי החנות.</b>\n\nלפרטים נוספים ניתן לפנות לשירות לקוחות."
     )
 
 
@@ -2761,6 +2761,13 @@ async def checkout(message: Message):
 
 async def submit_paid_order(message: Message, data):
     uid = message.from_user.id
+
+    # מנקה את מסך התשלום/סיכום האחרון כדי שלא יישארו כפתורי checkout ישנים
+    # כמו: אשר הזמנה / חזרה / בטל הזמנה אחרי שההזמנה כבר נסגרה.
+    try:
+        await message.delete()
+    except Exception:
+        pass
 
     if data.get("order_submitting"):
         await message.answer(
@@ -2890,6 +2897,9 @@ async def submit_paid_order(message: Message, data):
             )
 
     await delete_temp_bot_messages(message.bot, uid)
+
+    # איפוס מלא של תהליך ההזמנה אחרי שההזמנה נקלטה
+    # כדי שכפתורים ישנים לא ימשיכו לעבוד ולא יגרמו למסכים לא הגיוניים.
     users.pop(uid, None)
 
     if is_pickup_order(data):
@@ -3130,7 +3140,7 @@ async def quantity_inline_action(callback: CallbackQuery):
 
         await reset_callback_customer_to_main_menu(
             callback,
-            "<b>❌ ההזמנה בוטלה.</b>"
+            "<b>❌ ההזמנה בוטלה על ידי החנות.</b>\n\nלפרטים נוספים ניתן לפנות לשירות לקוחות."
         )
 
         await callback.answer()
@@ -3719,7 +3729,7 @@ async def handle_shop(message: Message):
         if txt == "❌ בטל הזמנה":
             await reset_customer_to_main_menu(
                 message,
-                "<b>❌ ההזמנה בוטלה.</b>"
+                "<b>❌ ההזמנה בוטלה על ידי החנות.</b>\n\nלפרטים נוספים ניתן לפנות לשירות לקוחות."
             )
 
             users.pop(uid, None)
