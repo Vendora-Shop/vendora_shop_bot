@@ -396,14 +396,15 @@ users = {}
 RTL = "\u200F"
 # שורת רווחים בלתי נראית שמרחיבה את בועת ההודעה בטלגרם כאשר יש Inline Keyboard.
 # לא משנה טקסטים קיימים ולא מוצגת כטקסט רגיל ללקוח.
-UI_WIDE_LINE = "\u00A0" * 85
+UI_WIDE_LINE = "\u2800" * 38
 
 
 def widen_inline_screen_text(text):
     text = str(text or "")
 
-    # GLOBAL_NBSP_WIDTH_FIX
-    # הרחבה ויזואלית בלבד בעזרת NBSP. לא מוחק הודעות, לא משנה state ולא נוגע בלוגיקה.
+    # GLOBAL_BRAILLE_WIDTH_FIX
+    # הרחבה ויזואלית בלבד בעזרת תווי Braille Blank.
+    # לא מוחק הודעות, לא משנה state ולא נוגע בלוגיקה.
     if UI_WIDE_LINE and UI_WIDE_LINE not in text:
         return text + "\n\n" + UI_WIDE_LINE
 
@@ -490,14 +491,15 @@ async def force_close_phone_keyboard(message: Message):
 
 
 async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None):
-    # GLOBAL_NBSP_INLINE_WIDTH_APPLIED
-    # תיקון גלובלי בטוח: רק מרחיב טקסט של הודעות עם InlineKeyboardMarkup.
-    # אין כאן מחיקה, אין שינוי state, ואין שינוי temp_bot_messages.
+    # GLOBAL_BRAILLE_INLINE_WIDTH_APPLIED
+    # כל הודעת לקוח עם כפתורי Inline מקבלת רוחב תקין.
+    # שינוי ויזואלי בלבד.
     try:
         if isinstance(reply_markup, InlineKeyboardMarkup):
             text = widen_inline_screen_text(text)
     except Exception:
         pass
+
 
 
 
