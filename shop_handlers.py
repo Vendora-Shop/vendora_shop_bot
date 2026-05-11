@@ -1,3 +1,4 @@
+import json
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
@@ -45,11 +46,6 @@ def is_meaningful_support_message(text):
     return True
 
 router = Router()
-
-# ORDER_SUCCESS_MENU_ONCE_MARKER
-# הודעת הצלחת הזמנה נשארת עם תפריט ראשי פעם אחת אחרי ההזמנה.
-# עדכוני סטטוס עתידיים מגיעים מפאנל הניהול עם תפריט חדש מתחתיהם.
-
 
 
 def is_admin_panel_active_for_shop_guard(user_id):
@@ -397,6 +393,37 @@ async def notify_admin_ticket_closed_by_customer(bot, ticket_number, user_full_n
 
 
 users = {}
+
+
+# ================== CUSTOMER MAIN MENU MESSAGE STORE ==================
+# שיתוף message_id של התפריט בין shop_handlers לבין admin_handlers.
+# כך admin_handlers יודע למחוק את התפריט הקודם לפני שליחת סטטוס חדש.
+CUSTOMER_MENU_STORE_FILE = "customer_menu_messages.json"
+
+
+def load_customer_menu_store():
+    try:
+        if os.path.exists(CUSTOMER_MENU_STORE_FILE):
+            with open(CUSTOMER_MENU_STORE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+
+def save_customer_menu_store(store):
+    try:
+        with open(CUSTOMER_MENU_STORE_FILE, "w", encoding="utf-8") as f:
+            json.dump(store, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"CUSTOMER_MENU_STORE_SAVE_ERROR: {type(e).__name__}: {e}")
+
+
+def remember_customer_main_menu_message(uid, message_id):
+    store = load_customer_menu_store()
+    store[str(uid)] = int(message_id)
+    save_customer_menu_store(store)
+
 
 RTL = "\u200F"
 # שורת רווחים בלתי נראית שמרחיבה את בועת ההודעה בטלגרם כאשר יש Inline Keyboard.
@@ -3145,12 +3172,14 @@ async def submit_paid_order(message: Message, data):
         )
 
     users[uid] = {"cart": [], "step": "main"}
-    await send_temp_message(
+    sent_menu = await send_temp_message(
         message,
         rtl(customer_success_text),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
+    if sent_menu:
+        remember_customer_main_menu_message(uid, sent_menu.message_id)
 
 
 @router.message(F.text == "⬅️ חזרה לבחירת משלוח / איסוף")
