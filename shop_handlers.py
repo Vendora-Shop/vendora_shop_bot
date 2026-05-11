@@ -1580,6 +1580,18 @@ async def use_saved_profile_flow(message: Message, data):
 # שומר על הלוגיקה הקיימת ומחליף רק את שכבת הכפתורים בצד הלקוח.
 # ============================================================
 
+async def safe_delete_current_message(message):
+    """
+    מוחק את המסך הנוכחי שעליו לחצו בכפתור Inline.
+    זה מונע שאריות של מסכי עריכה/כתובת/מוצר מעל המסך הבא.
+    לא משנה עיצוב, לא משנה state ולא משנה לוגיקת הזמנות.
+    """
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+
 class CustomerCallbackMessage:
     """Proxy קטן שמאפשר להשתמש בלוגיקה הקיימת גם מכפתורי Inline."""
     def __init__(self, callback: CallbackQuery, text: str):
@@ -2285,6 +2297,11 @@ async def customer_inline_ui_router(callback: CallbackQuery):
     data = users.setdefault(uid, {"cart": [], "step": None})
     raw = callback.data or ""
     parts = raw.split(":")
+
+    # INLINE_CURRENT_SCREEN_DELETE_FIX
+    # מוחק ישירות את המסך שעליו לחצו לפני פתיחת המסך הבא.
+    # זה מטפל במקרים שבהם הודעה לא נשמרה ב-temp_bot_messages ולכן נשארה למעלה.
+    await safe_delete_current_message(callback.message)
 
     # ADDRESS_CLICK_EDIT_REAL_FIX
     if raw.startswith("ui:addr:id:"):
