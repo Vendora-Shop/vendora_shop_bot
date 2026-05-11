@@ -1387,12 +1387,14 @@ async def send_product_card(message: Message, product):
     else:
         stock_text = "<b>🟢 במלאי</b>"
 
-    text = rtl(
+    # PRODUCT_DETAILS_WIDE_TEXT_FIX
+    # הרחבת פרטי מוצר גם כשההודעה נשלחת בלי InlineKeyboard.
+    text = widen_inline_screen_text(rtl(
         f"<b>🛍️ {h(product['name'])}</b>\n\n"
         f"{h(product.get('description', ''))}\n\n"
         f"<b>מחיר:</b> {money(product['price'])}\n\n"
         f"{stock_text}"
-    )
+    ))
 
     await send_temp_message(
         message,
