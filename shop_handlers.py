@@ -1368,6 +1368,10 @@ def saved_profile_text(profile):
 
 
 async def send_product_card(message: Message, product):
+    # PRODUCT_IMAGE_SEPARATE_FROM_TEXT_IOS_WIDTH_FIX
+    # iPhone מציג Photo+Caption צר יותר מאנדרואיד.
+    # לכן שולחים תמונת מוצר לבד, בלי caption, ומתחתיה טקסט רגיל נפרד.
+    # זה לא הופך טקסט לתמונה ולא משנה את לוגיקת הכמות/סל.
     stock = int(product.get("stock", 0))
 
     if stock <= 0:
@@ -1385,12 +1389,23 @@ async def send_product_card(message: Message, product):
     image = product.get("image_file_id")
 
     if image:
-        await send_temp_photo(
-            message,
+        # קודם מוחקים מסכים ישנים, ואז שולחים את התמונה לבד.
+        await delete_temp_bot_messages(message.bot, message.from_user.id)
+
+        sent_photo = await message.answer_photo(
             photo=image,
-            caption=caption,
+            reply_markup=ReplyKeyboardRemove()
+        )
+        remember_temp_bot_message(message.from_user.id, sent_photo)
+        users.setdefault(message.from_user.id, {"cart": []})["product_photo_message_id"] = sent_photo.message_id
+
+        # אחר כך שולחים את הטקסט כהודעת טקסט רגילה ורחבה.
+        await send_temp_message(
+            message,
+            caption,
             reply_markup=ReplyKeyboardRemove(),
-            parse_mode="HTML"
+            parse_mode="HTML",
+            clear_previous=False
         )
     else:
         await send_temp_message(
