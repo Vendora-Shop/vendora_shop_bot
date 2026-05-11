@@ -1828,17 +1828,18 @@ def reorder_select_keyboard(orders):
 
 
 def addresses_menu_keyboard():
-    # GLASS_COMPACT_V2_ADDRESSES
+    # ADDRESS_FLOW_NAV_FIX_MENU
     return _inline([
         [
             _btn("📍 הכתובות שלי", "ui:addr:show"),
-            _btn("➕ הוספה", "ui:addr:add"),
+            _btn("➕ הוסף כתובת", "ui:addr:add"),
         ],
         [_btn("↩️ תפריט", "ui:nav:main")],
     ])
 
 
 def address_select_keyboard(addresses):
+    # ADDRESS_FLOW_NAV_FIX_SELECT
     rows = []
     for address in addresses:
         address_id = address.get("id")
@@ -1846,26 +1847,27 @@ def address_select_keyboard(addresses):
         city = address.get("city") or "-"
         street = address.get("street") or "-"
         rows.append([_btn(f"🏠 {address_id} | {label} | {city}, {street}", f"ui:addr:id:{address_id}")])
+
     rows.append([_btn("➕ הוסף כתובת", "ui:addr:add")])
-    rows.append([_btn("⬅️ חזרה לכתובות", "ui:addr:menu")])
-    rows.append([_btn("⬅️ חזרה לתפריט", "ui:nav:main")])
+    rows.append([_btn("↩️ כתובות", "ui:addr:menu")])
+    rows.append([_btn("↩️ תפריט", "ui:nav:main")])
     return _inline(rows)
 
 
 def address_actions_keyboard():
-    # GLASS_COMPACT_V2_ADDRESS_ACTIONS
+    # ADDRESS_FLOW_NAV_FIX_ACTIONS
     return _inline([
         [
             _btn("📝 עריכה", "ui:addr:edit"),
             _btn("🗑️ מחיקה", "ui:addr:delete"),
         ],
-        [_btn("↩️ רשימה", "ui:addr:back_list")],
+        [_btn("↩️ רשימת כתובות", "ui:addr:back_list")],
         [_btn("↩️ תפריט", "ui:nav:main")],
     ])
 
 
 def address_edit_keyboard():
-    # GLASS_COMPACT_V2_ADDRESS_EDIT
+    # ADDRESS_FLOW_NAV_FIX_EDIT
     return _inline([
         [
             _btn("🏷️ שם", "ui:addr:edit_field:label"),
@@ -1877,19 +1879,19 @@ def address_edit_keyboard():
         ],
         [_btn("🚪 דירה", "ui:addr:edit_field:apartment")],
         [
-            _btn("↩️ כתובת", "ui:addr:back_profile"),
-            _btn("↩️ רשימה", "ui:addr:back_list"),
+            _btn("↩️ פרטי כתובת", "ui:addr:back_profile"),
+            _btn("↩️ רשימת כתובות", "ui:addr:back_list"),
         ],
     ])
 
 
 def edit_address_back_keyboard():
-    # GLASS_COMPACT_V2_EDIT_ADDRESS_BACK
+    # ADDRESS_FLOW_NAV_FIX_EDIT_FIELD_BACK
     return _inline([
         [_btn("↩️ עריכת כתובת", "ui:addr:edit")],
         [
             _btn("↩️ פרטי כתובת", "ui:addr:back_profile"),
-            _btn("↩️ רשימה", "ui:addr:back_list"),
+            _btn("↩️ רשימת כתובות", "ui:addr:back_list"),
         ],
     ])
 
@@ -1915,6 +1917,52 @@ def update_customer_address_field(telegram_id, address_id, field_name, value):
     except Exception as e:
         print(f"UPDATE_CUSTOMER_ADDRESS_ERROR: {type(e).__name__}: {e}")
         return False
+
+
+async def show_addresses_list_screen(message, uid):
+    """
+    ADDRESS_FLOW_NAV_FIX_HELPER_LIST
+    מציג את רשימת הכתובות בצורה אחידה מכל נקודת חזרה.
+    """
+    data = users.setdefault(uid, {"cart": []})
+    addresses = get_customer_addresses(uid, 10)
+    data["step"] = "address_select"
+
+    await delete_temp_bot_messages(message.bot, uid)
+
+    if not addresses:
+        await send_temp_message(
+            message,
+            rtl("<b>🏠 הכתובות שלי</b>\n\nאין כרגע כתובות שמורות."),
+            reply_markup=addresses_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    await send_temp_message(
+        message,
+        rtl("<b>🏠 הכתובות שלי</b>\n\nבחר כתובת מהרשימה כדי לצפות או לערוך אותה."),
+        reply_markup=address_select_keyboard(addresses),
+        parse_mode="HTML"
+    )
+
+
+async def show_addresses_menu_screen(message, uid):
+    """
+    ADDRESS_FLOW_NAV_FIX_HELPER_MENU
+    מציג את מסך הכניסה לאזור הכתובות.
+    """
+    data = users.setdefault(uid, {"cart": []})
+    data["step"] = "addresses_menu"
+
+    await delete_temp_bot_messages(message.bot, uid)
+
+    await send_temp_message(
+        message,
+        rtl("<b>🏠 הכתובות שלי</b>\n\nבחר פעולה:"),
+        reply_markup=addresses_menu_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 async def show_selected_address_profile_by_message(message, uid, address_id):
@@ -1988,45 +2036,37 @@ async def show_address_edit_menu_by_message(message, uid):
 
 
 def add_address_cancel_keyboard():
-    # GLASS_COMPACT_V2_ADD_ADDRESS_CANCEL
+    # ADDRESS_FLOW_NAV_FIX_ADD_LABEL
     return _inline([
-        [
-            _btn("↩️ כתובות", "ui:addr:cancel_add"),
-            _btn("↩️ תפריט", "ui:nav:main"),
-        ],
+        [_btn("↩️ כתובות", "ui:addr:cancel_add")],
+        [_btn("↩️ תפריט", "ui:nav:main")],
     ])
 
 
 def add_address_street_keyboard():
-    # GLASS_COMPACT_V2_ADD_ADDRESS_STREET
+    # ADDRESS_FLOW_NAV_FIX_ADD_STREET
     return _inline([
         [_btn("↩️ עיר / יישוב", "ui:addr:back_city")],
-        [
-            _btn("↩️ כתובות", "ui:addr:cancel_add"),
-            _btn("↩️ תפריט", "ui:nav:main"),
-        ],
+        [_btn("↩️ כתובות", "ui:addr:cancel_add")],
+        [_btn("↩️ תפריט", "ui:nav:main")],
     ])
 
 
 def add_address_floor_keyboard():
-    # GLASS_COMPACT_V2_ADD_ADDRESS_FLOOR
+    # ADDRESS_FLOW_NAV_FIX_ADD_FLOOR
     return _inline([
         [_btn("↩️ רחוב", "ui:addr:back_street")],
-        [
-            _btn("↩️ כתובות", "ui:addr:cancel_add"),
-            _btn("↩️ תפריט", "ui:nav:main"),
-        ],
+        [_btn("↩️ כתובות", "ui:addr:cancel_add")],
+        [_btn("↩️ תפריט", "ui:nav:main")],
     ])
 
 
 def add_address_apartment_keyboard():
-    # GLASS_COMPACT_V2_ADD_ADDRESS_APARTMENT
+    # ADDRESS_FLOW_NAV_FIX_ADD_APARTMENT
     return _inline([
         [_btn("↩️ קומה", "ui:addr:back_floor")],
-        [
-            _btn("↩️ כתובות", "ui:addr:cancel_add"),
-            _btn("↩️ תפריט", "ui:nav:main"),
-        ],
+        [_btn("↩️ כתובות", "ui:addr:cancel_add")],
+        [_btn("↩️ תפריט", "ui:nav:main")],
     ])
 
 
@@ -2504,15 +2544,35 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             await callback.answer()
             return
 
-        elif raw == "ui:addr:show": text = "📋 הצג כתובות"
-        elif raw == "ui:addr:add": text = "➕ הוסף כתובת"
-        elif raw == "ui:addr:menu": text = "⬅️ חזרה לכתובות"
+        elif raw == "ui:addr:show":
+            # ADDRESS_FLOW_NAV_FIX_SHOW
+            await show_addresses_list_screen(callback.message, uid)
+            await callback.answer()
+            return
+        elif raw == "ui:addr:add":
+            text = "➕ הוסף כתובת"
+        elif raw == "ui:addr:menu":
+            # ADDRESS_FLOW_NAV_FIX_MENU_BACK
+            await show_addresses_menu_screen(callback.message, uid)
+            await callback.answer()
+            return
         elif raw == "ui:addr:delete": text = "🗑️ מחק כתובת"
-        elif raw == "ui:addr:back_list": text = "⬅️ חזרה לרשימת כתובות"
-        elif raw == "ui:addr:cancel_add": text = "⬅️ חזרה לכתובות"
-        elif raw == "ui:addr:back_city": text = "⬅️ חזרה לעיר / יישוב"
-        elif raw == "ui:addr:back_street": text = "⬅️ חזרה לרחוב"
-        elif raw == "ui:addr:back_floor": text = "⬅️ חזרה לקומה"
+        elif raw == "ui:addr:back_list":
+            # ADDRESS_FLOW_NAV_FIX_BACK_LIST
+            await show_addresses_list_screen(callback.message, uid)
+            await callback.answer()
+            return
+        elif raw == "ui:addr:cancel_add":
+            # ADDRESS_FLOW_NAV_FIX_CANCEL_ADD
+            await show_addresses_menu_screen(callback.message, uid)
+            await callback.answer()
+            return
+        elif raw == "ui:addr:back_city":
+            text = "⬅️ חזרה לעיר / יישוב"
+        elif raw == "ui:addr:back_street":
+            text = "⬅️ חזרה לרחוב"
+        elif raw == "ui:addr:back_floor":
+            text = "⬅️ חזרה לקומה"
         elif raw.startswith("ui:addr:id:"):
             text = f"🏠 {parts[-1]}"
 
@@ -3699,6 +3759,15 @@ async def add_address_start(message: Message):
 async def handle_shop(message: Message):
     uid = message.from_user.id
     txt = (message.text or "").strip()
+    # ADDRESS_FLOW_TEXT_ALIAS_FIX
+    if txt in {"↩️ רשימת כתובות", "↩️ רשימה"}:
+        await show_addresses_list_screen(message, uid)
+        return
+
+    if txt in {"↩️ כתובות"}:
+        await show_addresses_menu_screen(message, uid)
+        return
+
     data = users.get(uid)
 
     products = get_active_products()
