@@ -30,13 +30,18 @@ from pdf_generator import create_invoice_pdf
 
 def is_meaningful_support_message(text):
     value = str(text or "").strip()
+
     if len(value) < 5:
         return False
+
     letters = re.findall(r"[A-Za-zא-תА-Яа-я]", value)
+
     if len(letters) < 2:
         return False
+
     if len(letters) / max(len(value), 1) < 0.25:
         return False
+
     return True
 
 router = Router()
@@ -295,15 +300,24 @@ async def notify_admin_new_support_ticket(bot, ticket_number, subject, phone, us
 async def close_customer_open_support_ticket(message: Message, data=None):
     uid = message.from_user.id
 
+    # קודם מנקים את מסכי שירות הלקוחות הישנים, ורק אחר כך מאפסים state.
+    try:
+        await delete_temp_bot_messages(message.bot, uid)
+    except Exception:
+        pass
+
     ticket = get_open_support_ticket_by_user(uid)
 
     if not ticket:
-        users.pop(uid, None)
+        users[uid] = {"cart": [], "step": "main", "temp_bot_messages": []}
 
-        await message.answer(
-            rtl(
-                "<b>ℹ️ אין פנייה פתוחה לסגירה.</b>\n"
-                "חזרת לתפריט הראשי."
+        await send_temp_message(
+            message,
+            widen_inline_screen_text(
+                rtl(
+                    "<b>ℹ️ אין פנייה פתוחה לסגירה.</b>\n\n"
+                    "חזרת לתפריט הראשי."
+                )
             ),
             reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
@@ -311,45 +325,52 @@ async def close_customer_open_support_ticket(message: Message, data=None):
         return True
 
     ticket_number = ticket["ticket_number"]
-
     closed_ok = close_support_ticket(ticket_number)
 
-    users.pop(uid, None)
+    if closed_ok:
+        add_support_message(
+            ticket_number,
+            "customer",
+            message.from_user.full_name,
+            "הלקוח סימן שהבעיה נפתרה."
+        )
 
-    if not closed_ok:
-        await message.answer(
-            rtl(
-                "<b>ℹ️ הפנייה כבר סגורה.</b>\n"
-                "חזרת לתפריט הראשי."
+        await notify_admin_ticket_closed_by_customer(
+            message.bot,
+            ticket_number,
+            message.from_user.full_name
+        )
+
+        users[uid] = {"cart": [], "step": "main", "temp_bot_messages": []}
+
+        await send_temp_message(
+            message,
+            widen_inline_screen_text(
+                rtl(
+                    "<b>✅ הפנייה נסגרה בהצלחה.</b>\n\n"
+                    f"{field('מספר פנייה', ticket_number)}\n"
+                    "תודה שפנית אלינו."
+                )
             ),
             reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return True
 
-    add_support_message(
-        ticket_number,
-        "customer",
-        message.from_user.full_name,
-        "הלקוח סימן שהבעיה נפתרה."
-    )
+    users[uid] = {"cart": [], "step": "main", "temp_bot_messages": []}
 
-    await notify_admin_ticket_closed_by_customer(
-        message.bot,
-        ticket_number,
-        message.from_user.full_name
-    )
-
-    await message.answer(
-        rtl(
-            "<b>✅ הפנייה נסגרה.</b>\n"
-            "תודה שפנית לשירות הלקוחות של Vendora."
+    await send_temp_message(
+        message,
+        widen_inline_screen_text(
+            rtl(
+                "<b>ℹ️ הפנייה כבר סגורה.</b>\n\n"
+                "חזרת לתפריט הראשי."
+            )
         ),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
     return True
-
 
 
 async def notify_admin_ticket_closed_by_customer(bot, ticket_number, user_full_name=""):
@@ -3341,6 +3362,11 @@ async def support(message: Message):
     previous_state = users.get(uid, {})
     previous_temp_messages = list(previous_state.get("temp_bot_messages", []))
 
+    try:
+        await delete_temp_bot_messages(message.bot, uid)
+    except Exception:
+        pass
+
     existing_ticket = get_open_support_ticket_by_user(uid)
 
     if existing_ticket:
@@ -3355,11 +3381,13 @@ async def support(message: Message):
 
         await send_temp_message(
             message,
-            rtl(
-                "<b>📞 שירות לקוחות</b>\n\n"
-                f"{field('מספר פנייה', existing_ticket['ticket_number'])}\n"
-                f"{field('נושא הפנייה', existing_ticket.get('subject') or 'ללא נושא')}\n"
-                "יש לך פנייה פתוחה. כתוב את ההודעה שלך כאן והיא תועבר לנציג."
+            widen_inline_screen_text(
+                rtl(
+                    "<b>📞 שירות לקוחות</b>\n\n"
+                    f"{field('מספר פנייה', existing_ticket['ticket_number'])}\n"
+                    f"{field('נושא הפנייה', existing_ticket.get('subject') or 'ללא נושא')}\n\n"
+                    "יש לך פנייה פתוחה. כתוב את ההודעה שלך כאן והיא תועבר לנציג."
+                )
             ),
             reply_markup=support_customer_keyboard(message.from_user.id),
             parse_mode="HTML"
@@ -3374,9 +3402,11 @@ async def support(message: Message):
 
     await send_temp_message(
         message,
-        rtl(
-            "<b>📞 שירות לקוחות</b>\n\n"
-            "בחר את נושא הפנייה:"
+        widen_inline_screen_text(
+            rtl(
+                "<b>📞 שירות לקוחות</b>\n\n"
+                "בחר את נושא הפנייה:"
+            )
         ),
         reply_markup=support_subject_keyboard(),
         parse_mode="HTML"
@@ -3446,7 +3476,7 @@ async def back_to_main_menu(message: Message):
 
     await send_temp_message(
         message,
-        rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט:"),
+        widen_inline_screen_text(rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט:")),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
@@ -4365,20 +4395,23 @@ async def handle_shop(message: Message):
         }
 
         if txt not in support_subjects:
-            try:
-                await message.delete()
-            except Exception:
-                pass
+            await delete_customer_message(message)
             return
+
+        await consume_customer_click(message)
+        await delete_temp_bot_messages(message.bot, uid)
 
         data["support_subject"] = txt
         data["step"] = "support_faq"
 
-        await message.answer(
-            rtl(
-                "<b>📞 שירות לקוחות</b>\n\n"
-                f"{field('נושא הפנייה', txt)}\n\n"
-                "בחר שאלה נפוצה או פתח פנייה לנציג שירות:"
+        await send_temp_message(
+            message,
+            widen_inline_screen_text(
+                rtl(
+                    "<b>📞 שירות לקוחות</b>\n\n"
+                    f"{field('נושא הפנייה', txt)}\n\n"
+                    "בחר שאלה נפוצה או פתח פנייה לנציג שירות:"
+                )
             ),
             reply_markup=support_faq_keyboard(txt),
             parse_mode="HTML"
@@ -4388,13 +4421,23 @@ async def handle_shop(message: Message):
     if data.get("step") == "support_faq":
         subject = data.get("support_subject") or "❓ אחר"
 
+        if txt == "✅ הבעיה נפתרה":
+            await close_customer_open_support_ticket(message, data)
+            return
+
         if txt == "⬅️ חזרה לנושאים":
+            await consume_customer_click(message)
+            await delete_temp_bot_messages(message.bot, uid)
+
             data["step"] = "support_subject"
 
-            await message.answer(
-                rtl(
-                    "<b>📞 שירות לקוחות</b>\n\n"
-                    "בחר את נושא הפנייה:"
+            await send_temp_message(
+                message,
+                widen_inline_screen_text(
+                    rtl(
+                        "<b>📞 שירות לקוחות</b>\n\n"
+                        "בחר את נושא הפנייה:"
+                    )
                 ),
                 reply_markup=support_subject_keyboard(),
                 parse_mode="HTML"
@@ -4402,14 +4445,21 @@ async def handle_shop(message: Message):
             return
 
         if txt == "✍️ פנייה לנציג שירות":
-            data["step"] = "support_phone"
+            await consume_customer_click(message)
+            await delete_temp_bot_messages(message.bot, uid)
 
-            await message.answer(
-                rtl(
-                    "<b>✍️ פנייה לנציג שירות</b>\n\n"
-                    f"{field('נושא הפנייה', subject)}\n\n"
-                    "רשום מספר פלאפון תקין.\n"
-                    "לדוגמה: 0547937503"
+            data["step"] = "support_phone"
+            data.pop("support_phone_warned", None)
+
+            await send_temp_message(
+                message,
+                widen_inline_screen_text(
+                    rtl(
+                        "<b>✍️ פנייה לנציג שירות</b>\n\n"
+                        f"{field('נושא הפנייה', subject)}\n\n"
+                        "רשום מספר פלאפון תקין.\n"
+                        "לדוגמה: 0547937503"
+                    )
                 ),
                 reply_markup=support_customer_keyboard(message.from_user.id),
                 parse_mode="HTML"
@@ -4419,14 +4469,15 @@ async def handle_shop(message: Message):
         valid_questions = SUPPORT_FAQ_BY_SUBJECT.get(subject, []) + SUPPORT_FAQ_BY_SUBJECT.get("❓ אחר", [])
 
         if txt not in valid_questions:
-            try:
-                await message.delete()
-            except Exception:
-                pass
+            await delete_customer_message(message)
             return
 
-        await message.answer(
-            support_faq_answer_text(uid, subject, txt),
+        await consume_customer_click(message)
+        await delete_temp_bot_messages(message.bot, uid)
+
+        await send_temp_message(
+            message,
+            widen_inline_screen_text(support_faq_answer_text(uid, subject, txt)),
             reply_markup=support_faq_after_answer_keyboard(subject),
             parse_mode="HTML"
         )
@@ -4434,58 +4485,70 @@ async def handle_shop(message: Message):
 
     if data.get("step") == "support_phone":
         if txt == "✅ הבעיה נפתרה":
-            users.pop(uid, None)
-
-            await message.answer(
-                rtl("<b>✅ הפנייה בוטלה.</b>\nחזרת לתפריט הראשי."),
-                reply_markup=main_keyboard(message.from_user.id),
-                parse_mode="HTML"
-            )
+            await close_customer_open_support_ticket(message, data)
             return
 
         phone = clean_phone(txt)
 
         if not valid_phone(phone):
+            await delete_customer_message(message)
+
             if not data.get("support_phone_warned"):
                 data["support_phone_warned"] = True
-                await message.answer(
-                    rtl("<b>⚠️ מספר פלאפון לא תקין.</b>\n\nלדוגמה: 0547937503"),
+
+                sent = await message.answer(
+                    widen_inline_screen_text(
+                        rtl(
+                            "<b>⚠️ מספר פלאפון לא תקין.</b>\n\n"
+                            "רשום מספר ישראלי תקין.\n"
+                            "לדוגמה: 0547937503"
+                        )
+                    ),
                     parse_mode="HTML"
                 )
-            else:
-                try:
-                    await message.delete()
-                except Exception:
-                    pass
+                data.setdefault("temp_bot_messages", []).append(sent.message_id)
+
             return
+
+        await consume_customer_click(message)
+        await delete_temp_bot_messages(message.bot, uid)
 
         existing_ticket = get_open_support_ticket_by_user(uid)
 
         data["step"] = "support_chat"
         data["support_phone"] = phone
+        data.pop("support_phone_warned", None)
+        data.pop("support_chat_warned", None)
+        data.pop("support_message_warning_sent", None)
 
         if existing_ticket:
             data["support_ticket_number"] = existing_ticket["ticket_number"]
             data["support_subject"] = existing_ticket.get("subject") or data.get("support_subject", "")
 
-            await message.answer(
-                rtl(
-                    "<b>📞 שירות לקוחות</b>\n\n"
-                    f"{field('מספר פנייה', existing_ticket['ticket_number'])}\n"
-                    f"{field('נושא הפנייה', existing_ticket.get('subject') or 'ללא נושא')}\n"
-                    "יש לך פנייה פתוחה. כתוב את ההודעה שלך כאן והיא תועבר לנציג."
+            await send_temp_message(
+                message,
+                widen_inline_screen_text(
+                    rtl(
+                        "<b>📞 שירות לקוחות</b>\n\n"
+                        f"{field('מספר פנייה', existing_ticket['ticket_number'])}\n"
+                        f"{field('נושא הפנייה', existing_ticket.get('subject') or 'ללא נושא')}\n\n"
+                        "יש לך פנייה פתוחה. כתוב את ההודעה שלך כאן והיא תועבר לנציג."
+                    )
                 ),
                 reply_markup=support_customer_keyboard(message.from_user.id),
                 parse_mode="HTML"
             )
             return
 
-        await message.answer(
-            rtl(
-                "<b>📞 שירות לקוחות</b>\n\n"
-                f"{field('נושא הפנייה', data.get('support_subject', '-'))}\n"
-                f"{field('פלאפון', phone)}\n\n"
-                "כתוב עכשיו את ההודעה שלך ונעביר אותה לנציג שירות."
+        await send_temp_message(
+            message,
+            widen_inline_screen_text(
+                rtl(
+                    "<b>📞 שירות לקוחות</b>\n\n"
+                    f"{field('נושא הפנייה', data.get('support_subject', '-'))}\n"
+                    f"{field('פלאפון', phone)}\n\n"
+                    "כתוב עכשיו את ההודעה שלך ונעביר אותה לנציג שירות."
+                )
             ),
             reply_markup=support_customer_keyboard(message.from_user.id),
             parse_mode="HTML"
@@ -4493,6 +4556,32 @@ async def handle_shop(message: Message):
         return
 
     if data.get("step") == "support_chat":
+        if txt == "✅ הבעיה נפתרה":
+            await close_customer_open_support_ticket(message, data)
+            return
+
+        support_text = txt.strip()
+
+        if not is_meaningful_support_message(support_text):
+            await delete_customer_message(message)
+
+            if not data.get("support_chat_warned"):
+                data["support_chat_warned"] = True
+
+                sent = await message.answer(
+                    widen_inline_screen_text(
+                        rtl(
+                            "<b>⚠️ ההודעה לא ברורה.</b>\n\n"
+                            "נא לכתוב בקצרה מה הבעיה או מה תרצה לברר.\n"
+                            "לדוגמה: רוצה לבדוק סטטוס הזמנה V1031"
+                        )
+                    ),
+                    parse_mode="HTML"
+                )
+                data.setdefault("temp_bot_messages", []).append(sent.message_id)
+
+            return
+
         existing_ticket = get_open_support_ticket_by_user(uid)
 
         if existing_ticket:
@@ -4503,76 +4592,8 @@ async def handle_shop(message: Message):
         else:
             ticket_number = data.get("support_ticket_number")
 
-        if txt == "✅ הבעיה נפתרה":
-            await close_customer_open_support_ticket(message, data)
-            return
-
-            latest_ticket = get_support_ticket(ticket_number)
-
-            if latest_ticket and latest_ticket.get("status") == "closed":
-                users.pop(uid, None)
-
-                await message.answer(
-                    rtl(
-                        "<b>ℹ️ הפנייה כבר סגורה.</b>\n"
-                        "חזרת לתפריט הראשי."
-                    ),
-                    reply_markup=main_keyboard(message.from_user.id),
-                    parse_mode="HTML"
-                )
-                return
-
-            closed_ok = close_support_ticket(ticket_number)
-
-            if closed_ok:
-                add_support_message(
-                    ticket_number,
-                    "customer",
-                    message.from_user.full_name,
-                    "הלקוח סימן שהבעיה נפתרה."
-                )
-
-                await notify_admin_ticket_closed_by_customer(
-                    message.bot,
-                    ticket_number,
-                    message.from_user.full_name
-                )
-
-                users.pop(uid, None)
-
-                await message.answer(
-                    rtl("<b>✅ הפנייה נסגרה.</b>\nתודה שפנית לשירות הלקוחות של Vendora."),
-                    reply_markup=main_keyboard(message.from_user.id),
-                    parse_mode="HTML"
-                )
-                return
-
-            users.pop(uid, None)
-
-            await message.answer(
-                rtl(
-                    "<b>ℹ️ הפנייה כבר סגורה.</b>\n"
-                    "חזרת לתפריט הראשי."
-                ),
-                reply_markup=main_keyboard(message.from_user.id),
-                parse_mode="HTML"
-            )
-            return
-
-        if len(txt) < 2:
-            if not data.get("support_chat_warned"):
-                data["support_chat_warned"] = True
-                await message.answer(
-                    rtl("<b>⚠️ נא לרשום הודעה לנציג.</b>"),
-                    reply_markup=support_customer_keyboard(message.from_user.id),
-                    parse_mode="HTML"
-                )
-            else:
-                try:
-                    await message.delete()
-                except Exception:
-                    pass
-            return
+        await consume_customer_click(message)
+        await delete_temp_bot_messages(message.bot, uid)
 
         if not ticket_number:
             ticket_number = create_support_ticket(
@@ -4596,14 +4617,21 @@ async def handle_shop(message: Message):
             ticket_number,
             "customer",
             message.from_user.full_name,
-            txt
+            support_text
         )
 
-        await message.answer(
-            rtl(
-                "<b>✅ הפנייה נפתחה וההודעה התקבלה.</b>\n\n"
-                f"{field('מספר פנייה', ticket_number)}\n"
-                "נציג שירות יחזור אליך בהקדם האפשרי."
+        data["step"] = "support_chat"
+        data.pop("support_chat_warned", None)
+        data.pop("support_message_warning_sent", None)
+
+        await send_temp_message(
+            message,
+            widen_inline_screen_text(
+                rtl(
+                    "<b>✅ הפנייה נפתחה וההודעה התקבלה.</b>\n\n"
+                    f"{field('מספר פנייה', ticket_number)}\n"
+                    "נציג שירות יחזור אליך בהקדם האפשרי."
+                )
             ),
             reply_markup=support_customer_keyboard(message.from_user.id),
             parse_mode="HTML"
@@ -4916,29 +4944,6 @@ async def handle_shop(message: Message):
             parse_mode="HTML"
         )
         return
-
-    if data.get("step") in {"support_message", "support_text", "support_write"}:
-        # SUPPORT_MESSAGE_VALIDATION_FIX
-        support_text = txt.strip()
-
-        if not is_meaningful_support_message(support_text):
-            await delete_customer_message(message)
-
-            if not data.get("support_message_warning_sent"):
-                sent = await message.answer(
-                    widen_inline_screen_text(
-                        rtl(
-                            "<b>⚠️ ההודעה לא ברורה.</b>\n\n"
-                            "נא לכתוב בקצרה מה הבעיה או מה תרצה לברר.\n"
-                            "לדוגמה: רוצה לבדוק סטטוס הזמנה V1031"
-                        )
-                    ),
-                    parse_mode="HTML"
-                )
-                data["support_message_warning_sent"] = True
-                data["support_message_warning_id"] = sent.message_id
-                data.setdefault("temp_bot_messages", []).append(sent.message_id)
-            return
 
     if data.get("step") == "name":
         if len(txt) < 2:
