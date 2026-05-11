@@ -85,42 +85,48 @@ async def delete_customer_last_menu(bot, customer_telegram_id):
 
 
 
-def status_customer_wide_main_keyboard(customer_telegram_id=None):
+
+
+
+
+def status_customer_inline_main_keyboard(customer_telegram_id=None):
     """
-    STATUS_CUSTOMER_WIDE_MAIN_KEYBOARD_FIX
-    תפריט לקוח רחב אחרי עדכוני סטטוס.
-    לא משתמשים ב-main_keyboard כדי לא לקבל תפריט צר/עמודה אחת.
+    STATUS_CUSTOMER_INLINE_MAIN_KEYBOARD_FIX
+    תפריט לקוח Inline בתוך הצ'אט, לא ReplyKeyboard תחתון.
+    זה העיצוב הירוק/זכוכית כמו בתפריט הראשי.
     """
     keyboard = [
-        [KeyboardButton(text="חנות 🛒")],
+        [InlineKeyboardButton(text="חנות 🛒", callback_data="ui:main:shop")],
         [
-            KeyboardButton(text="הפרופיל שלי 👤"),
-            KeyboardButton(text="ההזמנות שלי 📋"),
+            InlineKeyboardButton(text="הפרופיל שלי 👤", callback_data="ui:main:details"),
+            InlineKeyboardButton(text="ההזמנות שלי 📋", callback_data="ui:main:orders"),
         ],
         [
-            KeyboardButton(text="הכתובות שלי 📍"),
-            KeyboardButton(text="שירות לקוחות 💬"),
+            InlineKeyboardButton(text="הכתובות שלי 📍", callback_data="ui:main:addresses"),
+            InlineKeyboardButton(text="שירות לקוחות 💬", callback_data="ui:main:support"),
         ],
     ]
 
     try:
         if customer_telegram_id == ADMIN_ID:
-            keyboard.append([KeyboardButton(text="פאנל ניהול 🛡️")])
+            keyboard.append([InlineKeyboardButton(text="פאנל ניהול 🛡️", callback_data="ui:main:admin")])
     except Exception:
         pass
 
-    return ReplyKeyboardMarkup(
-        keyboard=keyboard,
-        resize_keyboard=True
-    )
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 async def send_customer_main_menu_bottom(bot, customer_telegram_id):
     try:
+        menu_text = widen_inline_screen_text(rtl(
+            "<b>🏠 תפריט ראשי</b>\n\n"
+            "בחר פעולה מהתפריט:"
+        ))
+
         sent_menu = await bot.send_message(
             customer_telegram_id,
-            rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט:"),
-            reply_markup=status_customer_wide_main_keyboard(customer_telegram_id),
+            menu_text,
+            reply_markup=status_customer_inline_main_keyboard(customer_telegram_id),
             parse_mode="HTML"
         )
 
