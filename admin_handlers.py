@@ -120,7 +120,7 @@ async def send_customer_main_menu_bottom(bot, customer_telegram_id):
     try:
         menu_text = widen_inline_screen_text(rtl(
             "<b>🏠 תפריט ראשי</b>\n\n"
-            "בחר פעולה מהתפריט:"
+            "בחר פעולה מהתפריט שלך:"
         ))
 
         sent_menu = await bot.send_message(
@@ -179,9 +179,8 @@ def widen_inline_screen_text(text):
     """
     מרחיב הודעות עם InlineKeyboard כדי שהכפתורים ייפתחו רחב יותר.
     """
-    invisible = "\u2063" * 70
+    invisible = "\u2063" * 140
     return f"{text}\n{invisible}"
-
 
 
 # ================== ADMIN SAFE INPUT CLEANUP ==================
