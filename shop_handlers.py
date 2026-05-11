@@ -427,6 +427,29 @@ async def consume_customer_click(message: Message):
         pass
 
 
+def remember_temp_bot_message(uid, message_obj):
+    """
+    שומר הודעת בוט זמנית למחיקה עתידית.
+    חשוב במיוחד להודעות מוצר/תמונה שנשלחות עם answer_photo ולא דרך send_temp_message.
+    """
+    try:
+        if not message_obj:
+            return
+
+        msg_id = getattr(message_obj, "message_id", None)
+
+        if not msg_id:
+            return
+
+        data = users.setdefault(uid, {"cart": []})
+        temp = data.setdefault("temp_bot_messages", [])
+
+        if msg_id not in temp:
+            temp.append(msg_id)
+    except Exception:
+        pass
+
+
 async def delete_temp_bot_messages(bot, user_id):
     data = users.get(user_id)
 
@@ -535,6 +558,7 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
         reply_markup=reply_markup,
         parse_mode=parse_mode
     )
+    remember_temp_bot_message(uid, sent)
 
     users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
 
@@ -2550,6 +2574,12 @@ async def menu_command(message: Message):
 @router.message(F.text == "👤 הפרטים שלי")
 async def my_details(message: Message):
     uid = message.from_user.id
+    # MY_DETAILS_CLEAR_TEMP_FIX
+    try:
+        await delete_temp_bot_messages(message.bot, uid)
+    except Exception:
+        pass
+
     profile = get_customer_profile(uid)
 
     if not profile:
@@ -3377,6 +3407,12 @@ async def quantity_inline_action(callback: CallbackQuery):
 @router.message(F.text == "📞 שירות לקוחות")
 async def support(message: Message):
     uid = message.from_user.id
+    # SUPPORT_CLEAR_TEMP_FIX
+    try:
+        await delete_temp_bot_messages(message.bot, uid)
+    except Exception:
+        pass
+
 
     # חשוב: לא מאפסים את users[uid] לפני ניקוי המסכים הקודמים.
     # אחרת נאבד את temp_bot_messages והתפריט הראשי נשאר פתוח מתחת למסך שירות לקוחות.
@@ -3436,6 +3472,12 @@ async def support(message: Message):
 @router.message(F.text == "📦 ההזמנות שלי")
 async def my_orders(message: Message):
     uid = message.from_user.id
+    # MY_ORDERS_CLEAR_TEMP_FIX
+    try:
+        await delete_temp_bot_messages(message.bot, uid)
+    except Exception:
+        pass
+
 
     if uid not in users:
         users[uid] = {"cart": []}
@@ -3505,6 +3547,12 @@ async def back_to_main_menu(message: Message):
 @router.message(F.text == "🏠 הכתובות שלי")
 async def my_addresses(message: Message):
     uid = message.from_user.id
+    # MY_ADDRESSES_CLEAR_TEMP_FIX
+    try:
+        await delete_temp_bot_messages(message.bot, uid)
+    except Exception:
+        pass
+
 
     if uid not in users:
         users[uid] = {"cart": []}
