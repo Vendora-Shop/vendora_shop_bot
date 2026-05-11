@@ -3,11 +3,6 @@ from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from html import escape
 import asyncio
-import io
-import os
-import re
-from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
 
 from config import ADMIN_ID
 from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard, support_subject_keyboard
@@ -842,199 +837,6 @@ def field(label, value):
 
 
 
-# ================== VENDORA PRODUCT IMAGE CARD ==================
-# יוצר כרטיס מוצר אחד כתמונה: תמונת מוצר + פרטים + מחיר + מלאי.
-# זה מחליף photo+caption כדי לא להיתקע במגבלת רוחב של Telegram.
-PRODUCT_CARD_CACHE_DIR = "/tmp/vendora_product_cards"
-PRODUCT_CARD_WIDTH = 1600
-PRODUCT_CARD_HEIGHT = 1050
-
-
-def _vendora_font(size, bold=False):
-    paths = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-    ]
-    for p in paths:
-        try:
-            if os.path.exists(p):
-                return ImageFont.truetype(p, size=size)
-        except Exception:
-            pass
-    return ImageFont.load_default()
-
-
-def _vendora_text_size(draw, value, font):
-    bbox = draw.textbbox((0, 0), str(value), font=font)
-    return bbox[2] - bbox[0], bbox[3] - bbox[1]
-
-
-def _vendora_draw_right(draw, right_x, y, value, font, fill):
-    value = str(value)
-    w, h = _vendora_text_size(draw, value, font)
-    draw.text((right_x - w, y), value, font=font, fill=fill)
-    return y + h
-
-
-def _vendora_wrap_words(value, max_chars):
-    value = str(value or "").strip()
-    if not value:
-        return []
-    lines = []
-    current = ""
-    for word in value.split():
-        test = (current + " " + word).strip()
-        if len(test) > max_chars and current:
-            lines.append(current)
-            current = word
-        else:
-            current = test
-    if current:
-        lines.append(current)
-    return lines
-
-
-def _vendora_draw_right_wrapped(draw, right_x, y, value, font, fill, max_chars=34, max_lines=2, line_gap=16):
-    lines = _vendora_wrap_words(value, max_chars)[:max_lines]
-    y_now = y
-    for line in lines:
-        y_now = _vendora_draw_right(draw, right_x, y_now, line, font, fill) + line_gap
-    return y_now
-
-
-def _vendora_crop_white_margins(img):
-    try:
-        rgb = img.convert("RGB")
-        # detect non-white pixels
-        bg = Image.new("RGB", rgb.size, (255, 255, 255))
-        diff = Image.new("RGB", rgb.size)
-        pix_rgb = rgb.load()
-        pix_diff = diff.load()
-        for y in range(rgb.height):
-            for x in range(rgb.width):
-                r, g, b = pix_rgb[x, y]
-                d = max(abs(r - 255), abs(g - 255), abs(b - 255))
-                pix_diff[x, y] = (d, d, d)
-        bbox = diff.getbbox()
-        if bbox:
-            return img.crop(bbox)
-    except Exception:
-        pass
-    return img
-
-
-async def _vendora_download_product_image(bot, image_file_id):
-    try:
-        buffer = io.BytesIO()
-        await bot.download(image_file_id, destination=buffer)
-        buffer.seek(0)
-        return Image.open(buffer).convert("RGBA")
-    except Exception as e:
-        print(f"PRODUCT_CARD_DOWNLOAD_IMAGE_ERROR: {type(e).__name__}: {e}")
-        return None
-
-
-async def create_vendora_product_card(bot, product):
-    """
-    PRODUCT_IMAGE_CARD_GENERATOR_STABLE_V5
-    כרטיס מוצר אחד:
-    - תמונת מוצר תופסת את כל הרוחב למעלה.
-    - פרטי מוצר גדולים וברורים למטה.
-    - בלי להכניס את התמונה כאלמנט קטן בתוך תמונה אחרת.
-    """
-    os.makedirs(PRODUCT_CARD_CACHE_DIR, exist_ok=True)
-
-    name = str(product.get("name") or "מוצר")
-    desc = str(product.get("description") or "")
-    price = money(product.get("price") or 0)
-    stock = int(product.get("stock", 0) or 0)
-    in_stock = stock > 0
-    stock_text = "במלאי" if in_stock else "אזל מהמלאי"
-    stock_color = (32, 175, 72) if in_stock else (210, 50, 50)
-
-    safe_name = re.sub(r"[^A-Za-z0-9א-ת_-]+", "_", name)[:40]
-    out_path = Path(PRODUCT_CARD_CACHE_DIR) / f"vendora_product_card_v5_{safe_name}.png"
-
-    W, H = 1600, 1200
-    top_h = 620
-    img = Image.new("RGB", (W, H), (255, 255, 255))
-    draw = ImageDraw.Draw(img)
-
-    # Load product image/banner
-    product_img = None
-    image_file_id = product.get("image_file_id")
-    if image_file_id:
-        product_img = await _vendora_download_product_image(bot, image_file_id)
-
-    if product_img:
-        bg = Image.new("RGBA", product_img.size, (255, 255, 255, 255))
-        bg.alpha_composite(product_img)
-        product_img = bg.convert("RGB")
-
-        # Cover top area: fill width, crop height if needed, no tiny placement.
-        src_ratio = product_img.width / max(product_img.height, 1)
-        target_ratio = W / top_h
-
-        if src_ratio > target_ratio:
-            # image too wide: fit height then crop sides
-            new_h = top_h
-            new_w = int(top_h * src_ratio)
-        else:
-            # image too tall: fit width then crop top/bottom
-            new_w = W
-            new_h = int(W / src_ratio)
-
-        product_img = product_img.resize((new_w, new_h), Image.LANCZOS)
-        crop_x = max(0, (new_w - W) // 2)
-        crop_y = max(0, (new_h - top_h) // 2)
-        product_img = product_img.crop((crop_x, crop_y, crop_x + W, crop_y + top_h))
-        img.paste(product_img, (0, 0))
-    else:
-        # fallback full-width premium banner
-        for y in range(top_h):
-            t = y / top_h
-            draw.line((0, y, W, y), fill=(int(10 + 35*t), int(18 + 15*t), int(55 + 95*t)))
-        draw.text((60, 80), "Galaxy Tab", font=_vendora_font(90, True), fill=(255, 255, 255))
-        draw.text((60, 180), "S10 Ultra", font=_vendora_font(96, True), fill=(220, 170, 255))
-        draw.rounded_rectangle((690, 120, 1500, 500), radius=42, fill=(10, 14, 35), outline=(80, 85, 120), width=8)
-        draw.rounded_rectangle((735, 160, 1455, 455), radius=24, fill=(80, 110, 235))
-
-    # Bottom white panel
-    draw.rounded_rectangle((0, top_h - 1, W, H), radius=0, fill=(255, 255, 255))
-    draw.line((0, top_h, W, top_h), fill=(228, 228, 235), width=4)
-
-    # Fonts - large because Telegram will scale image down
-    f_name = _vendora_font(82, True)
-    f_desc = _vendora_font(56, False)
-    f_price = _vendora_font(68, True)
-    f_stock = _vendora_font(70, True)
-    f_badge = _vendora_font(86, True)
-    f_badge_small = _vendora_font(32, True)
-
-    # Details RTL, big and clear
-    right = W - 70
-    y = top_h + 70
-    _vendora_draw_right_wrapped(draw, right, y, f"🛍️ {name}", f_name, (8, 14, 35), max_chars=26, max_lines=1)
-    y += 130
-    _vendora_draw_right_wrapped(draw, right, y, desc, f_desc, (20, 25, 40), max_chars=34, max_lines=2)
-    y += 190
-    _vendora_draw_right(draw, right, y, f"מחיר: {price}", f_price, (8, 14, 35))
-    y += 120
-    _vendora_draw_right(draw, right - 75, y, stock_text, f_stock, stock_color)
-    draw.ellipse((W - 98, y + 10, W - 42, y + 66), fill=stock_color)
-
-    # Price badge left
-    badge_x1, badge_y1, badge_x2, badge_y2 = 70, top_h + 350, 430, top_h + 520
-    draw.rounded_rectangle((badge_x1, badge_y1, badge_x2, badge_y2), radius=32, fill=(128, 72, 210))
-    draw.text((badge_x1 + 45, badge_y1 + 25), "מחיר מיוחד", font=f_badge_small, fill=(255, 255, 255))
-    draw.text((badge_x1 + 95, badge_y1 + 62), str(price).replace("₪", ""), font=f_badge, fill=(255, 255, 255))
-    draw.text((badge_x1 + 35, badge_y1 + 106), "₪", font=_vendora_font(46, True), fill=(255, 255, 255))
-
-    img.save(out_path, "PNG", optimize=True, compress_level=1)
-    return str(out_path)
-
-
 def large_quantity_contact_text(max_qty):
     return rtl(
         "<b>⚠️ להזמנות בכמות גדולה יש ליצור קשר עם החנות.</b>\n\n"
@@ -1566,43 +1368,46 @@ def saved_profile_text(profile):
 
 
 async def send_product_card(message: Message, product):
-    # PRODUCT_CARD_IMAGE_ONLY_STABLE_V5_APPLIED
-    # כרטיס מוצר אחד שנוצר בקוד כתמונה:
-    # תמונת מוצר + שם + תיאור + מחיר + מלאי.
-    # לא משתמשים ב-photo+caption, לא document, לא spacer, לא spoiler.
-    fallback_caption = widen_inline_screen_text(rtl(
+    # PRODUCT_PHOTO_CAPTION_WITH_INLINE_QTY_WIDTH_TEST
+    # ניסיון נקי שלא נוסה:
+    # תמונה + פרטי מוצר באותו חלון, וכפתורי הכמות מחוברים לאותה הודעה.
+    # המטרה: לגרום ל-Telegram לחשב את רוחב חלון המוצר לפי ה-inline keyboard הרחב.
+    stock = int(product.get("stock", 0))
+
+    if stock <= 0:
+        stock_text = "<b>🔴 אזל מהמלאי</b>"
+    else:
+        stock_text = "<b>🟢 במלאי</b>"
+
+    data = users.setdefault(message.from_user.id, {"cart": []})
+    selected_qty = int(data.get("selected_qty", 1) or 1)
+
+    caption = rtl(
         f"<b>🛍️ {h(product['name'])}</b>\n\n"
         f"{h(product.get('description', ''))}\n\n"
         f"<b>מחיר:</b> {money(product['price'])}\n\n"
-        f"{'<b>🟢 במלאי</b>' if int(product.get('stock', 0) or 0) > 0 else '<b>🔴 אזל מהמלאי</b>'}"
-    ))
+        f"{stock_text}\n\n"
+        f"<b>כמות נבחרת:</b> {selected_qty}\n"
+        "בחר כמות ואז לחץ על 🛒 הוסף לסל."
+    )
 
-    try:
-        card_path = await asyncio.wait_for(
-            create_vendora_product_card(message.bot, product),
-            timeout=5
-        )
+    image = product.get("image_file_id")
 
+    if image:
         await send_temp_photo(
             message,
-            photo=FSInputFile(card_path),
-            caption=None,
-            reply_markup=ReplyKeyboardRemove(),
+            photo=image,
+            caption=caption,
+            reply_markup=quantity_inline_keyboard(selected_qty),
             parse_mode="HTML"
         )
-        return
-
-    except Exception as e:
-        print(f"PRODUCT_CARD_IMAGE_CREATE_ERROR: {type(e).__name__}: {e}")
-
-    # Fallback בטוח: אם יצירת הכרטיס נכשלה, המוצר עדיין ייפתח כטקסט רחב.
-    await send_temp_message(
-        message,
-        fallback_caption,
-        reply_markup=ReplyKeyboardRemove(),
-        parse_mode="HTML",
-        clear_previous=False
-    )
+    else:
+        await send_temp_message(
+            message,
+            caption,
+            reply_markup=quantity_inline_keyboard(selected_qty),
+            parse_mode="HTML"
+        )
 
 
 def set_pickup_details(data):
