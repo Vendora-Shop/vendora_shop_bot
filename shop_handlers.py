@@ -396,16 +396,16 @@ users = {}
 RTL = "\u200F"
 # שורת רווחים בלתי נראית שמרחיבה את בועת ההודעה בטלגרם כאשר יש Inline Keyboard.
 # לא משנה טקסטים קיימים ולא מוצגת כטקסט רגיל ללקוח.
-UI_WIDE_LINE = " " * 180
+UI_WIDE_LINE = "\u00A0" * 85
 
 
 def widen_inline_screen_text(text):
     text = str(text or "")
 
-    # GLOBAL_SAFE_WIDTH_FIX
-    # הרחבה ויזואלית בלבד. לא מוחק הודעות, לא משנה state ולא נוגע בלוגיקה.
+    # GLOBAL_NBSP_WIDTH_FIX
+    # הרחבה ויזואלית בלבד בעזרת NBSP. לא מוחק הודעות, לא משנה state ולא נוגע בלוגיקה.
     if UI_WIDE_LINE and UI_WIDE_LINE not in text:
-        return text + "\\n\\n" + UI_WIDE_LINE
+        return text + "\n\n" + UI_WIDE_LINE
 
     return text
 
@@ -467,14 +467,15 @@ async def force_close_phone_keyboard(message: Message):
 
 
 async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None):
-    # GLOBAL_SAFE_INLINE_WIDTH_APPLIED
-    # תיקון גלובלי בטוח: כל הודעת לקוח עם כפתורי Inline מקבלת רוחב תקין.
-    # אין כאן מחיקה, אין שינוי state, ואין נגיעה ב-temp_bot_messages.
+    # GLOBAL_NBSP_INLINE_WIDTH_APPLIED
+    # תיקון גלובלי בטוח: רק מרחיב טקסט של הודעות עם InlineKeyboardMarkup.
+    # אין כאן מחיקה, אין שינוי state, ואין שינוי temp_bot_messages.
     try:
         if isinstance(reply_markup, InlineKeyboardMarkup):
             text = widen_inline_screen_text(text)
     except Exception:
         pass
+
 
 
 
@@ -2524,15 +2525,15 @@ async def start(message: Message):
 
     await force_close_phone_keyboard(message)
 
+    start_text = rtl(
+        f"<b>👋 ברוך הבא {h(customer_name)}</b>\n\n"
+        "<b>🛍️ Vendora Shop</b>\n"
+        "חנות דיגיטלית חכמה להזמנות, משלוחים ואיסוף עצמי.\n\n"
+        "בחר פעולה מהתפריט:"
+    )
+
     sent = await message.answer(
-        widen_inline_screen_text(
-            rtl(
-                f"<b>👋 ברוך הבא {h(customer_name)}</b>\\n\\n"
-                "<b>🛍️ Vendora Shop</b>\\n"
-                "חנות דיגיטלית חכמה להזמנות, משלוחים ואיסוף עצמי.\\n\\n"
-                "בחר פעולה מהתפריט:"
-            )
-        ),
+        widen_inline_screen_text(start_text),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
@@ -3496,7 +3497,7 @@ async def back_to_main_menu(message: Message):
 
     await send_temp_message(
         message,
-        widen_inline_screen_text(widen_inline_screen_text(widen_inline_screen_text(rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט:")))),
+        widen_inline_screen_text(widen_inline_screen_text(widen_inline_screen_text(widen_inline_screen_text(rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט:"))))),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
