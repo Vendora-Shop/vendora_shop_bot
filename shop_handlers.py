@@ -1396,22 +1396,23 @@ async def send_product_card(message: Message, product):
 
     image = product.get("image_file_id")
 
+    # תמונה + פרטים באותו חלון רחב
     if image:
         await send_temp_photo(
             message,
             photo=image,
-            caption=None,
+            caption=details_text,
             reply_markup=ReplyKeyboardRemove(),
             parse_mode="HTML"
         )
-
-    await send_temp_message(
-        message,
-        details_text,
-        reply_markup=ReplyKeyboardRemove(),
-        parse_mode="HTML",
-        clear_previous=False
-    )
+    else:
+        await send_temp_message(
+            message,
+            details_text,
+            reply_markup=ReplyKeyboardRemove(),
+            parse_mode="HTML",
+            clear_previous=False
+        )
 
 
 def set_pickup_details(data):
