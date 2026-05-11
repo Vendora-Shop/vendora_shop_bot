@@ -1,4 +1,3 @@
-from pathlib import Path
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
@@ -544,33 +543,7 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
     return sent
 
 
-def normalize_document_file(file_obj):
-    """
-    מכין קובץ לשליחה כ-Document.
-    מקבל path / Path / FSInputFile ומחזיר אובייקט מתאים לשליחה.
-    """
-    try:
-        if isinstance(file_obj, FSInputFile):
-            return file_obj
-
-        path = getattr(file_obj, "path", None)
-        if path:
-            return FSInputFile(str(path))
-
-        if isinstance(file_obj, (str, Path)):
-            return FSInputFile(str(file_obj))
-    except Exception:
-        pass
-
-    return file_obj
-
-
 async def send_temp_photo(message: Message, photo, caption=None, reply_markup=None, parse_mode="HTML", clear_previous=True):
-    """
-    PRODUCT_IMAGE_AS_DOCUMENT_TEST_SAFE
-    בדיקה בטוחה: תמונת מוצר נשלחת כ-Document.
-    אם Document נכשל — חוזרים אוטומטית ל-Photo כדי לא לשבור את החנות.
-    """
     uid = message.from_user.id
 
     if uid not in users:
@@ -579,34 +552,19 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
     if clear_previous:
         await delete_temp_bot_messages(message.bot, uid)
 
-    try:
-        document = normalize_document_file(photo)
-
-        sent = await message.answer_document(
-            document=document,
-            caption=caption,
-            reply_markup=reply_markup,
-            parse_mode=parse_mode
-        )
-    except Exception as e:
-        print(f"PRODUCT_IMAGE_AS_DOCUMENT_ERROR: {type(e).__name__}: {e}")
-
-        sent = await message.answer_photo(
-            photo=photo,
-            caption=caption,
-            reply_markup=reply_markup,
-            parse_mode=parse_mode
-        )
-
-    try:
-        remember_temp_bot_message(uid, sent)
-    except Exception:
-        users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
-
+    sent = await message.answer_photo(
+        photo=photo,
+        caption=caption,
+        reply_markup=reply_markup,
+        parse_mode=parse_mode
+    )
+    remember_temp_bot_message(uid, sent)
     users[uid]["product_photo_message_id"] = sent.message_id
-    users[uid]["product_document_message_id"] = sent.message_id
+
+    users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
 
     return sent
+
 
 
 async def cleanup_customer_order_screens(bot, uid):
@@ -627,8 +585,6 @@ async def cleanup_customer_order_screens(bot, uid):
         "qty_manual_warning_message_id",
         "product_message_id",
         "product_photo_message_id",
-        "product_document_message_id",
-        "last_document_message_id",
         "last_product_message_id",
         "last_photo_message_id",
         "cart_message_id",
@@ -1725,11 +1681,7 @@ class CustomerCallbackMessage:
         return sent
 
     async def answer_photo(self, *args, **kwargs):
-        """
-        PRODUCT_PROXY_IMAGE_AS_DOCUMENT_TEST_SAFE
-        ניסיון לשלוח תמונת מוצר כ-Document גם דרך Callback proxy.
-        אם נכשל — fallback ל-Photo.
-        """
+        # אותו עיקרון גם לתמונות מוצר/באנרים.
         skip_delete = bool(getattr(self, "_skip_inline_auto_delete_once", False))
 
         if not skip_delete:
@@ -1738,51 +1690,19 @@ class CustomerCallbackMessage:
             except Exception:
                 pass
 
-        try:
-            photo = kwargs.pop("photo", None)
-
-            if photo is None and args:
-                photo = args[0]
-                args = args[1:]
-
-            document = normalize_document_file(photo)
-
-            sent = await self.message.answer_document(
-                document=document,
-                *args,
-                **kwargs
-            )
-        except Exception as e:
-            print(f"PRODUCT_PROXY_IMAGE_AS_DOCUMENT_ERROR: {type(e).__name__}: {e}")
-
-            # מחזירים את photo לפרמטרים של answer_photo בצורה תקינה.
-            if photo is not None:
-                kwargs["photo"] = photo
-
-            sent = await self.message.answer_photo(*args, **kwargs)
+        sent = await self.message.answer_photo(*args, **kwargs)
 
         try:
             users.setdefault(self.from_user.id, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
-            users[self.from_user.id]["product_photo_message_id"] = sent.message_id
-            users[self.from_user.id]["product_document_message_id"] = sent.message_id
         except Exception:
             pass
 
         return sent
-
 
     async def answer_document(self, *args, **kwargs):
         # מאפשר לשלוח PDF/קבצים גם כאשר הפעולה הגיעה מכפתור Inline.
         sent = await self.message.answer_document(*args, **kwargs)
-
-        try:
-            users.setdefault(self.from_user.id, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
-            users[self.from_user.id]["product_document_message_id"] = sent.message_id
-        except Exception:
-            pass
-
         return sent
-
 
     async def delete(self):
         # אין הודעת משתמש למחיקה ב־Inline Callback.
@@ -2906,22 +2826,12 @@ async def cancel_order(message: Message):
         return
 
     uid = message.from_user.id
-    data = users.get(uid) or {"cart": []}
-    cart = data.get("cart") or []
 
-    # CANCEL_EMPTY_CART_PRODUCT_SCREEN_FIX
-    # אם הלקוח רק פתח מוצר ועדיין לא הוסיף לסל — אין "הזמנה" לבטל.
-    # לכן מנקים את מסך המוצר וחוזרים לתפריט בלי הודעת ביטול הזמנה.
+    # CANCEL_ORDER_FULL_CLEANUP_FIX
+    # קודם מנקים את כל מסכי ההזמנה/מוצר/תמונות, ורק אחר כך מציגים תפריט.
     await cleanup_customer_order_screens(message.bot, uid)
 
     users[uid] = {"cart": [], "step": "main", "temp_bot_messages": []}
-
-    if not cart:
-        await reset_customer_to_main_menu(
-            message,
-            "<b>🏠 חזרת לתפריט הראשי.</b>\n\nבחר פעולה מהתפריט:"
-        )
-        return
 
     await reset_customer_to_main_menu(
         message,
