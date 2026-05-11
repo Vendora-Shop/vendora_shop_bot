@@ -1377,9 +1377,9 @@ def saved_profile_text(profile):
 
 
 async def send_product_card(message: Message, product):
-    # PRODUCT_PHOTO_PLUS_WIDE_DETAILS_FIX
-    # תמונה חוזרת מעל פרטי המוצר.
-    # פרטי המוצר נשארים כהודעת טקסט רחבה כמו בגרסה שעבדה.
+    # PRODUCT_PHOTO_SEPARATE_DETAILS_WIDE_FINAL
+    # תמונה בנפרד, פרטי מוצר בחלון טקסט רחב.
+    # לא משתמשים ב-photo+caption כי באייפון זה מכווץ את הרוחב.
     stock = int(product.get("stock", 0))
 
     if stock <= 0:
@@ -1396,12 +1396,22 @@ async def send_product_card(message: Message, product):
 
     image = product.get("image_file_id")
 
-    # תמונה + פרטים באותו חלון רחב
+    # חלון אחד רחב: תמונה + פרטים
+    # טריק הרחבה לאייפון:
+    # מוסיפים spacer שקוף כדי שטלגרם יפתח bubble רחב יותר.
+    wide_spacer = "\u2800" * 120
+
+    combined_caption = (
+        details_text
+        + "\n\n"
+        + f"<tg-spoiler>{wide_spacer}</tg-spoiler>"
+    )
+
     if image:
         await send_temp_photo(
             message,
             photo=image,
-            caption=details_text,
+            caption=combined_caption,
             reply_markup=ReplyKeyboardRemove(),
             parse_mode="HTML"
         )
