@@ -424,14 +424,14 @@ def extract_photo_path_for_width(photo):
     return None
 
 
-def make_wide_product_photo(photo, target_width=1600, background=(255, 255, 255)):
+def make_wide_product_photo(photo, target_width=2000, background=(255, 255, 255)):
     """
-    יוצר עותק זמני ורחב של תמונת מוצר כדי שטלגרם יציג את בלון התמונה ברוחב תקין.
-    עובד גם עם path רגיל וגם עם FSInputFile.
-    לא משנה את קובץ התמונה המקורי.
+    יוצר קובץ תמונה רחב יותר לפני שליחה לטלגרם.
+    לא מותח את התמונה המקורית — רק מוסיף קנבס לבן בצדדים.
     """
     try:
         photo_path = extract_photo_path_for_width(photo)
+
         if not photo_path:
             return photo
 
@@ -446,8 +446,7 @@ def make_wide_product_photo(photo, target_width=1600, background=(255, 255, 255)
         if w <= 0 or h <= 0:
             return photo
 
-        # לא מגדילים את התמונה עצמה כדי לא לטשטש, רק מוסיפים קנבס רחב מסביב.
-        canvas_w = max(target_width, w)
+        canvas_w = max(int(target_width), w)
         canvas_h = h
 
         canvas = Image.new("RGB", (canvas_w, canvas_h), background)
@@ -458,7 +457,7 @@ def make_wide_product_photo(photo, target_width=1600, background=(255, 255, 255)
         tmp_dir.mkdir(exist_ok=True)
 
         out_path = tmp_dir / f"wide_product_{uuid.uuid4().hex}.jpg"
-        canvas.save(out_path, "JPEG", quality=94, optimize=True)
+        canvas.save(out_path, "JPEG", quality=95, optimize=True)
 
         return FSInputFile(str(out_path))
     except Exception as e:
@@ -613,6 +612,22 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
     return sent
 
 
+async def send_wide_answer_photo(message, photo, **kwargs):
+    """
+    שליחת תמונה רחבה דרך message.answer_photo.
+    """
+    photo = make_wide_product_photo(photo)
+    return await message.answer_photo(photo=photo, **kwargs)
+
+
+async def send_wide_callback_photo(callback, photo, **kwargs):
+    """
+    שליחת תמונה רחבה דרך callback.message.answer_photo.
+    """
+    photo = make_wide_product_photo(photo)
+    return await callback.message.answer_photo(photo=photo, **kwargs)
+
+
 async def send_temp_photo(message: Message, photo, caption=None, reply_markup=None, parse_mode="HTML", clear_previous=True):
     uid = message.from_user.id
 
@@ -621,11 +636,14 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
 
     if clear_previous:
         await delete_temp_bot_messages(message.bot, uid)
-    # WIDE_PRODUCT_PHOTO_FIX_V2
-    # מרחיב גם תמונות שנשלחות כ-FSInputFile.
+    # WIDE_PRODUCT_PHOTO_FIX_V3
     photo = make_wide_product_photo(photo)
 
+    photo = make_wide_product_photo(photo)
+
+
     sent = await message.answer_photo(
+
         photo=photo,
         caption=caption,
         reply_markup=reply_markup,
