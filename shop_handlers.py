@@ -1,8 +1,4 @@
-from pathlib import Path
-import uuid
 from aiogram import Router, F
-from PIL import Image
-
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from html import escape
@@ -400,78 +396,14 @@ users = {}
 RTL = "\u200F"
 # שורת רווחים בלתי נראית שמרחיבה את בועת ההודעה בטלגרם כאשר יש Inline Keyboard.
 # לא משנה טקסטים קיימים ולא מוצגת כטקסט רגיל ללקוח.
-UI_WIDE_LINE = "\u2800" * 38
-
-
-def extract_photo_path_for_width(photo):
-    """
-    מחזיר נתיב קובץ גם אם התמונה הגיעה כ-FSInputFile.
-    """
-    try:
-        if isinstance(photo, (str, Path)):
-            return str(photo)
-
-        path = getattr(photo, "path", None)
-        if path:
-            return str(path)
-
-        filename = getattr(photo, "filename", None)
-        if filename:
-            return str(filename)
-    except Exception:
-        pass
-
-    return None
-
-
-def make_wide_product_photo(photo, target_width=2000, background=(255, 255, 255)):
-    """
-    יוצר קובץ תמונה רחב יותר לפני שליחה לטלגרם.
-    לא מותח את התמונה המקורית — רק מוסיף קנבס לבן בצדדים.
-    """
-    try:
-        photo_path = extract_photo_path_for_width(photo)
-
-        if not photo_path:
-            return photo
-
-        path = Path(photo_path)
-
-        if not path.exists():
-            return photo
-
-        img = Image.open(path).convert("RGB")
-        w, h = img.size
-
-        if w <= 0 or h <= 0:
-            return photo
-
-        canvas_w = max(int(target_width), w)
-        canvas_h = h
-
-        canvas = Image.new("RGB", (canvas_w, canvas_h), background)
-        x = (canvas_w - w) // 2
-        canvas.paste(img, (x, 0))
-
-        tmp_dir = Path("tmp_product_images")
-        tmp_dir.mkdir(exist_ok=True)
-
-        out_path = tmp_dir / f"wide_product_{uuid.uuid4().hex}.jpg"
-        canvas.save(out_path, "JPEG", quality=95, optimize=True)
-
-        return FSInputFile(str(out_path))
-    except Exception as e:
-        print(f"MAKE_WIDE_PRODUCT_PHOTO_ERROR: {type(e).__name__}: {e}")
-        return photo
-
+UI_WIDE_LINE = "\u00A0" * 85
 
 
 def widen_inline_screen_text(text):
     text = str(text or "")
 
-    # GLOBAL_BRAILLE_WIDTH_FIX
-    # הרחבה ויזואלית בלבד בעזרת תווי Braille Blank.
-    # לא מוחק הודעות, לא משנה state ולא נוגע בלוגיקה.
+    # GLOBAL_NBSP_WIDTH_FIX
+    # הרחבה ויזואלית בלבד בעזרת NBSP. לא מוחק הודעות, לא משנה state ולא נוגע בלוגיקה.
     if UI_WIDE_LINE and UI_WIDE_LINE not in text:
         return text + "\n\n" + UI_WIDE_LINE
 
@@ -558,15 +490,14 @@ async def force_close_phone_keyboard(message: Message):
 
 
 async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None):
-    # GLOBAL_BRAILLE_INLINE_WIDTH_APPLIED
-    # כל הודעת לקוח עם כפתורי Inline מקבלת רוחב תקין.
-    # שינוי ויזואלי בלבד.
+    # GLOBAL_NBSP_INLINE_WIDTH_APPLIED
+    # תיקון גלובלי בטוח: רק מרחיב טקסט של הודעות עם InlineKeyboardMarkup.
+    # אין כאן מחיקה, אין שינוי state, ואין שינוי temp_bot_messages.
     try:
         if isinstance(reply_markup, InlineKeyboardMarkup):
             text = widen_inline_screen_text(text)
     except Exception:
         pass
-
 
 
 
@@ -612,22 +543,6 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
     return sent
 
 
-async def send_wide_answer_photo(message, photo, **kwargs):
-    """
-    שליחת תמונה רחבה דרך message.answer_photo.
-    """
-    photo = make_wide_product_photo(photo)
-    return await message.answer_photo(photo=photo, **kwargs)
-
-
-async def send_wide_callback_photo(callback, photo, **kwargs):
-    """
-    שליחת תמונה רחבה דרך callback.message.answer_photo.
-    """
-    photo = make_wide_product_photo(photo)
-    return await callback.message.answer_photo(photo=photo, **kwargs)
-
-
 async def send_temp_photo(message: Message, photo, caption=None, reply_markup=None, parse_mode="HTML", clear_previous=True):
     uid = message.from_user.id
 
@@ -636,20 +551,15 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
 
     if clear_previous:
         await delete_temp_bot_messages(message.bot, uid)
-    # WIDE_PRODUCT_PHOTO_FIX_V3
-    photo = make_wide_product_photo(photo)
-
-    photo = make_wide_product_photo(photo)
-
 
     sent = await message.answer_photo(
-
         photo=photo,
         caption=caption,
         reply_markup=reply_markup,
         parse_mode=parse_mode
     )
     remember_temp_bot_message(uid, sent)
+    users[uid]["product_photo_message_id"] = sent.message_id
 
     users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
 
@@ -657,10 +567,46 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
 
 
 
+async def cleanup_customer_order_screens(bot, uid):
+    """
+    ניקוי מלא למסכי הזמנה/מוצר/תמונות לפני מעבר לתפריט או ביטול.
+    לא משנה עיצוב ולא משנה גדלים — רק מוחק הודעות זמניות שנשארו במסך.
+    """
+    try:
+        await delete_temp_bot_messages(bot, uid)
+    except Exception:
+        pass
+
+    data = users.setdefault(uid, {"cart": []})
+
+    # מחיקת הודעות ידועות שלא תמיד נשמרות ברשימת temp_bot_messages.
+    for key in [
+        "qty_manual_message_id",
+        "qty_manual_warning_message_id",
+        "product_message_id",
+        "product_photo_message_id",
+        "last_product_message_id",
+        "last_photo_message_id",
+        "cart_message_id",
+        "checkout_message_id",
+        "order_summary_message_id",
+        "payment_message_id",
+    ]:
+        msg_id = data.pop(key, None)
+        if msg_id:
+            try:
+                await bot.delete_message(uid, msg_id)
+            except Exception:
+                pass
+
+    data["temp_bot_messages"] = []
+
+
 async def reset_customer_to_main_menu(message, text):
     # CUSTOMER_RESET_MAIN_WIDE_FIX
     uid = message.from_user.id
-    await delete_temp_bot_messages(message.bot, uid)
+    # RESET_MAIN_FULL_CLEANUP_FIX
+    await cleanup_customer_order_screens(message.bot, uid)
 
     # סוגר מקלדת Reply ישנה בלי להשאיר בלון ריק בצ׳אט.
     try:
@@ -691,7 +637,8 @@ async def reset_customer_to_main_menu(message, text):
 
 async def reset_callback_customer_to_main_menu(callback, text):
     uid = callback.from_user.id
-    await delete_temp_bot_messages(callback.message.bot, uid)
+    # RESET_CALLBACK_MAIN_FULL_CLEANUP_FIX
+    await cleanup_customer_order_screens(callback.message.bot, uid)
 
     # סוגר מקלדת Reply ישנה בלי להשאיר בלון ריק בצ׳אט.
     try:
@@ -2487,7 +2434,13 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         elif raw == "ui:nav:cart": text = "🛒 הסל שלי"
         elif raw == "ui:nav:checkout": text = "✅ המשך להזמנה"
         elif raw == "ui:nav:clear_cart": text = "🧹 רוקן סל"
-        elif raw == "ui:nav:cancel": text = "❌ בטל הזמנה"
+        elif raw == "ui:nav:cancel":
+            # INLINE_CANCEL_CURRENT_DELETE_FIX
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            text = "❌ בטל הזמנה"
 
         elif raw == "ui:order:confirm": text = "✅ אשר הזמנה"
         elif raw == "ui:order:edit":
@@ -2874,13 +2827,9 @@ async def cancel_order(message: Message):
 
     uid = message.from_user.id
 
-    # חשוב: קודם מוחקים את כל המסכים הפעילים של ההזמנה ורק אחרי זה מאפסים state.
-    # אם עושים users.pop לפני המחיקה — נאבד את temp_bot_messages ונשאר חלון ישן במסך
-    # כמו שקרה אחרי "הזמן שוב" ואז "בטל הזמנה".
-    try:
-        await delete_temp_bot_messages(message.bot, uid)
-    except Exception:
-        pass
+    # CANCEL_ORDER_FULL_CLEANUP_FIX
+    # קודם מנקים את כל מסכי ההזמנה/מוצר/תמונות, ורק אחר כך מציגים תפריט.
+    await cleanup_customer_order_screens(message.bot, uid)
 
     users[uid] = {"cart": [], "step": "main", "temp_bot_messages": []}
 
