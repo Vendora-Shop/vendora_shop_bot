@@ -1352,31 +1352,6 @@ def cart_text(cart, title="🛒 הסל שלך"):
     return rtl(text)
 
 
-def product_quantity_text(product, selected_qty):
-    # PRODUCT_UNIFIED_TEXT_QTY_SCREEN
-    # חלון אחד רחב: פרטי מוצר + בחירת כמות באותה הודעה.
-    stock = int(product.get("stock", 0) or 0)
-
-    if stock <= 0:
-        stock_text = "<b>🔴 אזל מהמלאי</b>"
-    else:
-        stock_text = "<b>🟢 במלאי</b>"
-
-    return rtl(
-        f"<b>🛍️ {h(product['name'])}</b>\n\n"
-        f"{h(product.get('description', ''))}\n\n"
-        f"{field('מחיר', money(product['price']))}\n"
-        f"{stock_text}\n\n"
-        "<b>🔢 בחירת כמות</b>\n\n"
-        f"{field('כמות נבחרת', selected_qty)}\n\n"
-        "בחר את הכמות הרצויה להזמנה.\n"
-        "אפשר לשנות את הכמות באמצעות − / + או ללחוץ על כמות כדי להזין ידנית.\n\n"
-        "לאחר הבחירה לחץ על 🛒 הוסף לסל."
-    )
-
-
-
-
 def saved_profile_text(profile):
     address = f"{profile['city']}, {profile['street']}, קומה {profile['floor']}, דירה {profile['apartment']}"
 
@@ -1393,22 +1368,40 @@ def saved_profile_text(profile):
 
 
 async def send_product_card(message: Message, product):
-    # PRODUCT_IMAGE_ONLY_FOR_UNIFIED_QTY_SCREEN
-    # שולח רק את תמונת המוצר. פרטי המוצר ובחירת הכמות נשלחים בחלון אחד רחב אחר כך.
+    # PRODUCT_CARD_NORMAL_PHOTO_CAPTION_RESTORE
+    # מחזיר את תצוגת המוצר למצב התקין:
+    # תמונה + טקסט יחד באותה הודעה, בלי הקטנת הטקסט ובלי הפרדה שצמצמה את התמונה באייפון.
+    stock = int(product.get("stock", 0))
+
+    if stock <= 0:
+        stock_text = "<b>🔴 אזל מהמלאי</b>"
+    else:
+        stock_text = "<b>🟢 במלאי</b>"
+
+    caption = rtl(
+        f"<b>🛍️ {h(product['name'])}</b>\n\n"
+        f"{h(product.get('description', ''))}\n\n"
+        f"<b>מחיר:</b> {money(product['price'])}\n\n"
+        f"{stock_text}"
+    )
+
     image = product.get("image_file_id")
 
     if image:
         await send_temp_photo(
             message,
             photo=image,
-            caption=None,
+            caption=caption,
             reply_markup=ReplyKeyboardRemove(),
             parse_mode="HTML"
         )
     else:
-        # אם אין תמונה, לא שולחים כרטיס מוצר כאן.
-        # הטקסט יישלח בחלון בחירת הכמות המאוחד.
-        pass
+        await send_temp_message(
+            message,
+            caption,
+            reply_markup=ReplyKeyboardRemove(),
+            parse_mode="HTML"
+        )
 
 
 def set_pickup_details(data):
@@ -3862,7 +3855,6 @@ async def handle_shop(message: Message):
 
         await force_close_phone_keyboard(message)
 
-        data["current_product"] = product
         await send_product_card(message, product)
 
         data["selected_product"] = product
