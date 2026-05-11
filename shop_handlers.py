@@ -28,6 +28,17 @@ from database import (
 from delivery_regions import get_delivery_price, normalize_israel_location, suggest_israel_locations, validate_street_address
 from pdf_generator import create_invoice_pdf
 
+def is_meaningful_support_message(text):
+    value = str(text or "").strip()
+    if len(value) < 5:
+        return False
+    letters = re.findall(r"[A-Za-zא-תА-Яа-я]", value)
+    if len(letters) < 2:
+        return False
+    if len(letters) / max(len(value), 1) < 0.25:
+        return False
+    return True
+
 router = Router()
 
 
@@ -4905,6 +4916,29 @@ async def handle_shop(message: Message):
             parse_mode="HTML"
         )
         return
+
+    if data.get("step") in {"support_message", "support_text", "support_write"}:
+        # SUPPORT_MESSAGE_VALIDATION_FIX
+        support_text = txt.strip()
+
+        if not is_meaningful_support_message(support_text):
+            await delete_customer_message(message)
+
+            if not data.get("support_message_warning_sent"):
+                sent = await message.answer(
+                    widen_inline_screen_text(
+                        rtl(
+                            "<b>⚠️ ההודעה לא ברורה.</b>\n\n"
+                            "נא לכתוב בקצרה מה הבעיה או מה תרצה לברר.\n"
+                            "לדוגמה: רוצה לבדוק סטטוס הזמנה V1031"
+                        )
+                    ),
+                    parse_mode="HTML"
+                )
+                data["support_message_warning_sent"] = True
+                data["support_message_warning_id"] = sent.message_id
+                data.setdefault("temp_bot_messages", []).append(sent.message_id)
+            return
 
     if data.get("step") == "name":
         if len(txt) < 2:
