@@ -47,6 +47,35 @@ router = Router()
 admin_states = {}
 
 
+# ================== CUSTOMER STATUS MENU BOTTOM FIX ==================
+# בכל עדכון סטטוס ללקוח:
+# 1. שולחים את הודעת הסטטוס
+# 2. שולחים מתחתיה תפריט ראשי
+# כך התפריט תמיד נמצא למטה אחרי עדכון סטטוס.
+async def send_customer_status_with_menu(bot, customer_telegram_id, status_text):
+    try:
+        await bot.send_message(
+            customer_telegram_id,
+            rtl(status_text),
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        print(f"CUSTOMER_STATUS_SEND_ERROR: {type(e).__name__}: {e}")
+        return
+
+    try:
+        await bot.send_message(
+            customer_telegram_id,
+            rtl("<b>🏠 תפריט ראשי</b>"),
+            reply_markup=main_keyboard(customer_telegram_id),
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        print(f"CUSTOMER_MENU_AFTER_STATUS_ERROR: {type(e).__name__}: {e}")
+
+
+
+
 def support_reply_cancel_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -1319,10 +1348,6 @@ def format_order(order):
 
 
 
-def admin_wide_text(text):
-    return text + "\n\n" + (" " * 90)
-
-
 @router.callback_query(F.data.startswith("order_action:"))
 async def order_notification_action(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
@@ -1394,10 +1419,10 @@ async def order_notification_action(callback: CallbackQuery):
         client_msg = CLIENT_STATUS_MESSAGE.get(new_status, "סטטוס ההזמנה שלך עודכן.")
 
     try:
-        await callback.bot.send_message(
+        await send_customer_status_with_menu(
+            callback.bot,
             order["telegram_id"],
-            rtl(f"{client_msg}\n\n{field('מספר הזמנה', order_number)}"),
-            parse_mode="HTML"
+            f"{client_msg}\n\n{field('מספר הזמנה', order_number)}"
         )
     except Exception:
         pass
@@ -1620,7 +1645,7 @@ async def exit_admin(message: Message):
     admin_states.pop(message.from_user.id, None)
 
     await message.answer(
-        admin_wide_text(rtl("<b>✅ יצאת מפאנל הניהול.</b>\n\nבחר פעולה מהתפריט:")),
+        rtl("<b>✅ יצאת מפאנל הניהול.</b>"),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
