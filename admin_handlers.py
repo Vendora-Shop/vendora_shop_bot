@@ -83,17 +83,44 @@ async def delete_customer_last_menu(bot, customer_telegram_id):
             pass
 
 
+
+
+def status_customer_wide_main_keyboard(customer_telegram_id=None):
+    """
+    STATUS_CUSTOMER_WIDE_MAIN_KEYBOARD_FIX
+    תפריט לקוח רחב אחרי עדכוני סטטוס.
+    לא משתמשים ב-main_keyboard כדי לא לקבל תפריט צר/עמודה אחת.
+    """
+    keyboard = [
+        [KeyboardButton(text="חנות 🛒")],
+        [
+            KeyboardButton(text="הפרופיל שלי 👤"),
+            KeyboardButton(text="ההזמנות שלי 📋"),
+        ],
+        [
+            KeyboardButton(text="הכתובות שלי 📍"),
+            KeyboardButton(text="שירות לקוחות 💬"),
+        ],
+    ]
+
+    try:
+        if customer_telegram_id == ADMIN_ID:
+            keyboard.append([KeyboardButton(text="פאנל ניהול 🛡️")])
+    except Exception:
+        pass
+
+    return ReplyKeyboardMarkup(
+        keyboard=keyboard,
+        resize_keyboard=True
+    )
+
+
 async def send_customer_main_menu_bottom(bot, customer_telegram_id):
     try:
-        menu_text = widen_inline_screen_text(rtl(
-            "<b>🏠 תפריט ראשי</b>\n\n"
-            "בחר פעולה מהתפריט:"
-        ))
-
         sent_menu = await bot.send_message(
             customer_telegram_id,
-            menu_text,
-            reply_markup=main_keyboard(customer_telegram_id),
+            rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט:"),
+            reply_markup=status_customer_wide_main_keyboard(customer_telegram_id),
             parse_mode="HTML"
         )
 
