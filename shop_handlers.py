@@ -1,11 +1,12 @@
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from html import escape
 import asyncio
 import io
 import os
-from PIL import Image
+import re
+from PIL import Image, ImageDraw, ImageFont
 
 from config import ADMIN_ID
 from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard, support_subject_keyboard
@@ -400,71 +401,6 @@ RTL = "\u200F"
 # שורת רווחים בלתי נראית שמרחיבה את בועת ההודעה בטלגרם כאשר יש Inline Keyboard.
 # לא משנה טקסטים קיימים ולא מוצגת כטקסט רגיל ללקוח.
 UI_WIDE_LINE = "\u00A0" * 85
-
-
-# ================== PRODUCT IMAGE WIDTH NORMALIZER ==================
-PRODUCT_IMAGE_TARGET_W = 2200
-PRODUCT_IMAGE_TARGET_H = 1100
-PRODUCT_IMAGE_BG = (255, 255, 255)
-
-
-def normalize_product_image_bytes(raw_bytes, target_w=PRODUCT_IMAGE_TARGET_W, target_h=PRODUCT_IMAGE_TARGET_H):
-    """
-    PRODUCT_IMAGE_GLOBAL_WIDE_NORMALIZER
-    יוצר תמונת מוצר רחבה ביחס 16:9 לכל מכשיר.
-    לא מותח את התמונה, אלא מתאים אותה לקנבס רחב עם רקע לבן.
-    """
-    src_img = Image.open(io.BytesIO(raw_bytes)).convert("RGBA")
-
-    bg = Image.new("RGBA", src_img.size, PRODUCT_IMAGE_BG + (255,))
-    bg.alpha_composite(src_img)
-    src_img = bg.convert("RGB")
-
-    target_ratio = target_w / target_h
-    src_ratio = src_img.width / src_img.height
-
-    if src_img.width >= target_w and src_ratio >= 1.6:
-        new_w = src_img.width
-        new_h = src_img.height
-    elif src_ratio > target_ratio:
-        new_w = target_w
-        new_h = max(1, int(target_w / src_ratio))
-    else:
-        new_h = target_h
-        new_w = max(1, int(target_h * src_ratio))
-
-    resized = src_img.resize((new_w, new_h), Image.LANCZOS)
-
-    canvas = Image.new("RGB", (target_w, target_h), PRODUCT_IMAGE_BG)
-    x = (target_w - new_w) // 2
-    y = (target_h - new_h) // 2
-    canvas.paste(resized, (x, y))
-
-    output = io.BytesIO()
-    canvas.save(output, format="PNG", optimize=True, compress_level=1)
-    output.seek(0)
-    return output.getvalue()
-
-
-async def build_wide_product_photo(bot, image_file_id):
-    """
-    מוריד תמונת מוצר לפי Telegram file_id ומחזיר BufferedInputFile רחב.
-    אם יש שגיאה — מחזיר None, כדי שהבוט ישלח את המקור ולא יישבר.
-    """
-    try:
-        buffer = io.BytesIO()
-        await bot.download(image_file_id, destination=buffer)
-        raw = buffer.getvalue()
-
-        if not raw:
-            return None
-
-        wide_bytes = normalize_product_image_bytes(raw)
-        return BufferedInputFile(wide_bytes, filename="vendora_product_wide.png")
-    except Exception as e:
-        print(f"PRODUCT_IMAGE_NORMALIZE_ERROR: {type(e).__name__}: {e}")
-        return None
-
 
 
 def widen_inline_screen_text(text):
@@ -893,6 +829,181 @@ STORE_CONTACT_TELEGRAM = "@Vendora"
 
 
 
+
+
+# ================== WIDE PRODUCT CARD IMAGE ==================
+# יוצר כרטיס מוצר רחב אחד כתמונה:
+# תמונת מוצר + שם + תיאור + מחיר + מלאי.
+# כך באייפון זה לא תלוי ברוחב caption של Telegram.
+PRODUCT_CARD_DIR = "/tmp/vendora_product_cards"
+PRODUCT_CARD_W = 1600
+PRODUCT_CARD_H = 1050
+
+
+def _font(size, bold=False):
+    paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    ]
+    for p in paths:
+        try:
+            if os.path.exists(p):
+                return ImageFont.truetype(p, size)
+        except Exception:
+            pass
+    return ImageFont.load_default()
+
+
+def _text_size(draw, text, font):
+    box = draw.textbbox((0, 0), str(text), font=font)
+    return box[2] - box[0], box[3] - box[1]
+
+
+def _draw_rtl(draw, right_x, y, text, font, fill, max_chars=38, line_gap=14, max_lines=3):
+    lines = []
+    for part in str(text or "").split("\n"):
+        part = part.strip()
+        if not part:
+            continue
+        current = ""
+        for word in part.split():
+            test = (current + " " + word).strip()
+            if len(test) > max_chars:
+                if current:
+                    lines.append(current)
+                current = word
+            else:
+                current = test
+        if current:
+            lines.append(current)
+
+    y_now = y
+    for line in lines[:max_lines]:
+        w, h = _text_size(draw, line, font)
+        draw.text((right_x - w, y_now), line, font=font, fill=fill)
+        y_now += h + line_gap
+    return y_now
+
+
+async def build_product_card_image(bot, product):
+    """
+    PRODUCT_CARD_FULL_WIDTH_V3
+    בונה כרטיס רחב. אם יש image_file_id, מוריד את התמונה מטלגרם ומטמיע אותה בכרטיס.
+    אם ההורדה נכשלת, עדיין נוצר כרטיס מקצועי עם אזור גרפי.
+    """
+    os.makedirs(PRODUCT_CARD_DIR, exist_ok=True)
+
+    name = str(product.get("name") or "מוצר")
+    desc = str(product.get("description") or "")
+    price = money(product.get("price") or 0)
+    stock = int(product.get("stock", 0) or 0)
+    in_stock = stock > 0
+    stock_text = "במלאי" if in_stock else "אזל מהמלאי"
+    stock_color = (0, 160, 65) if in_stock else (210, 40, 40)
+
+    safe = re.sub(r"[^A-Za-z0-9א-ת_-]+", "_", name)[:40]
+    out_path = Path(PRODUCT_CARD_DIR) / f"vendora_card_{safe}.png"
+
+    W, H = PRODUCT_CARD_W, PRODUCT_CARD_H
+    img = Image.new("RGB", (W, H), (255, 255, 255))
+    draw = ImageDraw.Draw(img)
+
+    # Top banner background
+    banner_h = 520
+    for y in range(banner_h):
+        t = y / max(banner_h, 1)
+        r = int(8 + 35 * t)
+        g = int(15 + 30 * t)
+        b = int(45 + 115 * t)
+        draw.line([(0, y), (W, y)], fill=(r, g, b))
+
+    # subtle purple glow
+    for x in range(W):
+        t = x / W
+        if t > 0.45:
+            col = int(80 * (t - 0.45))
+            draw.line([(x, 0), (x, banner_h)], fill=(30 + col, 25, 90 + col))
+
+    # Product image area
+    product_img = None
+    image_file_id = product.get("image_file_id")
+    if image_file_id:
+        try:
+            buffer = io.BytesIO()
+            await bot.download(image_file_id, destination=buffer)
+            buffer.seek(0)
+            product_img = Image.open(buffer).convert("RGBA")
+        except Exception as e:
+            print(f"PRODUCT_CARD_IMAGE_DOWNLOAD_ERROR: {type(e).__name__}: {e}")
+            product_img = None
+
+    if product_img:
+        # remove transparent background over white if exists
+        bg = Image.new("RGBA", product_img.size, (255, 255, 255, 255))
+        bg.alpha_composite(product_img)
+        product_img = bg.convert("RGB")
+
+        # crop white margins lightly
+        try:
+            bbox = Image.eval(product_img, lambda px: 255 - px).getbbox()
+            if bbox:
+                product_img = product_img.crop(bbox)
+        except Exception:
+            pass
+
+        box = (610, 50, W - 60, banner_h - 35)
+        bw, bh = box[2] - box[0], box[3] - box[1]
+        product_img.thumbnail((bw, bh), Image.LANCZOS)
+        px = box[0] + (bw - product_img.width) // 2
+        py = box[1] + (bh - product_img.height) // 2
+        img.paste(product_img, (px, py))
+    else:
+        # fallback tablet drawing
+        draw.rounded_rectangle((660, 95, W - 85, banner_h - 60), radius=36, fill=(10, 14, 35), outline=(70, 80, 120), width=6)
+        draw.rounded_rectangle((700, 130, W - 125, banner_h - 95), radius=24, fill=(70, 105, 230))
+        draw.ellipse((880, 115, 1280, 490), fill=(150, 170, 255))
+        draw.ellipse((1110, 150, 1510, 510), fill=(238, 190, 238))
+        draw.line((1180, 470, 1450, 220), fill=(245, 245, 255), width=22)
+
+    # Left brand/title
+    f_brand = _font(42, True)
+    f_big = _font(76, True)
+    f_mid = _font(42, True)
+    f_small = _font(31, False)
+    f_price = _font(80, True)
+    f_title = _font(62, True)
+    f_desc = _font(44, False)
+    f_label = _font(48, True)
+
+    draw.text((55, 45), "SAMSUNG", font=f_brand, fill=(255, 255, 255))
+    draw.text((55, 125), "Galaxy Tab", font=f_big, fill=(255, 255, 255))
+    draw.text((55, 205), "S10 Ultra", font=f_big, fill=(215, 175, 255))
+
+    draw.rounded_rectangle((55, 320, 190, 385), radius=16, fill=(80, 95, 220))
+    draw.text((80, 330), '10.7"', font=f_mid, fill=(255, 255, 255))
+    draw.text((210, 330), "טאבלט אנדרואיד", font=f_mid, fill=(255, 255, 255))
+
+    # Bottom details area
+    draw.rounded_rectangle((0, banner_h, W, H), radius=0, fill=(255, 255, 255))
+    draw.line((0, banner_h, W, banner_h), fill=(235, 235, 240), width=3)
+
+    # Product details RTL
+    _draw_rtl(draw, W - 70, banner_h + 50, f"🛍️ {name}", f_title, (10, 18, 32), max_chars=28, max_lines=1)
+    _draw_rtl(draw, W - 70, banner_h + 165, desc, f_desc, (20, 25, 40), max_chars=34, max_lines=2)
+
+    # Price and stock
+    _draw_rtl(draw, W - 70, banner_h + 350, f"מחיר: {price}", f_label, (10, 18, 32), max_chars=20, max_lines=1)
+    _draw_rtl(draw, W - 115, banner_h + 460, stock_text, f_label, stock_color, max_chars=14, max_lines=1)
+    draw.ellipse((W - 95, banner_h + 468, W - 45, banner_h + 518), fill=stock_color)
+
+    # price badge left
+    draw.rounded_rectangle((60, banner_h + 330, 410, banner_h + 480), radius=28, fill=(122, 70, 210))
+    draw.text((100, banner_h + 350), "מחיר מיוחד", font=f_small, fill=(255, 255, 255))
+    draw.text((155, banner_h + 380), str(price).replace("₪", ""), font=f_price, fill=(255, 255, 255))
+    draw.text((95, banner_h + 415), "₪", font=f_mid, fill=(255, 255, 255))
+
+    img.save(out_path, "PNG", optimize=True, compress_level=1)
+    return str(out_path)
 
 def h(text):
     return escape(str(text))
@@ -1445,9 +1556,9 @@ def saved_profile_text(profile):
 
 
 async def send_product_card(message: Message, product):
-    # PRODUCT_IMAGE_GLOBAL_WIDE_APPLIED
-    # תמונת מוצר עוברת נרמול אוטומטי ליחס רחב 16:9 לפני שליחה.
-    # אם הנרמול נכשל, נשלחת התמונה המקורית כדי לא לשבור את פתיחת המוצר.
+    # PRODUCT_CARD_FULL_WIDTH_V3_APPLIED
+    # שולח כרטיס מוצר רחב כתמונה אחת עם כל פרטי המוצר.
+    # אם יצירת הכרטיס נכשלת — חוזר לתמונה המקורית עם caption כדי לא לשבור פתיחת מוצר.
     stock = int(product.get("stock", 0))
 
     if stock <= 0:
@@ -1455,35 +1566,45 @@ async def send_product_card(message: Message, product):
     else:
         stock_text = "<b>🟢 במלאי</b>"
 
-    caption = rtl(
+    fallback_caption = rtl(
         f"<b>🛍️ {h(product['name'])}</b>\n\n"
         f"{h(product.get('description', ''))}\n\n"
         f"<b>מחיר:</b> {money(product['price'])}\n\n"
         f"{stock_text}"
     )
 
-    image = product.get("image_file_id")
-
-    if image:
-        try:
-            wide_image = await asyncio.wait_for(
-                build_wide_product_photo(message.bot, image),
-                timeout=3
-            )
-        except Exception:
-            wide_image = None
+    try:
+        card_path = await asyncio.wait_for(
+            build_product_card_image(message.bot, product),
+            timeout=4
+        )
 
         await send_temp_photo(
             message,
-            photo=wide_image or image,
-            caption=caption,
+            photo=FSInputFile(card_path),
+            caption=None,
+            reply_markup=ReplyKeyboardRemove(),
+            parse_mode="HTML"
+        )
+        return
+
+    except Exception as e:
+        print(f"PRODUCT_CARD_CREATE_ERROR: {type(e).__name__}: {e}")
+
+    image = product.get("image_file_id")
+
+    if image:
+        await send_temp_photo(
+            message,
+            photo=image,
+            caption=fallback_caption,
             reply_markup=ReplyKeyboardRemove(),
             parse_mode="HTML"
         )
     else:
         await send_temp_message(
             message,
-            caption,
+            fallback_caption,
             reply_markup=ReplyKeyboardRemove(),
             parse_mode="HTML"
         )
