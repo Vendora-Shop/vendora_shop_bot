@@ -1,4 +1,7 @@
+import uuid
 from aiogram import Router, F
+from PIL import Image
+
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from html import escape
@@ -399,6 +402,52 @@ RTL = "\u200F"
 UI_WIDE_LINE = "\u2800" * 38
 
 
+def make_wide_product_photo(photo_path, target_width=1280, background=(255, 255, 255)):
+    """
+    יוצר עותק זמני ורחב של תמונת מוצר כדי שטלגרם יציג את בלון התמונה ברוחב תקין.
+    לא משנה את קובץ התמונה המקורי.
+    """
+    try:
+        path = Path(photo_path)
+
+        if not path.exists():
+            return photo_path
+
+        img = Image.open(path).convert("RGB")
+        w, h = img.size
+
+        if w <= 0 or h <= 0:
+            return photo_path
+
+        # אם התמונה כבר רחבה מספיק, אין צורך לשנות.
+        if w >= target_width * 0.92:
+            return photo_path
+
+        scale = min(target_width / w, 1.0)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+
+        if scale != 1.0:
+            img = img.resize((new_w, new_h), Image.LANCZOS)
+            w, h = img.size
+
+        # קנבס רחב עם גובה זהה לתמונה, התמונה ממורכזת.
+        canvas = Image.new("RGB", (target_width, h), background)
+        x = (target_width - w) // 2
+        canvas.paste(img, (x, 0))
+
+        tmp_dir = Path("tmp_product_images")
+        tmp_dir.mkdir(exist_ok=True)
+
+        out_path = tmp_dir / f"wide_product_{uuid.uuid4().hex}.jpg"
+        canvas.save(out_path, "JPEG", quality=92, optimize=True)
+
+        return str(out_path)
+    except Exception as e:
+        print(f"MAKE_WIDE_PRODUCT_PHOTO_ERROR: {type(e).__name__}: {e}")
+        return photo_path
+
+
 def widen_inline_screen_text(text):
     text = str(text or "")
 
@@ -553,6 +602,24 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
 
     if clear_previous:
         await delete_temp_bot_messages(message.bot, uid)
+
+    # WIDE_PRODUCT_PHOTO_FIX
+    # מרחיב תמונות מוצר כדי שהבלון של התמונה יהיה ברוחב דומה למסכי הטקסט/כפתורים.
+    try:
+        if isinstance(photo, (str, Path)):
+            wide_photo = make_wide_product_photo(photo)
+            if str(wide_photo) != str(photo):
+                photo = FSInputFile(str(wide_photo))
+    except Exception as e:
+        print(f"WIDE_PRODUCT_PHOTO_FIX_ERROR: {type(e).__name__}: {e}")
+
+    try:
+        if isinstance(photo, (str, Path)):
+            wide_photo = make_wide_product_photo(photo)
+            if str(wide_photo) != str(photo):
+                photo = FSInputFile(str(wide_photo))
+    except Exception as e:
+        print(f"WIDE_PRODUCT_DIRECT_PHOTO_ERROR: {type(e).__name__}: {e}")
 
     sent = await message.answer_photo(
         photo=photo,
