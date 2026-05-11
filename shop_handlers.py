@@ -931,6 +931,9 @@ def quantity_keyboard(selected_qty, available_left, max_qty):
 def quantity_inline_keyboard(selected_qty):
     selected_qty = int(selected_qty)
 
+    # PRODUCT_SCREEN_NO_CANCEL_BEFORE_CART_FIX
+    # לפני שהלקוח הוסיף מוצר לסל אין עדיין הזמנה לבטל.
+    # לכן במסך מוצר מציגים רק שינוי כמות, הוספה לסל וחזרה למוצרים.
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -943,9 +946,6 @@ def quantity_inline_keyboard(selected_qty):
             ],
             [
                 InlineKeyboardButton(text="⬅️ חזרה למוצרים", callback_data="qty_action:back_products")
-            ],
-            [
-                InlineKeyboardButton(text="❌ בטל הזמנה", callback_data="qty_action:cancel")
             ]
         ]
     )
@@ -2826,16 +2826,31 @@ async def cancel_order(message: Message):
         return
 
     uid = message.from_user.id
+    data = users.get(uid) or {"cart": []}
+    cart = data.get("cart") or []
 
-    # CANCEL_ORDER_FULL_CLEANUP_FIX
-    # קודם מנקים את כל מסכי ההזמנה/מוצר/תמונות, ורק אחר כך מציגים תפריט.
-    await cleanup_customer_order_screens(message.bot, uid)
+    # CANCEL_EMPTY_CART_NO_ORDER_FIX
+    # אם אין מוצר בסל — אין הזמנה לבטל. מנקים מסכים וחוזרים לתפריט.
+    try:
+        await cleanup_customer_order_screens(message.bot, uid)
+    except Exception:
+        try:
+            await delete_temp_bot_messages(message.bot, uid)
+        except Exception:
+            pass
 
     users[uid] = {"cart": [], "step": "main", "temp_bot_messages": []}
 
+    if not cart:
+        await reset_customer_to_main_menu(
+            message,
+            "<b>🏠 חזרת לתפריט הראשי.</b>\n\nבחר פעולה מהתפריט:"
+        )
+        return
+
     await reset_customer_to_main_menu(
         message,
-        "<b>❌ ההזמנה בוטלה על ידי החנות.</b>\n\nלפרטים נוספים ניתן לפנות לשירות לקוחות."
+        "<b>❌ ההזמנה בוטלה.</b>\n\nלפרטים נוספים ניתן לפנות לשירות לקוחות."
     )
 
 
