@@ -86,7 +86,7 @@ async def customer_cancel_payment_button(message: Message):
 
     await message.answer(
         rtl("<b>ℹ️ אין תשלום פעיל לביטול.</b>"),
-        reply_markup=main_keyboard(message.from_user.id),
+        reply_markup=None,
         parse_mode="HTML"
     )
 
@@ -319,7 +319,7 @@ async def close_customer_open_support_ticket(message: Message, data=None):
                     "חזרת לתפריט הראשי."
                 )
             ),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=None,
             parse_mode="HTML"
         )
         return True
@@ -352,7 +352,7 @@ async def close_customer_open_support_ticket(message: Message, data=None):
                     "תודה שפנית אלינו."
                 )
             ),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=None,
             parse_mode="HTML"
         )
         return True
@@ -367,7 +367,7 @@ async def close_customer_open_support_ticket(message: Message, data=None):
                 "חזרת לתפריט הראשי."
             )
         ),
-        reply_markup=main_keyboard(message.from_user.id),
+        reply_markup=None,
         parse_mode="HTML"
     )
     return True
@@ -489,7 +489,48 @@ async def force_close_phone_keyboard(message: Message):
         pass
 
 
-async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None):
+
+
+async def send_order_status_update_only(bot, user_id, text, parse_mode="HTML"):
+    """
+    ORDER_STATUS_NO_MENU_SPAM_FIX
+    שולח עדכון סטטוס בלבד.
+    לא שולח מחדש תפריט ראשי ולא מנקה את התפריט הקיים.
+    """
+    try:
+        return await bot.send_message(
+            user_id,
+            widen_inline_screen_text(rtl(text)),
+            parse_mode=parse_mode
+        )
+    except Exception as e:
+        print(f"ORDER_STATUS_UPDATE_SEND_ERROR: {type(e).__name__}: {e}")
+        return None
+
+
+async def send_main_menu_once_after_order(message_or_callback, text):
+    """
+    שולח תפריט פעם אחת אחרי הזמנה, במקום לשלוח תפריט מחדש אחרי כל שינוי סטטוס.
+    """
+    if hasattr(message_or_callback, "message"):
+        message = message_or_callback.message
+        uid = message_or_callback.from_user.id
+    else:
+        message = message_or_callback
+        uid = message.from_user.id
+
+    users.setdefault(uid, {"cart": []})
+    users[uid]["main_menu_sent_after_order"] = True
+
+    return await send_temp_message(
+        message,
+        widen_inline_screen_text(rtl(text)),
+        reply_markup=None,
+        parse_mode="HTML",
+        clear_previous=False
+    )
+
+async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=False, disable_web_page_preview=None):
     # GLOBAL_NBSP_INLINE_WIDTH_APPLIED
     # תיקון גלובלי בטוח: רק מרחיב טקסט של הודעות עם InlineKeyboardMarkup.
     # אין כאן מחיקה, אין שינוי state, ואין שינוי temp_bot_messages.
@@ -543,7 +584,7 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
     return sent
 
 
-async def send_temp_photo(message: Message, photo, caption=None, reply_markup=None, parse_mode="HTML", clear_previous=True):
+async def send_temp_photo(message: Message, photo, caption=None, reply_markup=None, parse_mode="HTML", clear_previous=False):
     uid = message.from_user.id
 
     if uid not in users:
@@ -627,7 +668,7 @@ async def reset_customer_to_main_menu(message, text):
 
     sent = await message.answer(
         widen_inline_screen_text(rtl(text)),
-        reply_markup=main_keyboard(uid),
+        reply_markup=None,
         parse_mode="HTML"
     )
 
@@ -659,7 +700,7 @@ async def reset_callback_customer_to_main_menu(callback, text):
 
     sent = await callback.message.answer(
         widen_inline_screen_text(rtl(text)),
-        reply_markup=main_keyboard(uid),
+        reply_markup=None,
         parse_mode="HTML"
     )
 
@@ -2360,7 +2401,7 @@ async def show_reorder_choose_inline(callback: CallbackQuery):
                 "<b>⚠️ אין הזמנות קודמות לשחזור.</b>\n\n"
                 "אפשר להיכנס לחנות ולבצע הזמנה חדשה."
             )),
-            reply_markup=main_keyboard(callback.from_user.id),
+            reply_markup=None,
             parse_mode="HTML"
         )
         data.setdefault("temp_bot_messages", []).append(sent.message_id)
@@ -2929,7 +2970,7 @@ async def edit_details(message: Message):
         await send_temp_message(
             message,
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=None,
             parse_mode="HTML"
         )
         return
@@ -2995,7 +3036,7 @@ async def submit_paid_order(message: Message, data):
                 "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
                 "ההזמנה כבר נקלטה במערכת ונמצאת בטיפול."
             ),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=None,
             parse_mode="HTML"
         )
         return
@@ -3143,7 +3184,7 @@ async def submit_paid_order(message: Message, data):
     await send_temp_message(
         message,
         rtl(customer_success_text),
-        reply_markup=main_keyboard(message.from_user.id),
+        reply_markup=None,
         parse_mode="HTML"
     )
 
@@ -3157,7 +3198,7 @@ async def back_to_fulfillment_choice(message: Message):
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=None,
             parse_mode="HTML"
         )
         return
@@ -3201,7 +3242,7 @@ async def back_from_order_summary_to_previous_step(message: Message):
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=None,
             parse_mode="HTML"
         )
         return
@@ -3264,7 +3305,7 @@ async def confirm_order(message: Message):
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=None,
             parse_mode="HTML"
         )
         return
@@ -3284,7 +3325,7 @@ async def confirm_order(message: Message):
                 "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
                 "ההזמנה כבר נקלטה במערכת ונמצאת בטיפול."
             ),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=None,
             parse_mode="HTML"
         )
         return
@@ -3636,7 +3677,7 @@ async def reorder_choose_order(message: Message):
                 "<b>⚠️ אין הזמנות קודמות לשחזור.</b>\n\n"
                 "אפשר להיכנס לחנות ולבצע הזמנה חדשה."
             ),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=None,
             parse_mode="HTML"
         )
         return
