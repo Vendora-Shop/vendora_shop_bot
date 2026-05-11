@@ -396,13 +396,14 @@ users = {}
 RTL = "\u200F"
 # שורת רווחים בלתי נראית שמרחיבה את בועת ההודעה בטלגרם כאשר יש Inline Keyboard.
 # לא משנה טקסטים קיימים ולא מוצגת כטקסט רגיל ללקוח.
-UI_WIDE_LINE = " " * 140 * 78
+UI_WIDE_LINE = " " * 180 * 140 * 78
 
 
 def widen_inline_screen_text(text):
     text = str(text or "")
 
-    # לא מוסיפים פעמיים, כדי שלא יווצרו רווחים כפולים או מסכים ארוכים מדי.
+    # רוחב אחיד לכל חלונות הלקוח עם כפתורי Inline.
+    # מוסיף padding בסוף ההודעה כדי שטלגרם יפתח את בועת ההודעה לרוחב תקין.
     if UI_WIDE_LINE and UI_WIDE_LINE not in text:
         return text + "\n\n" + UI_WIDE_LINE
 
@@ -466,6 +467,13 @@ async def force_close_phone_keyboard(message: Message):
 
 
 async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None):
+    # CUSTOMER_AUTO_WIDEN_INLINE_FIX_V2
+    try:
+        if isinstance(reply_markup, InlineKeyboardMarkup):
+            text = widen_inline_screen_text(text)
+    except Exception:
+        pass
+
     # CUSTOMER_AUTO_WIDEN_INLINE_FIX
     # כל מסך לקוח עם InlineKeyboardMarkup מקבל רוחב אחיד.
     try:
@@ -538,6 +546,7 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
 
 
 async def reset_customer_to_main_menu(message, text):
+    # CUSTOMER_RESET_MAIN_WIDE_FIX
     uid = message.from_user.id
     await delete_temp_bot_messages(message.bot, uid)
 
@@ -559,7 +568,7 @@ async def reset_customer_to_main_menu(message, text):
     users[uid].setdefault("temp_bot_messages", [])
 
     sent = await message.answer(
-        rtl(text),
+        widen_inline_screen_text(rtl(text)),
         reply_markup=main_keyboard(uid),
         parse_mode="HTML"
     )
@@ -2520,11 +2529,13 @@ async def start(message: Message):
 
     await send_temp_message(
         message,
-        rtl(
-            f"<b>👋 ברוך הבא {h(customer_name)}</b>\n\n"
-            "<b>🛍️ Vendora Shop</b>\n"
-            "חנות דיגיטלית חכמה להזמנות, משלוחים ואיסוף עצמי.\n\n"
-            "בחר פעולה מהתפריט:"
+        widen_inline_screen_text(
+            rtl(
+                f"<b>👋 ברוך הבא {h(customer_name)}</b>\n\n"
+                "<b>🛍️ Vendora Shop</b>\n"
+                "חנות דיגיטלית חכמה להזמנות, משלוחים ואיסוף עצמי.\n\n"
+                "בחר פעולה מהתפריט:"
+            )
         ),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
@@ -2602,7 +2613,7 @@ async def back_to_admin_panel_from_shop(message: Message):
     from keyboards import admin_keyboard
 
     await message.answer(
-        rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
+        widen_inline_screen_text(rtl("<b>🔐 חזרת לפאנל הניהול.</b>")),
         reply_markup=admin_keyboard(),
         parse_mode="HTML"
     )
@@ -2631,7 +2642,7 @@ async def back_main(message: Message):
 
     await send_temp_message(
         message,
-        rtl("<b>↩️ חזרת לתפריט הראשי</b>"),
+        widen_inline_screen_text(rtl("<b>↩️ חזרת לתפריט הראשי</b>")),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
