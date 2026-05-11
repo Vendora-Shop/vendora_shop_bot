@@ -929,11 +929,28 @@ def quantity_keyboard(selected_qty, available_left, max_qty):
 
 
 
-def quantity_inline_keyboard(selected_qty):
-    selected_qty = int(selected_qty)
 
-    # PRODUCT_SCREEN_NO_CANCEL_BEFORE_CART_FIX
-    # GLASS_COMPACT_V2_QTY
+
+def product_caption_text(product, qty):
+    # PRODUCT_CAPTION_GENERAL_FIX
+    stock = int(product.get("stock", 0) or 0)
+    stock_text = "<b>🟢 במלאי</b>" if stock > 0 else "<b>🔴 אזל מהמלאי</b>"
+
+    total_price = float(product.get("price", 0) or 0) * int(qty)
+
+    return rtl(
+        f"<b>🛍️ {h(product['name'])}</b>\n\n"
+        f"{h(product.get('description', ''))}\n\n"
+        f"<b>מחיר:</b> {money(total_price)}\n\n"
+        f"{stock_text}\n\n"
+        f"<b>כמות נבחרת:</b> {int(qty)}\n"
+        "בחר כמות ואז לחץ על 🛒 הוסף לסל."
+    )
+
+
+def quantity_inline_keyboard(selected_qty):
+    selected_qty = int(selected_qty or 1)
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -1368,29 +1385,11 @@ def saved_profile_text(profile):
 
 
 async def send_product_card(message: Message, product):
-    # PRODUCT_PHOTO_CAPTION_WITH_INLINE_QTY_WIDTH_TEST
-    # ניסיון נקי שלא נוסה:
-    # תמונה + פרטי מוצר באותו חלון, וכפתורי הכמות מחוברים לאותה הודעה.
-    # המטרה: לגרום ל-Telegram לחשב את רוחב חלון המוצר לפי ה-inline keyboard הרחב.
-    stock = int(product.get("stock", 0))
-
-    if stock <= 0:
-        stock_text = "<b>🔴 אזל מהמלאי</b>"
-    else:
-        stock_text = "<b>🟢 במלאי</b>"
-
+    # PRODUCT_SCREEN_GENERAL_FIX_APPLIED
     data = users.setdefault(message.from_user.id, {"cart": []})
     selected_qty = int(data.get("selected_qty", 1) or 1)
 
-    caption = rtl(
-        f"<b>🛍️ {h(product['name'])}</b>\n\n"
-        f"{h(product.get('description', ''))}\n\n"
-        f"<b>מחיר:</b> {money(float(product['price']) * qty)}\n\n"
-        f"{stock_text}\n\n"
-        f"<b>כמות נבחרת:</b> {selected_qty}\n"
-        "בחר כמות ואז לחץ על 🛒 הוסף לסל."
-    )
-
+    caption = product_caption_text(product, selected_qty)
     image = product.get("image_file_id")
 
     if image:
@@ -3316,19 +3315,24 @@ async def confirm_order(message: Message):
 
 
 
+
+
 @router.callback_query(F.data.startswith("qty_action:"))
 async def quantity_inline_action(callback: CallbackQuery):
     uid = callback.from_user.id
-    data = users.get(uid)
-
-    if not data or data.get("step") not in {"qty", "qty_manual"} or not data.get("selected_product"):
-        await callback.answer("אין מוצר פעיל לבחירת כמות.", show_alert=True)
-        return
-
+    data = users.setdefault(uid, {"cart": []})
     action = (callback.data or "").split(":", 1)[1]
 
+    # חזרה למוצרים עובדת תמיד, גם אם המוצר כבר לא פעיל או שה-step השתנה.
     if action == "back_products":
-        category = data.get("current_category") or data.get("category") or (data.get("selected_product") or {}).get("category")
+        product_for_category = data.get("selected_product") or data.get("current_product") or {}
+        category = (
+            data.get("current_category")
+            or data.get("category")
+            or product_for_category.get("category")
+            or product_for_category.get("category_name")
+        )
+
         data["step"] = "product_select"
         data.pop("selected_product", None)
         data.pop("current_product", None)
@@ -3343,14 +3347,19 @@ async def quantity_inline_action(callback: CallbackQuery):
         proxy = CustomerCallbackMessage(callback, "⬅️ חזרה למוצרים")
         await send_temp_message(
             proxy,
-            rtl(f"<b>📂 {h(category or 'קטגוריה')}</b>\n\nבחר מוצר:"),
+            rtl(f"<b>📂 {h(category or 'מוצרים')}</b>\n\nבחר מוצר:"),
             reply_markup=products_keyboard(category),
             parse_mode="HTML"
         )
         await callback.answer()
         return
 
-    product = data.get("selected_product")
+    product = data.get("selected_product") or data.get("current_product")
+
+    if not product:
+        await callback.answer("אין מוצר פעיל.", show_alert=True)
+        return
+
     fresh_product = get_product_by_name(product["name"])
 
     if not fresh_product or int(fresh_product.get("active", 0)) != 1:
@@ -3362,18 +3371,15 @@ async def quantity_inline_action(callback: CallbackQuery):
         return
 
     product.update(fresh_product)
+    data["selected_product"] = product
     data["current_product"] = product
 
-    max_qty = int(fresh_product.get("max_qty", 100))
-    stock = int(fresh_product.get("stock", 0))
-    already_in_cart = product_qty_in_cart(data["cart"], product["name"])
+    max_qty = int(fresh_product.get("max_qty", 100) or 100)
+    stock = int(fresh_product.get("stock", 0) or 0)
+    already_in_cart = product_qty_in_cart(data.setdefault("cart", []), product["name"])
     available_left = stock - already_in_cart
 
     if available_left <= 0:
-        data["step"] = None
-        data.pop("selected_product", None)
-        data.pop("current_product", None)
-        data.pop("selected_qty", None)
         await callback.answer("כל המלאי הזמין כבר בסל.", show_alert=True)
         return
 
@@ -3384,31 +3390,27 @@ async def quantity_inline_action(callback: CallbackQuery):
         selected_qty = max_allowed_now
         data["selected_qty"] = selected_qty
 
-    async def refresh_product_caption(qty: int):
-        stock_text = "<b>🟢 במלאי</b>" if int(product.get("stock", 0) or 0) > 0 else "<b>🔴 אזל מהמלאי</b>"
-
-        caption = rtl(
-            f"<b>🛍️ {h(product['name'])}</b>\n\n"
-            f"{h(product.get('description', ''))}\n\n"
-            f"<b>מחיר:</b> {money(float(product['price']) * qty)}\n\n"
-            f"{stock_text}\n\n"
-            f"<b>כמות נבחרת:</b> {qty}\n"
-            "בחר כמות ואז לחץ על 🛒 הוסף לסל."
-        )
-
+    async def refresh_product(qty: int):
         try:
             await callback.message.edit_caption(
-                caption=caption,
+                caption=product_caption_text(product, qty),
                 reply_markup=quantity_inline_keyboard(qty),
                 parse_mode="HTML"
             )
         except Exception:
             try:
-                await callback.message.edit_reply_markup(
-                    reply_markup=quantity_inline_keyboard(qty)
+                await callback.message.edit_text(
+                    product_caption_text(product, qty),
+                    reply_markup=quantity_inline_keyboard(qty),
+                    parse_mode="HTML"
                 )
             except Exception:
-                pass
+                try:
+                    await callback.message.edit_reply_markup(
+                        reply_markup=quantity_inline_keyboard(qty)
+                    )
+                except Exception:
+                    pass
 
     if action == "plus":
         requested_qty = selected_qty + 1
@@ -3427,27 +3429,21 @@ async def quantity_inline_action(callback: CallbackQuery):
         data["selected_qty"] = selected_qty
         data["step"] = "qty"
 
-        await refresh_product_caption(selected_qty)
+        await refresh_product(selected_qty)
         await callback.answer()
         return
 
     if action == "minus":
-        if selected_qty > 1:
-            selected_qty -= 1
-
+        selected_qty = max(1, selected_qty - 1)
         data["selected_qty"] = selected_qty
         data["step"] = "qty"
 
-        await refresh_product_caption(selected_qty)
+        await refresh_product(selected_qty)
         await callback.answer()
         return
 
     if action == "manual":
-        if data.get("qty_manual_lock"):
-            await callback.answer()
-            return
-
-        if data.get("step") == "qty_manual":
+        if data.get("qty_manual_lock") or data.get("step") == "qty_manual":
             await callback.answer()
             return
 
@@ -3485,7 +3481,7 @@ async def quantity_inline_action(callback: CallbackQuery):
         return
 
     if action == "add":
-        qty = selected_qty
+        qty = int(data.get("selected_qty", selected_qty) or 1)
 
         if qty <= 0:
             await callback.answer("הכמות חייבת להיות גדולה מ־0.", show_alert=True)
@@ -3502,7 +3498,7 @@ async def quantity_inline_action(callback: CallbackQuery):
             await callback.answer("לא ניתן לבחור כמות מעבר למלאי הזמין.", show_alert=True)
             return
 
-        data["cart"].append({
+        data.setdefault("cart", []).append({
             "name": fresh_product["name"],
             "price": float(fresh_product["price"]),
             "qty": qty
