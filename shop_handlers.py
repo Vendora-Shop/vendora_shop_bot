@@ -3861,6 +3861,7 @@ async def handle_shop(message: Message):
 
         await force_close_phone_keyboard(message)
 
+        data["current_product"] = product
         await send_product_card(message, product)
 
         data["selected_product"] = product
@@ -3868,20 +3869,7 @@ async def handle_shop(message: Message):
 
         data["selected_qty"] = 1
 
-        await send_temp_message(
-            message,
-            rtl(
-                "<b>🔢 בחירת כמות</b>\n\n"
-                f"{field('כמות נבחרת', data['selected_qty'])}\n\n"
-                "בחר את הכמות הרצויה להזמנה.\n"
-                "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
-                "רק לאחר בחירת הכמות ולחיצה על 🛒 הוסף לסל,\n"
-                "המוצרים יתווספו לסל ותוכל להמשיך למשלוח או לאיסוף."
-            ),
-            reply_markup=quantity_inline_keyboard(data["selected_qty"]),
-            parse_mode="HTML",
-            clear_previous=False
-        )
+        pass  # OLD_QUANTITY_SCREEN_REMOVED_TOP_PRODUCT_HAS_BUTTONS
         return
 
     if not data:
@@ -5362,3 +5350,60 @@ async def handle_shop(message: Message):
     if data and not is_free_text_step_for_customer(data.get("step")):
         await delete_customer_message(message)
         return
+
+
+@router.message()
+async def handle_customer_free_text(message: Message):
+    data = users.setdefault(message.from_user.id, {"cart": []})
+
+    if data.get("waiting_for_qty"):
+        value = (message.text or "").strip()
+
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        if not value.isdigit():
+            await send_temp_message(
+                message,
+                rtl("<b>⚠️ רשום את הכמות במספרים בלבד.</b>"),
+                parse_mode="HTML",
+                clear_previous=False
+            )
+            return
+
+        qty = int(value)
+        if qty <= 0:
+            await send_temp_message(
+                message,
+                rtl("<b>⚠️ הכמות חייבת להיות גדולה מ־0.</b>"),
+                parse_mode="HTML",
+                clear_previous=False
+            )
+            return
+
+        data["selected_qty"] = qty
+        data["waiting_for_qty"] = False
+
+        product = data.get("current_product")
+        if product:
+            stock = int(product.get("stock", 0))
+            stock_text = "<b>🟢 במלאי</b>" if stock > 0 else "<b>🔴 אזל מהמלאי</b>"
+            caption = rtl(
+                f"<b>🛍️ {h(product['name'])}</b>\\n\\n"
+                f"{h(product.get('description', ''))}\\n\\n"
+                f"<b>מחיר:</b> {money(product['price'])}\\n\\n"
+                f"{stock_text}\\n\\n"
+                f"<b>כמות נבחרת:</b> {qty}\\n"
+                "בחר כמות ואז לחץ על 🛒 הוסף לסל."
+            )
+            # לא שולחים מסך חדש כדי לא להכפיל חלונות.
+            await send_temp_message(
+                message,
+                rtl(f"✅ הכמות עודכנה ל־{qty}."),
+                parse_mode="HTML",
+                clear_previous=False
+            )
+        return
+
