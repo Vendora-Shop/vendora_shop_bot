@@ -1319,6 +1319,10 @@ def format_order(order):
 
 
 
+def admin_wide_text(text):
+    return text + "\n\n" + (" " * 90)
+
+
 @router.callback_query(F.data.startswith("order_action:"))
 async def order_notification_action(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
@@ -1616,7 +1620,7 @@ async def exit_admin(message: Message):
     admin_states.pop(message.from_user.id, None)
 
     await message.answer(
-        rtl("<b>✅ יצאת מפאנל הניהול.</b>"),
+        admin_wide_text(rtl("<b>✅ יצאת מפאנל הניהול.</b>\n\nבחר פעולה מהתפריט:")),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
