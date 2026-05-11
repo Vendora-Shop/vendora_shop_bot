@@ -1377,9 +1377,9 @@ def saved_profile_text(profile):
 
 
 async def send_product_card(message: Message, product):
-    # PRODUCT_NO_PHOTO_WIDTH_TEST
-    # גרסת בדיקה בלבד:
-    # לא שולחים תמונת מוצר בכלל, כדי לבדוק אם חלון פרטי המוצר נפתח לרוחב מלא כמו בחירת כמות.
+    # PRODUCT_PHOTO_PLUS_WIDE_DETAILS_FIX
+    # תמונה חוזרת מעל פרטי המוצר.
+    # פרטי המוצר נשארים כהודעת טקסט רחבה כמו בגרסה שעבדה.
     stock = int(product.get("stock", 0))
 
     if stock <= 0:
@@ -1387,20 +1387,30 @@ async def send_product_card(message: Message, product):
     else:
         stock_text = "<b>🟢 במלאי</b>"
 
-    # PRODUCT_DETAILS_WIDE_TEXT_FIX
-    # הרחבת פרטי מוצר גם כשההודעה נשלחת בלי InlineKeyboard.
-    text = widen_inline_screen_text(rtl(
+    details_text = widen_inline_screen_text(rtl(
         f"<b>🛍️ {h(product['name'])}</b>\n\n"
         f"{h(product.get('description', ''))}\n\n"
         f"<b>מחיר:</b> {money(product['price'])}\n\n"
         f"{stock_text}"
     ))
 
+    image = product.get("image_file_id")
+
+    if image:
+        await send_temp_photo(
+            message,
+            photo=image,
+            caption=None,
+            reply_markup=ReplyKeyboardRemove(),
+            parse_mode="HTML"
+        )
+
     await send_temp_message(
         message,
-        text,
+        details_text,
         reply_markup=ReplyKeyboardRemove(),
-        parse_mode="HTML"
+        parse_mode="HTML",
+        clear_previous=False
     )
 
 
