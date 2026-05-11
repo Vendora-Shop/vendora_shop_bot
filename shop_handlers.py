@@ -3420,7 +3420,7 @@ async def quantity_inline_action(callback: CallbackQuery):
                 "בחר את הכמות הרצויה להזמנה.\n"
                 "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
                 "רק לאחר בחירת הכמות ולחיצה על 🛒 הוסף לסל,\n"
-                "המוצרים יתווספו לסל ותוכל להמשיך."
+                "המוצרים יתווספו לסל ותוכל להמשיך למשלוח או לאיסוף."
             )),
             reply_markup=quantity_inline_keyboard(selected_qty),
             parse_mode="HTML"
