@@ -3315,232 +3315,105 @@ async def confirm_order(message: Message):
 
 
 
+
 @router.callback_query(F.data.startswith("qty_action:"))
-async def quantity_inline_action(callback: CallbackQuery):
-    uid = callback.from_user.id
-    data = users.get(uid)
+async def handle_qty_actions(callback: CallbackQuery):
+    data = users.setdefault(callback.from_user.id, {"cart": []})
 
-    if not data or data.get("step") not in {"qty", "qty_manual"} or not data.get("selected_product"):
-        await callback.answer("אין מוצר פעיל לבחירת כמות.", show_alert=True)
+    product = data.get("current_product")
+    if not product:
+        await callback.answer("המוצר לא נמצא", show_alert=False)
         return
 
-    data["step"] = "qty"
-
-    action = (callback.data or "").split(":", 1)[1]
-
-    if action == "back_products":
-        category = data.get("current_category") or data.get("category") or (data.get("selected_product") or {}).get("category")
-        data["step"] = "product_select"
-        data.pop("selected_product", None)
-        data.pop("selected_qty", None)
-        data.pop("qty_manual_message_id", None)
-        data.pop("qty_manual_lock", None)
-
-        products = get_active_products().get(category, [])
-
-        await delete_temp_bot_messages(callback.message.bot, uid)
-
-        proxy = CustomerCallbackMessage(callback, "⬅️ חזרה למוצרים")
-        await send_temp_message(
-            proxy,
-            rtl(f"<b>📂 {h(category or 'קטגוריה')}</b>\n\nבחר מוצר:"),
-            reply_markup=products_keyboard(category),
-            parse_mode="HTML"
-        )
-        await callback.answer()
-        return
-
-    if action == "cancel":
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
-
-        # מנקים קודם את מצב ההזמנה, ואז שולחים תפריט חדש שנשמר כמסך פעיל.
-        users.pop(uid, None)
-
-        await reset_callback_customer_to_main_menu(
-            callback,
-            "<b>❌ ההזמנה בוטלה על ידי החנות.</b>\n\nלפרטים נוספים ניתן לפנות לשירות לקוחות."
-        )
-
-        await callback.answer()
-        return
-
-    product = data.get("selected_product")
-
-    fresh_product = get_product_by_name(product["name"])
-    if not fresh_product or int(fresh_product.get("active", 0)) != 1:
-        data["step"] = None
-        data.pop("selected_product", None)
-        data.pop("selected_qty", None)
-        await callback.answer("המוצר לא זמין כרגע.", show_alert=True)
-        return
-
-    product.update(fresh_product)
-
-    max_qty = int(fresh_product.get("max_qty", 100))
-    stock = int(fresh_product.get("stock", 0))
-    already_in_cart = product_qty_in_cart(data["cart"], product["name"])
-    available_left = stock - already_in_cart
     selected_qty = int(data.get("selected_qty", 1))
-
-    if available_left <= 0:
-        data["step"] = None
-        data.pop("selected_product", None)
-        data.pop("selected_qty", None)
-        await callback.message.answer(
-            widen_inline_screen_text(rtl("<b>📦 כל המלאי הזמין של המוצר כבר נמצא אצלך בסל.</b>")),
-            reply_markup=cart_keyboard(),
-            parse_mode="HTML"
-        )
-        await callback.answer()
-        return
-
-    max_allowed_now = min(available_left, max_qty)
-
-    if selected_qty > max_allowed_now:
-        selected_qty = max_allowed_now
-        data["selected_qty"] = selected_qty
+    action = callback.data.split(":")[1]
 
     if action == "plus":
-        requested_qty = selected_qty + 1
-
-        if requested_qty > max_allowed_now:
-            if max_qty <= available_left and selected_qty >= max_qty:
-                await callback.message.answer(
-                    large_quantity_contact_text(max_qty),
-                    parse_mode="HTML"
-                )
-            else:
-                await callback.answer("לא ניתן לבחור כמות מעבר למלאי הזמין.", show_alert=True)
-            return
-
-        selected_qty = requested_qty
+        selected_qty += 1
         data["selected_qty"] = selected_qty
 
-        await callback.message.edit_text(
-            widen_inline_screen_text(rtl(
-                "<b>🔢 בחירת כמות</b>\n\n"
-                f"{field('כמות נבחרת', selected_qty)}\n\n"
-                "בחר את הכמות הרצויה להזמנה.\n"
-                "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
-                "רק לאחר בחירת הכמות ולחיצה על 🛒 הוסף לסל,\n"
-                "המוצרים יתווספו לסל ותוכל להמשיך למשלוח או לאיסוף."
-            )),
-            reply_markup=quantity_inline_keyboard(selected_qty),
-            parse_mode="HTML"
-        )
-        await callback.answer()
-        return
-
-    if action == "minus":
+    elif action == "minus":
         if selected_qty > 1:
             selected_qty -= 1
-
         data["selected_qty"] = selected_qty
 
-        await callback.message.edit_text(
-            widen_inline_screen_text(rtl(
-                "<b>🔢 בחירת כמות</b>\n\n"
-                f"{field('כמות נבחרת', selected_qty)}\n\n"
-                "בחר את הכמות הרצויה להזמנה.\n"
-                "אפשר לשנות את הכמות באמצעות ➖ פחות או ➕ יותר.\n"
-                "רק לאחר בחירת הכמות ולחיצה על 🛒 הוסף לסל,\n"
-                "המוצרים יתווספו לסל ותוכל להמשיך למשלוח או לאיסוף."
-            )),
-            reply_markup=quantity_inline_keyboard(selected_qty),
+    elif action == "manual":
+        data["waiting_for_qty"] = True
+
+        await callback.message.answer(
+            rtl("<b>✏️ הזנת כמות</b>\n\nרשום את הכמות הרצויה במספרים בלבד."),
             parse_mode="HTML"
         )
-        await callback.answer()
-        return
-
-    if action == "manual":
-        if data.get("qty_manual_lock"):
-            await callback.answer()
-            return
-
-        data["qty_manual_lock"] = True
-
-        if data.get("step") == "qty_manual":
-            data["qty_manual_lock"] = False
-            await callback.answer()
-            return
-
-        data["step"] = "qty_manual"
-        data["qty_manual_invalid_warned"] = False
-
-        old_warning_message_id = data.pop("qty_manual_warning_message_id", None)
-        if old_warning_message_id:
-            try:
-                await callback.message.bot.delete_message(uid, old_warning_message_id)
-            except Exception:
-                pass
-
-        old_manual_message_id = data.get("qty_manual_message_id")
-        if old_manual_message_id:
-            try:
-                await callback.message.bot.delete_message(uid, old_manual_message_id)
-            except Exception:
-                pass
-
-        sent = await callback.message.answer(
-            rtl(
-                "<b>✏️ הזנת כמות</b>\n\n"
-                "רשום את הכמות הרצויה במספרים בלבד."
-            ),
-            reply_markup=ReplyKeyboardRemove(),
-            parse_mode="HTML"
-        )
-
-        data["qty_manual_message_id"] = sent.message_id
-        data["qty_manual_lock"] = False
 
         await callback.answer()
         return
 
-    if action == "add":
-        qty = selected_qty
+    elif action == "add":
+        qty = int(data.get("selected_qty", 1))
 
-        if qty <= 0:
-            await callback.answer("הכמות חייבת להיות גדולה מ־0.", show_alert=True)
-            return
+        cart = data.setdefault("cart", [])
 
-        if qty > max_qty:
-            await callback.message.answer(
-                large_quantity_contact_text(max_qty),
-                parse_mode="HTML"
-            )
-            return
-
-        if qty > available_left:
-            await callback.answer("לא ניתן לבחור כמות מעבר למלאי הזמין.", show_alert=True)
-            return
-
-        data["cart"].append({
-            "name": fresh_product["name"],
-            "price": float(fresh_product["price"]),
-            "qty": qty
-        })
-
-        data["step"] = None
-        data.pop("selected_product", None)
-        data.pop("selected_qty", None)
-
-        await delete_temp_bot_messages(callback.message.bot, uid)
-
-        sent = await callback.message.answer(
-            widen_inline_screen_text(cart_text(data["cart"], title="✅ נוסף לסל")),
-            reply_markup=cart_keyboard(),
-            parse_mode="HTML"
+        existing = next(
+            (item for item in cart if item["id"] == product["id"]),
+            None
         )
-        users.setdefault(uid, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
 
-        await callback.answer("המוצר נוסף לסל.")
+        if existing:
+            existing["quantity"] += qty
+        else:
+            cart.append({
+                "id": product["id"],
+                "name": product["name"],
+                "price": product["price"],
+                "quantity": qty
+            })
+
+        await callback.answer("🛒 המוצר נוסף לסל")
         return
 
-    await callback.answer("פעולה לא תקינה.", show_alert=True)
+    stock = int(product.get("stock", 0))
+    stock_text = "🟢 במלאי" if stock > 0 else "🔴 אזל מהמלאי"
 
+    caption = rtl(
+        f"<b>🛍️ {h(product['name'])}</b>\n\n"
+        f"{h(product.get('description', ''))}\n\n"
+        f"<b>מחיר:</b> ₪{product['price']}\n\n"
+        f"{stock_text}\n\n"
+        f"<b>כמות נבחרת:</b> {selected_qty}\n"
+        "בחר כמות ואז לחץ על 🛒 הוסף לסל."
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="➖", callback_data="qty_action:minus"),
+                InlineKeyboardButton(text=f"כמות: {selected_qty}", callback_data="qty_action:manual"),
+                InlineKeyboardButton(text="➕", callback_data="qty_action:plus"),
+            ],
+            [
+                InlineKeyboardButton(text="🛒 הוסף לסל", callback_data="qty_action:add")
+            ],
+            [
+                InlineKeyboardButton(text="↩️ מוצרים", callback_data="back_to_products")
+            ]
+        ]
+    )
+
+    media = InputMediaPhoto(
+        media=FSInputFile(product["image"]),
+        caption=caption,
+        parse_mode="HTML"
+    )
+
+    try:
+        await callback.message.edit_media(
+            media=media,
+            reply_markup=keyboard
+        )
+    except Exception:
+        pass
+
+    await callback.answer()
 
 @router.message(F.text == "📞 שירות לקוחות")
 async def support(message: Message):
