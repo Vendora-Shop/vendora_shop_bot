@@ -1,8 +1,11 @@
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 from html import escape
 import asyncio
+import io
+import os
+from PIL import Image
 
 from config import ADMIN_ID
 from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard, support_subject_keyboard
@@ -397,6 +400,68 @@ RTL = "\u200F"
 # שורת רווחים בלתי נראית שמרחיבה את בועת ההודעה בטלגרם כאשר יש Inline Keyboard.
 # לא משנה טקסטים קיימים ולא מוצגת כטקסט רגיל ללקוח.
 UI_WIDE_LINE = "\u00A0" * 85
+
+
+# ================== PRODUCT IMAGE WIDTH NORMALIZER ==================
+PRODUCT_IMAGE_TARGET_W = 1600
+PRODUCT_IMAGE_TARGET_H = 900
+PRODUCT_IMAGE_BG = (255, 255, 255)
+
+
+def normalize_product_image_bytes(raw_bytes, target_w=PRODUCT_IMAGE_TARGET_W, target_h=PRODUCT_IMAGE_TARGET_H):
+    """
+    PRODUCT_IMAGE_GLOBAL_WIDE_NORMALIZER
+    יוצר תמונת מוצר רחבה ביחס 16:9 לכל מכשיר.
+    לא מותח את התמונה, אלא מתאים אותה לקנבס רחב עם רקע לבן.
+    """
+    src_img = Image.open(io.BytesIO(raw_bytes)).convert("RGBA")
+
+    bg = Image.new("RGBA", src_img.size, PRODUCT_IMAGE_BG + (255,))
+    bg.alpha_composite(src_img)
+    src_img = bg.convert("RGB")
+
+    target_ratio = target_w / target_h
+    src_ratio = src_img.width / src_img.height
+
+    if src_ratio > target_ratio:
+        new_w = target_w
+        new_h = max(1, int(target_w / src_ratio))
+    else:
+        new_h = target_h
+        new_w = max(1, int(target_h * src_ratio))
+
+    resized = src_img.resize((new_w, new_h), Image.LANCZOS)
+
+    canvas = Image.new("RGB", (target_w, target_h), PRODUCT_IMAGE_BG)
+    x = (target_w - new_w) // 2
+    y = (target_h - new_h) // 2
+    canvas.paste(resized, (x, y))
+
+    output = io.BytesIO()
+    canvas.save(output, format="PNG", optimize=True)
+    output.seek(0)
+    return output.getvalue()
+
+
+async def build_wide_product_photo(bot, image_file_id):
+    """
+    מוריד תמונת מוצר לפי Telegram file_id ומחזיר BufferedInputFile רחב.
+    אם יש שגיאה — מחזיר None, כדי שהבוט ישלח את המקור ולא יישבר.
+    """
+    try:
+        buffer = io.BytesIO()
+        await bot.download(image_file_id, destination=buffer)
+        raw = buffer.getvalue()
+
+        if not raw:
+            return None
+
+        wide_bytes = normalize_product_image_bytes(raw)
+        return BufferedInputFile(wide_bytes, filename="vendora_product_wide.png")
+    except Exception as e:
+        print(f"PRODUCT_IMAGE_NORMALIZE_ERROR: {type(e).__name__}: {e}")
+        return None
+
 
 
 def widen_inline_screen_text(text):
@@ -1377,9 +1442,9 @@ def saved_profile_text(profile):
 
 
 async def send_product_card(message: Message, product):
-    # PRODUCT_CARD_NORMAL_PHOTO_CAPTION_RESTORE
-    # מחזיר את תצוגת המוצר למצב התקין:
-    # תמונה + טקסט יחד באותה הודעה, בלי הקטנת הטקסט ובלי הפרדה שצמצמה את התמונה באייפון.
+    # PRODUCT_IMAGE_GLOBAL_WIDE_APPLIED
+    # תמונת מוצר עוברת נרמול אוטומטי ליחס רחב 16:9 לפני שליחה.
+    # אם הנרמול נכשל, נשלחת התמונה המקורית כדי לא לשבור את פתיחת המוצר.
     stock = int(product.get("stock", 0))
 
     if stock <= 0:
@@ -1397,9 +1462,11 @@ async def send_product_card(message: Message, product):
     image = product.get("image_file_id")
 
     if image:
+        wide_image = await build_wide_product_photo(message.bot, image)
+
         await send_temp_photo(
             message,
-            photo=image,
+            photo=wide_image or image,
             caption=caption,
             reply_markup=ReplyKeyboardRemove(),
             parse_mode="HTML"
