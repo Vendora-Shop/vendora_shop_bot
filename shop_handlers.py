@@ -1,8 +1,12 @@
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 from html import escape
 import asyncio
+import os
+import textwrap
+from pathlib import Path
+from PIL import Image, ImageDraw, ImageFont
 
 from config import ADMIN_ID
 from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard, support_subject_keyboard
@@ -837,6 +841,193 @@ def field(label, value):
 
 
 
+# ================== PRODUCT DYNAMIC IMAGE CARD ==================
+PRODUCT_CARD_WIDTH = 1600
+PRODUCT_CARD_HEIGHT = 950
+PRODUCT_CARD_CACHE_DIR = "/tmp/vendora_product_cards"
+
+
+def _load_font(size=48, bold=False):
+    candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf" if bold else "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    ]
+
+    for path in candidates:
+        try:
+            if os.path.exists(path):
+                return ImageFont.truetype(path, size=size)
+        except Exception:
+            pass
+
+    return ImageFont.load_default()
+
+
+def _draw_center(draw, xy, text, font, fill):
+    x1, y1, x2, y2 = xy
+    bbox = draw.textbbox((0, 0), str(text), font=font)
+    w = bbox[2] - bbox[0]
+    h = bbox[3] - bbox[1]
+    draw.text((x1 + (x2 - x1 - w) / 2, y1 + (y2 - y1 - h) / 2), str(text), font=font, fill=fill)
+
+
+def _draw_rtl_text(draw, x_right, y, text, font, fill, line_spacing=12, max_chars=36):
+    lines = []
+    for raw_line in str(text or "").split("\n"):
+        raw_line = raw_line.strip()
+        if not raw_line:
+            lines.append("")
+            continue
+        lines.extend(textwrap.wrap(raw_line, width=max_chars))
+
+    cur_y = y
+    for line in lines[:4]:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        w = bbox[2] - bbox[0]
+        draw.text((x_right - w, cur_y), line, font=font, fill=fill)
+        cur_y += (bbox[3] - bbox[1]) + line_spacing
+
+    return cur_y
+
+
+def _open_product_image_file(product):
+    """
+    מנסה לפתוח תמונת מוצר מקומית אם קיימת.
+    אם image_file_id הוא Telegram file_id — אי אפשר לפתוח אותו כקובץ מקומי,
+    ולכן נבנה כרטיס עם עיצוב מוצר מקצועי בלי הטמעת התמונה המקורית.
+    """
+    for key in ["image_path", "photo_path", "local_image_path", "image"]:
+        value = product.get(key)
+        if not value:
+            continue
+        try:
+            p = Path(str(value))
+            if p.exists():
+                return Image.open(p).convert("RGBA")
+        except Exception:
+            pass
+
+    return None
+
+
+def create_product_card_png(product, selected_qty=1):
+    """
+    PRODUCT_FULL_WIDTH_IMAGE_CARD_GENERATOR
+    יוצר PNG רחב אחד: תמונת מוצר/עיצוב + שם + תיאור + מחיר + מלאי + כמות.
+    המטרה: באייפון Telegram מציג את זה כבאנר רחב יותר מאשר photo+caption.
+    """
+    os.makedirs(PRODUCT_CARD_CACHE_DIR, exist_ok=True)
+
+    product_name = str(product.get("name") or "מוצר")
+    description = str(product.get("description") or "")
+    price = money(product.get("price") or 0)
+    stock = int(product.get("stock", 0) or 0)
+    in_stock = stock > 0
+
+    safe_name = re.sub(r"[^A-Za-z0-9א-ת_-]+", "_", product_name)[:40]
+    out_path = Path(PRODUCT_CARD_CACHE_DIR) / f"product_card_{safe_name}_{selected_qty}.png"
+
+    W, H = PRODUCT_CARD_WIDTH, PRODUCT_CARD_HEIGHT
+    img = Image.new("RGB", (W, H), (10, 18, 42))
+    draw = ImageDraw.Draw(img)
+
+    # Gradient background
+    for y in range(H):
+        t = y / H
+        r = int(8 + 55 * t)
+        g = int(18 + 15 * t)
+        b = int(48 + 85 * t)
+        draw.line([(0, y), (W, y)], fill=(r, g, b))
+
+    for x in range(W):
+        t = x / W
+        overlay = int(50 * t)
+        draw.line([(x, 0), (x, H)], fill=(max(0, 10 + overlay), 18, min(160, 50 + overlay)))
+
+    # Card rounded background bottom panel
+    panel_y = 610
+    draw.rounded_rectangle((40, panel_y, W - 40, H - 40), radius=42, fill=(250, 250, 255), outline=(220, 220, 245), width=3)
+
+    # Product image / placeholder area
+    product_img = _open_product_image_file(product)
+    if product_img:
+        box = (620, 80, W - 70, 575)
+        bw = box[2] - box[0]
+        bh = box[3] - box[1]
+        product_img.thumbnail((bw, bh), Image.LANCZOS)
+        px = box[0] + (bw - product_img.width) // 2
+        py = box[1] + (bh - product_img.height) // 2
+        img.paste(product_img, (px, py), product_img)
+    else:
+        # Professional tablet-like placeholder
+        draw.rounded_rectangle((650, 130, W - 95, 550), radius=35, fill=(8, 13, 34), outline=(35, 45, 75), width=8)
+        draw.rounded_rectangle((685, 165, W - 130, 515), radius=22, fill=(55, 95, 220), outline=(15, 18, 45), width=4)
+        draw.ellipse((900, 110, 1280, 520), fill=(125, 150, 255))
+        draw.ellipse((1120, 180, 1510, 560), fill=(235, 190, 235))
+        draw.line((1180, 520, 1470, 235), fill=(235, 235, 245), width=24)
+        draw.line((1180, 520, 1470, 235), fill=(190, 190, 210), width=4)
+        draw.rounded_rectangle((820, 75, W - 170, 175), radius=25, fill=(70, 75, 95))
+        draw.ellipse((W - 245, 103, W - 205, 143), fill=(15, 15, 20))
+        draw.ellipse((W - 185, 103, W - 145, 143), fill=(15, 15, 20))
+
+    # Fonts
+    f_brand = _load_font(42, True)
+    f_title = _load_font(78, True)
+    f_sub = _load_font(42, True)
+    f_desc = _load_font(34, False)
+    f_price_big = _load_font(88, True)
+    f_price_small = _load_font(30, True)
+    f_label = _load_font(32, True)
+    f_btn = _load_font(44, True)
+    f_qty = _load_font(38, True)
+
+    # Top left text
+    draw.text((55, 55), "SAMSUNG", font=f_brand, fill=(255, 255, 255))
+    draw.text((55, 135), "Galaxy Tab", font=f_title, fill=(255, 255, 255))
+    draw.text((55, 220), "S10 Ultra", font=f_title, fill=(205, 145, 255))
+    draw.rounded_rectangle((55, 330, 185, 390), radius=14, fill=(75, 95, 210))
+    _draw_center(draw, (55, 330, 185, 390), '10.7"', f_sub, (255, 255, 255))
+    draw.text((205, 337), "טאבלט אנדרואיד", font=f_sub, fill=(255, 255, 255))
+
+    # Product name / desc in panel
+    _draw_rtl_text(draw, W - 70, panel_y + 35, product_name, f_title, (10, 18, 42), max_chars=24)
+    _draw_rtl_text(draw, W - 70, panel_y + 135, description, f_desc, (30, 36, 55), max_chars=38)
+
+    # Price box
+    draw.rounded_rectangle((70, panel_y + 45, 410, panel_y + 190), radius=25, fill=(130, 75, 210))
+    draw.text((105, panel_y + 65), "מחיר מיוחד", font=f_price_small, fill=(255, 255, 255))
+    draw.text((150, panel_y + 95), str(price).replace("₪", ""), font=f_price_big, fill=(255, 255, 255))
+    draw.text((95, panel_y + 135), "₪", font=f_sub, fill=(255, 255, 255))
+
+    # Stock
+    stock_text = "במלאי" if in_stock else "אזל"
+    stock_color = (26, 170, 80) if in_stock else (210, 50, 50)
+    draw.text((W - 345, panel_y + 250), "זמינות", font=f_label, fill=(18, 24, 45))
+    draw.text((W - 260, panel_y + 295), stock_text, font=_load_font(48, True), fill=stock_color)
+    draw.ellipse((W - 85, panel_y + 302, W - 35, panel_y + 352), fill=stock_color)
+
+    # Quantity visual area
+    draw.text((W - 350, panel_y + 410), "בחירת כמות", font=f_label, fill=(18, 24, 45))
+    draw.rounded_rectangle((760, panel_y + 385, 1090, panel_y + 475), radius=22, outline=(120, 95, 210), width=4, fill=(255, 255, 255))
+    _draw_center(draw, (760, panel_y + 385, 850, panel_y + 475), "−", f_btn, (20, 25, 45))
+    _draw_center(draw, (850, panel_y + 385, 1000, panel_y + 475), str(selected_qty), f_btn, (20, 25, 45))
+    _draw_center(draw, (1000, panel_y + 385, 1090, panel_y + 475), "+", f_btn, (20, 25, 45))
+    draw.text((W - 310, panel_y + 462), f"כמות נבחרת: {selected_qty}", font=f_qty, fill=(20, 25, 45))
+
+    # Add cart visual button
+    draw.rounded_rectangle((70, panel_y + 350, 610, panel_y + 470), radius=28, fill=(100, 70, 220))
+    _draw_center(draw, (70, panel_y + 350, 610, panel_y + 470), "🛒 הוסף לסל", f_btn, (255, 255, 255))
+
+    # Bottom back visual
+    draw.rounded_rectangle((40, H - 90, W - 40, H - 40), radius=0, fill=(235, 228, 255))
+    _draw_center(draw, (40, H - 90, W - 40, H - 40), "↩ חזרה למוצרים", f_label, (15, 22, 45))
+
+    img.save(out_path, "PNG", optimize=True)
+    return str(out_path)
+
+
+
 def large_quantity_contact_text(max_qty):
     return rtl(
         "<b>⚠️ להזמנות בכמות גדולה יש ליצור קשר עם החנות.</b>\n\n"
@@ -1367,41 +1558,30 @@ def saved_profile_text(profile):
     return rtl(text)
 
 
-async def send_product_card(message: Message, product):
-    # PRODUCT_CARD_NORMAL_PHOTO_CAPTION_RESTORE
-    # מחזיר את תצוגת המוצר למצב התקין:
-    # תמונה + טקסט יחד באותה הודעה, בלי הקטנת הטקסט ובלי הפרדה שצמצמה את התמונה באייפון.
-    stock = int(product.get("stock", 0))
-
-    if stock <= 0:
-        stock_text = "<b>🔴 אזל מהמלאי</b>"
-    else:
-        stock_text = "<b>🟢 במלאי</b>"
-
-    caption = rtl(
-        f"<b>🛍️ {h(product['name'])}</b>\n\n"
-        f"{h(product.get('description', ''))}\n\n"
-        f"<b>מחיר:</b> {money(product['price'])}\n\n"
-        f"{stock_text}"
+def product_quantity_text(product, selected_qty):
+    # PRODUCT_CARD_BUTTON_PANEL_TEXT
+    return rtl(
+        "<b>בחר כמות:</b> "
+        f"<b>{selected_qty}</b>\n"
+        "השתמש בכפתורים למטה כדי לשנות כמות או להוסיף לסל."
     )
 
-    image = product.get("image_file_id")
 
-    if image:
-        await send_temp_photo(
-            message,
-            photo=image,
-            caption=caption,
-            reply_markup=ReplyKeyboardRemove(),
-            parse_mode="HTML"
-        )
-    else:
-        await send_temp_message(
-            message,
-            caption,
-            reply_markup=ReplyKeyboardRemove(),
-            parse_mode="HTML"
-        )
+async def send_product_card(message: Message, product):
+    # PRODUCT_CARD_IMAGE_ONLY_RENDER
+    # שולח כרטיס מוצר רחב שנוצר כ-PNG: תמונה + שם + מחיר + מלאי + כמות בתוך תמונה אחת.
+    data = users.setdefault(message.from_user.id, {"cart": []})
+    selected_qty = int(data.get("selected_qty", 1) or 1)
+
+    card_path = create_product_card_png(product, selected_qty)
+
+    await send_temp_photo(
+        message,
+        photo=FSInputFile(card_path),
+        caption=None,
+        reply_markup=ReplyKeyboardRemove(),
+        parse_mode="HTML"
+    )
 
 
 def set_pickup_details(data):
@@ -3855,6 +4035,7 @@ async def handle_shop(message: Message):
 
         await force_close_phone_keyboard(message)
 
+        data["current_product"] = product
         await send_product_card(message, product)
 
         data["selected_product"] = product
