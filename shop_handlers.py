@@ -942,7 +942,7 @@ def quantity_inline_keyboard(selected_qty):
                 InlineKeyboardButton(text="+", callback_data="qty_action:plus"),
             ],
             [
-                InlineKeyboardButton(text="🧺 הוסף לסל", callback_data="qty_action:add")
+                InlineKeyboardButton(text="🛒 הוסף לסל", callback_data="qty_action:add")
             ],
             [
                 InlineKeyboardButton(text="↩️ מוצרים", callback_data="qty_action:back_products")
