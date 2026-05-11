@@ -396,16 +396,16 @@ users = {}
 RTL = "\u200F"
 # שורת רווחים בלתי נראית שמרחיבה את בועת ההודעה בטלגרם כאשר יש Inline Keyboard.
 # לא משנה טקסטים קיימים ולא מוצגת כטקסט רגיל ללקוח.
-UI_WIDE_LINE = " " * 180 * 140 * 78
+UI_WIDE_LINE = " " * 180
 
 
 def widen_inline_screen_text(text):
     text = str(text or "")
 
-    # רוחב אחיד לכל חלונות הלקוח עם כפתורי Inline.
-    # מוסיף padding בסוף ההודעה כדי שטלגרם יפתח את בועת ההודעה לרוחב תקין.
+    # GLOBAL_SAFE_WIDTH_FIX
+    # הרחבה ויזואלית בלבד. לא מוחק הודעות, לא משנה state ולא נוגע בלוגיקה.
     if UI_WIDE_LINE and UI_WIDE_LINE not in text:
-        return text + "\n\n" + UI_WIDE_LINE
+        return text + "\\n\\n" + UI_WIDE_LINE
 
     return text
 
@@ -467,20 +467,16 @@ async def force_close_phone_keyboard(message: Message):
 
 
 async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None):
-    # CUSTOMER_AUTO_WIDEN_INLINE_FIX_V2
+    # GLOBAL_SAFE_INLINE_WIDTH_APPLIED
+    # תיקון גלובלי בטוח: כל הודעת לקוח עם כפתורי Inline מקבלת רוחב תקין.
+    # אין כאן מחיקה, אין שינוי state, ואין נגיעה ב-temp_bot_messages.
     try:
         if isinstance(reply_markup, InlineKeyboardMarkup):
             text = widen_inline_screen_text(text)
     except Exception:
         pass
 
-    # CUSTOMER_AUTO_WIDEN_INLINE_FIX
-    # כל מסך לקוח עם InlineKeyboardMarkup מקבל רוחב אחיד.
-    try:
-        if isinstance(reply_markup, InlineKeyboardMarkup):
-            text = widen_inline_screen_text(text)
-    except Exception:
-        pass
+
 
     uid = message.from_user.id
 
@@ -2510,12 +2506,13 @@ async def customer_inline_ui_router(callback: CallbackQuery):
 async def start(message: Message):
     uid = message.from_user.id
 
-    # חשוב: קודם מוחקים מסכים קודמים ורק אחר כך מאפסים state.
-    # אם עושים users.pop לפני המחיקה — נאבד את temp_bot_messages ונשארים חלונות ישנים במסך.
-    try:
-        await delete_temp_bot_messages(message.bot, uid)
-    except Exception:
-        pass
+    # מנקה מסכים ישנים לפני פתיחת תפריט חדש בלבד.
+    old_data = users.get(uid)
+    if old_data:
+        try:
+            await delete_temp_bot_messages(message.bot, uid)
+        except Exception:
+            pass
 
     users[uid] = {
         "cart": [],
@@ -2527,19 +2524,21 @@ async def start(message: Message):
 
     await force_close_phone_keyboard(message)
 
-    await send_temp_message(
-        message,
+    sent = await message.answer(
         widen_inline_screen_text(
             rtl(
-                f"<b>👋 ברוך הבא {h(customer_name)}</b>\n\n"
-                "<b>🛍️ Vendora Shop</b>\n"
-                "חנות דיגיטלית חכמה להזמנות, משלוחים ואיסוף עצמי.\n\n"
+                f"<b>👋 ברוך הבא {h(customer_name)}</b>\\n\\n"
+                "<b>🛍️ Vendora Shop</b>\\n"
+                "חנות דיגיטלית חכמה להזמנות, משלוחים ואיסוף עצמי.\\n\\n"
                 "בחר פעולה מהתפריט:"
             )
         ),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
+
+    # רושמים את התפריט החדש רק אחרי שהוא נשלח.
+    users[uid]["temp_bot_messages"] = [sent.message_id]
 
 
 @router.message(Command("menu"))
@@ -3497,7 +3496,7 @@ async def back_to_main_menu(message: Message):
 
     await send_temp_message(
         message,
-        widen_inline_screen_text(rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט:")),
+        widen_inline_screen_text(widen_inline_screen_text(widen_inline_screen_text(rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט:")))),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
