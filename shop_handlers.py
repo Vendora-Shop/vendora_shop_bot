@@ -4782,27 +4782,60 @@ async def handle_shop(message: Message):
         available_left = stock - already_in_cart
 
         if selected_qty <= 0:
-            await message.answer(
+            # QTY_ZERO_DELETE_CUSTOMER_MESSAGE_FIX
+            # גם אם הלקוח רשם 0, מוחקים את הודעת הלקוח ולא משאירים אותה בצ'אט.
+            await delete_customer_message(message)
+
+            old_warning_message_id = data.pop("qty_manual_warning_message_id", None)
+            if old_warning_message_id:
+                try:
+                    await message.bot.delete_message(uid, old_warning_message_id)
+                except Exception:
+                    pass
+
+            sent_warning = await message.answer(
                 rtl("<b>⚠️ הכמות חייבת להיות גדולה מ־0.</b>"),
                 reply_markup=ReplyKeyboardRemove(),
                 parse_mode="HTML"
             )
+            data["qty_manual_warning_message_id"] = sent_warning.message_id
+            data["qty_manual_invalid_warned"] = True
             return
 
         if selected_qty > max_qty:
-            await message.answer(
+            await delete_customer_message(message)
+
+            old_warning_message_id = data.pop("qty_manual_warning_message_id", None)
+            if old_warning_message_id:
+                try:
+                    await message.bot.delete_message(uid, old_warning_message_id)
+                except Exception:
+                    pass
+
+            sent_warning = await message.answer(
                 large_quantity_contact_text(max_qty),
                 reply_markup=ReplyKeyboardRemove(),
                 parse_mode="HTML"
             )
+            data["qty_manual_warning_message_id"] = sent_warning.message_id
             return
 
         if selected_qty > available_left:
-            await message.answer(
+            await delete_customer_message(message)
+
+            old_warning_message_id = data.pop("qty_manual_warning_message_id", None)
+            if old_warning_message_id:
+                try:
+                    await message.bot.delete_message(uid, old_warning_message_id)
+                except Exception:
+                    pass
+
+            sent_warning = await message.answer(
                 rtl("<b>⚠️ לא ניתן לבחור כמות מעבר למלאי הזמין.</b>"),
                 reply_markup=ReplyKeyboardRemove(),
                 parse_mode="HTML"
             )
+            data["qty_manual_warning_message_id"] = sent_warning.message_id
             return
 
         old_manual_message_id = data.pop("qty_manual_message_id", None)
