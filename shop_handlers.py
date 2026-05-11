@@ -1,3 +1,4 @@
+from pathlib import Path
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
@@ -543,11 +544,32 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
     return sent
 
 
+def normalize_document_file(file_obj):
+    """
+    מכין קובץ לשליחה כ-Document.
+    מקבל path / Path / FSInputFile ומחזיר אובייקט מתאים לשליחה.
+    """
+    try:
+        if isinstance(file_obj, FSInputFile):
+            return file_obj
+
+        path = getattr(file_obj, "path", None)
+        if path:
+            return FSInputFile(str(path))
+
+        if isinstance(file_obj, (str, Path)):
+            return FSInputFile(str(file_obj))
+    except Exception:
+        pass
+
+    return file_obj
+
+
 async def send_temp_photo(message: Message, photo, caption=None, reply_markup=None, parse_mode="HTML", clear_previous=True):
     """
-    PRODUCT_IMAGE_AS_DOCUMENT_TEST
-    בדיקה: שליחת תמונת מוצר כ-Document במקום Photo.
-    הטקסט של המוצר נשאר רגיל ב-caption כמו שהיה, אבל טלגרם מציג את התמונה כקובץ/Document.
+    PRODUCT_IMAGE_AS_DOCUMENT_TEST_SAFE
+    בדיקה בטוחה: תמונת מוצר נשלחת כ-Document.
+    אם Document נכשל — חוזרים אוטומטית ל-Photo כדי לא לשבור את החנות.
     """
     uid = message.from_user.id
 
@@ -558,11 +580,7 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
         await delete_temp_bot_messages(message.bot, uid)
 
     try:
-        document = photo
-
-        # אם קיבלנו path רגיל, שולחים כ-FSInputFile.
-        if isinstance(photo, (str, Path)):
-            document = FSInputFile(str(photo))
+        document = normalize_document_file(photo)
 
         sent = await message.answer_document(
             document=document,
@@ -571,8 +589,8 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
             parse_mode=parse_mode
         )
     except Exception as e:
-        # fallback כדי לא לשבור את החנות אם Telegram/קובץ לא מתאים כ-document.
         print(f"PRODUCT_IMAGE_AS_DOCUMENT_ERROR: {type(e).__name__}: {e}")
+
         sent = await message.answer_photo(
             photo=photo,
             caption=caption,
@@ -580,10 +598,13 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
             parse_mode=parse_mode
         )
 
-    remember_temp_bot_message(uid, sent)
+    try:
+        remember_temp_bot_message(uid, sent)
+    except Exception:
+        users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
+
     users[uid]["product_photo_message_id"] = sent.message_id
     users[uid]["product_document_message_id"] = sent.message_id
-    users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
 
     return sent
 
@@ -1705,8 +1726,9 @@ class CustomerCallbackMessage:
 
     async def answer_photo(self, *args, **kwargs):
         """
-        PRODUCT_PROXY_IMAGE_AS_DOCUMENT_TEST
-        גם כאשר תמונת מוצר נשלחת דרך Callback proxy — ננסה לשלוח כ-document.
+        PRODUCT_PROXY_IMAGE_AS_DOCUMENT_TEST_SAFE
+        ניסיון לשלוח תמונת מוצר כ-Document גם דרך Callback proxy.
+        אם נכשל — fallback ל-Photo.
         """
         skip_delete = bool(getattr(self, "_skip_inline_auto_delete_once", False))
 
@@ -1718,13 +1740,12 @@ class CustomerCallbackMessage:
 
         try:
             photo = kwargs.pop("photo", None)
+
             if photo is None and args:
                 photo = args[0]
                 args = args[1:]
 
-            document = photo
-            if isinstance(photo, (str, Path)):
-                document = FSInputFile(str(photo))
+            document = normalize_document_file(photo)
 
             sent = await self.message.answer_document(
                 document=document,
@@ -1733,11 +1754,17 @@ class CustomerCallbackMessage:
             )
         except Exception as e:
             print(f"PRODUCT_PROXY_IMAGE_AS_DOCUMENT_ERROR: {type(e).__name__}: {e}")
+
+            # מחזירים את photo לפרמטרים של answer_photo בצורה תקינה.
+            if photo is not None:
+                kwargs["photo"] = photo
+
             sent = await self.message.answer_photo(*args, **kwargs)
 
         try:
             users.setdefault(self.from_user.id, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
             users[self.from_user.id]["product_photo_message_id"] = sent.message_id
+            users[self.from_user.id]["product_document_message_id"] = sent.message_id
         except Exception:
             pass
 
