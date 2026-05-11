@@ -47,12 +47,42 @@ router = Router()
 admin_states = {}
 
 
-# ================== CUSTOMER STATUS MENU BOTTOM FIX ==================
-# בכל עדכון סטטוס ללקוח:
-# 1. שולחים את הודעת הסטטוס
-# 2. שולחים מתחתיה תפריט ראשי
-# כך התפריט תמיד נמצא למטה אחרי עדכון סטטוס.
+# ================== CUSTOMER STATUS MENU BOTTOM FIX V2 ==================
+CUSTOMER_LAST_MENU_BY_ID = {}
+
+
+async def delete_customer_last_menu(bot, customer_telegram_id):
+    old_menu_id = CUSTOMER_LAST_MENU_BY_ID.pop(customer_telegram_id, None)
+
+    if old_menu_id:
+        try:
+            await bot.delete_message(customer_telegram_id, old_menu_id)
+        except Exception:
+            pass
+
+
+async def send_customer_main_menu_bottom(bot, customer_telegram_id):
+    try:
+        sent_menu = await bot.send_message(
+            customer_telegram_id,
+            rtl("<b>🏠 תפריט ראשי</b>"),
+            reply_markup=main_keyboard(customer_telegram_id),
+            parse_mode="HTML"
+        )
+        CUSTOMER_LAST_MENU_BY_ID[customer_telegram_id] = sent_menu.message_id
+        return sent_menu
+    except Exception as e:
+        print(f"CUSTOMER_MENU_BOTTOM_SEND_ERROR: {type(e).__name__}: {e}")
+        return None
+
+
 async def send_customer_status_with_menu(bot, customer_telegram_id, status_text):
+    """
+    STATUS_MENU_DELETE_AND_RESEND_FIX
+    מוחק תפריט ישן, שולח סטטוס חדש, ואז שולח תפריט חדש מתחתיו.
+    """
+    await delete_customer_last_menu(bot, customer_telegram_id)
+
     try:
         await bot.send_message(
             customer_telegram_id,
@@ -63,15 +93,7 @@ async def send_customer_status_with_menu(bot, customer_telegram_id, status_text)
         print(f"CUSTOMER_STATUS_SEND_ERROR: {type(e).__name__}: {e}")
         return
 
-    try:
-        await bot.send_message(
-            customer_telegram_id,
-            rtl("<b>🏠 תפריט ראשי</b>"),
-            reply_markup=main_keyboard(customer_telegram_id),
-            parse_mode="HTML"
-        )
-    except Exception as e:
-        print(f"CUSTOMER_MENU_AFTER_STATUS_ERROR: {type(e).__name__}: {e}")
+    await send_customer_main_menu_bottom(bot, customer_telegram_id)
 
 
 
