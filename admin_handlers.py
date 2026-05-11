@@ -5,6 +5,7 @@ from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardB
 from html import escape
 from datetime import datetime
 import calendar
+import json
 
 from config import ADMIN_ID
 from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard, customers_menu_keyboard, customer_actions_keyboard, customer_select_keyboard, support_tickets_menu_keyboard, support_ticket_actions_keyboard, closed_support_ticket_actions_keyboard, support_ticket_select_keyboard
@@ -47,16 +48,37 @@ router = Router()
 admin_states = {}
 
 
-# ================== CUSTOMER STATUS MENU BOTTOM FIX V2 ==================
-CUSTOMER_LAST_MENU_BY_ID = {}
+# ================== CUSTOMER STATUS MENU BOTTOM FIX V3 ==================
+# שומר ומוחק את תפריט הלקוח האחרון גם אם הוא נשלח מ-shop_handlers.
+CUSTOMER_MENU_STORE_FILE = "customer_menu_messages.json"
+
+
+def load_customer_menu_store():
+    try:
+        if os.path.exists(CUSTOMER_MENU_STORE_FILE):
+            with open(CUSTOMER_MENU_STORE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+
+def save_customer_menu_store(store):
+    try:
+        with open(CUSTOMER_MENU_STORE_FILE, "w", encoding="utf-8") as f:
+            json.dump(store, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"CUSTOMER_MENU_STORE_SAVE_ERROR: {type(e).__name__}: {e}")
 
 
 async def delete_customer_last_menu(bot, customer_telegram_id):
-    old_menu_id = CUSTOMER_LAST_MENU_BY_ID.pop(customer_telegram_id, None)
+    store = load_customer_menu_store()
+    old_menu_id = store.pop(str(customer_telegram_id), None)
+    save_customer_menu_store(store)
 
     if old_menu_id:
         try:
-            await bot.delete_message(customer_telegram_id, old_menu_id)
+            await bot.delete_message(customer_telegram_id, int(old_menu_id))
         except Exception:
             pass
 
@@ -69,7 +91,11 @@ async def send_customer_main_menu_bottom(bot, customer_telegram_id):
             reply_markup=main_keyboard(customer_telegram_id),
             parse_mode="HTML"
         )
-        CUSTOMER_LAST_MENU_BY_ID[customer_telegram_id] = sent_menu.message_id
+
+        store = load_customer_menu_store()
+        store[str(customer_telegram_id)] = int(sent_menu.message_id)
+        save_customer_menu_store(store)
+
         return sent_menu
     except Exception as e:
         print(f"CUSTOMER_MENU_BOTTOM_SEND_ERROR: {type(e).__name__}: {e}")
@@ -78,8 +104,8 @@ async def send_customer_main_menu_bottom(bot, customer_telegram_id):
 
 async def send_customer_status_with_menu(bot, customer_telegram_id, status_text):
     """
-    STATUS_MENU_DELETE_AND_RESEND_FIX
-    מוחק תפריט ישן, שולח סטטוס חדש, ואז שולח תפריט חדש מתחתיו.
+    STATUS_MENU_DELETE_AND_RESEND_FIX_V3
+    מוחק תפריט קודם, שולח סטטוס, ואז שולח תפריט חדש בתחתית.
     """
     await delete_customer_last_menu(bot, customer_telegram_id)
 
@@ -3045,10 +3071,10 @@ async def admin_flow(message: Message):
         client_msg = CLIENT_STATUS_MESSAGE.get(new_status, "סטטוס ההזמנה שלך עודכן.")
 
         try:
-            await message.bot.send_message(
+            await send_customer_status_with_menu(
+                message.bot,
                 order["telegram_id"],
-                rtl(f"{client_msg}\n\n{field('מספר הזמנה', order_number)}"),
-                parse_mode="HTML"
+                f"{client_msg}\n\n{field('מספר הזמנה', order_number)}"
             )
         except Exception:
             pass
@@ -3198,10 +3224,10 @@ async def admin_flow(message: Message):
         client_msg = CLIENT_STATUS_MESSAGE.get(new_status, "סטטוס ההזמנה שלך עודכן.")
 
         try:
-            await message.bot.send_message(
+            await send_customer_status_with_menu(
+                message.bot,
                 order["telegram_id"],
-                rtl(f"{client_msg}\n\n{field('מספר הזמנה', order_number)}"),
-                parse_mode="HTML"
+                f"{client_msg}\n\n{field('מספר הזמנה', order_number)}"
             )
         except Exception:
             pass
