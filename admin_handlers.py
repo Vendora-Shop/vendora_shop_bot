@@ -85,9 +85,14 @@ async def delete_customer_last_menu(bot, customer_telegram_id):
 
 async def send_customer_main_menu_bottom(bot, customer_telegram_id):
     try:
+        menu_text = widen_inline_screen_text(rtl(
+            "<b>🏠 תפריט ראשי</b>\n\n"
+            "בחר פעולה מהתפריט:"
+        ))
+
         sent_menu = await bot.send_message(
             customer_telegram_id,
-            rtl("<b>🏠 תפריט ראשי</b>"),
+            menu_text,
             reply_markup=main_keyboard(customer_telegram_id),
             parse_mode="HTML"
         )
@@ -135,6 +140,15 @@ def support_reply_cancel_keyboard():
 
 
 RTL = "\u200F"
+
+
+def widen_inline_screen_text(text):
+    """
+    מרחיב הודעות עם InlineKeyboard כדי שהכפתורים ייפתחו רחב יותר.
+    """
+    invisible = "\u2063" * 70
+    return f"{text}\n{invisible}"
+
 
 
 # ================== ADMIN SAFE INPUT CLEANUP ==================
