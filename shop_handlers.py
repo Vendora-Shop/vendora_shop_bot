@@ -403,8 +403,8 @@ UI_WIDE_LINE = "\u00A0" * 85
 
 
 # ================== PRODUCT IMAGE WIDTH NORMALIZER ==================
-PRODUCT_IMAGE_TARGET_W = 1600
-PRODUCT_IMAGE_TARGET_H = 900
+PRODUCT_IMAGE_TARGET_W = 2200
+PRODUCT_IMAGE_TARGET_H = 1100
 PRODUCT_IMAGE_BG = (255, 255, 255)
 
 
@@ -423,7 +423,10 @@ def normalize_product_image_bytes(raw_bytes, target_w=PRODUCT_IMAGE_TARGET_W, ta
     target_ratio = target_w / target_h
     src_ratio = src_img.width / src_img.height
 
-    if src_ratio > target_ratio:
+    if src_img.width >= target_w and src_ratio >= 1.6:
+        new_w = src_img.width
+        new_h = src_img.height
+    elif src_ratio > target_ratio:
         new_w = target_w
         new_h = max(1, int(target_w / src_ratio))
     else:
@@ -438,7 +441,7 @@ def normalize_product_image_bytes(raw_bytes, target_w=PRODUCT_IMAGE_TARGET_W, ta
     canvas.paste(resized, (x, y))
 
     output = io.BytesIO()
-    canvas.save(output, format="PNG", optimize=True)
+    canvas.save(output, format="PNG", optimize=True, compress_level=1)
     output.seek(0)
     return output.getvalue()
 
@@ -1462,7 +1465,13 @@ async def send_product_card(message: Message, product):
     image = product.get("image_file_id")
 
     if image:
-        wide_image = await build_wide_product_photo(message.bot, image)
+        try:
+            wide_image = await asyncio.wait_for(
+                build_wide_product_photo(message.bot, image),
+                timeout=3
+            )
+        except Exception:
+            wide_image = None
 
         await send_temp_photo(
             message,
