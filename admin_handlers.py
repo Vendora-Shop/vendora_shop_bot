@@ -48,6 +48,12 @@ router = Router()
 admin_states = {}
 
 
+# ================== VENDORA ADMIN BANNER UI HELPERS ==================
+def vendora_banner_path(name):
+    return os.path.join("images", name)
+
+
+
 # ================== CUSTOMER STATUS MENU BOTTOM FIX V3 ==================
 # שומר ומוחק את תפריט הלקוח האחרון גם אם הוא נשלח מ-shop_handlers.
 CUSTOMER_MENU_STORE_FILE = "customer_menu_messages.json"
@@ -118,17 +124,21 @@ def status_customer_inline_main_keyboard(customer_telegram_id=None):
 
 async def send_customer_main_menu_bottom(bot, customer_telegram_id):
     try:
-        menu_text = widen_inline_screen_text(rtl(
-            "<b>🏠 תפריט ראשי</b>\n\n"
-            "בחר פעולה מהתפריט שלך:"
-        ))
+        banner_path = vendora_banner_path("main_menu_banner.png")
 
-        sent_menu = await bot.send_message(
-            customer_telegram_id,
-            menu_text,
-            reply_markup=status_customer_inline_main_keyboard(customer_telegram_id),
-            parse_mode="HTML"
-        )
+        if os.path.exists(banner_path):
+            sent_menu = await bot.send_photo(
+                customer_telegram_id,
+                photo=FSInputFile(banner_path),
+                reply_markup=status_customer_inline_main_keyboard(customer_telegram_id)
+            )
+        else:
+            sent_menu = await bot.send_message(
+                customer_telegram_id,
+                rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט:"),
+                reply_markup=status_customer_inline_main_keyboard(customer_telegram_id),
+                parse_mode="HTML"
+            )
 
         store = load_customer_menu_store()
         store[str(customer_telegram_id)] = int(sent_menu.message_id)
