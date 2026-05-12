@@ -522,80 +522,57 @@ async def force_close_phone_keyboard(message: Message):
         pass
 
 
+async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None):
+    # GLOBAL_NBSP_INLINE_WIDTH_APPLIED
+    # תיקון גלובלי בטוח: רק מרחיב טקסט של הודעות עם InlineKeyboardMarkup.
+    # אין כאן מחיקה, אין שינוי state, ואין שינוי temp_bot_messages.
+    try:
+        if isinstance(reply_markup, InlineKeyboardMarkup):
+            text = widen_inline_screen_text(text)
+    except Exception:
+        pass
 
 
-# ================== VENDORA AUTO BANNER ROUTER ==================
-def vendora_banner_path(name):
-    return os.path.join("images", name)
 
 
-def detect_vendora_banner(text):
-    """
-    בוחר באנר לפי תוכן המסך.
-    עובד גם על חזרה לתפריט/חנות/שירות לקוחות כי כל השליחות עוברות דרך send_temp_message.
-    """
-    s = str(text or "")
-
-    if "שירות לקוחות" in s or "נושא הפנייה" in s or "בחר את נושא הפנייה" in s or "פנייה לנציג" in s:
-        return "support_banner.png"
-
-    if "הכתובות שלי" in s or "כתובת" in s or "כתובות" in s:
-        return "addresses_banner.png"
-
-    if "הפרטים שלי" in s or "הפרטים השמורים" in s or "פרופיל" in s:
-        return "profile_banner.png"
-
-    if "ההזמנות שלי" in s or "הזמנות שלי" in s or "סטטוס הזמנה" in s or "הזמנה אחרונה" in s:
-        return "orders_banner.png"
-
-    if "תשלום" in s or "סימולציית תשלום" in s or "אמצעי תשלום" in s:
-        return "payment_banner.png"
-
-    if "משלוח" in s or "איסוף" in s or "איך תרצה לקבל" in s:
-        return "tracking_banner.png"
-
-    if "החנות" in s or "קטגוריות" in s or "בחר קטגוריה" in s or "הוספת מוצר" in s or "הסל שלך ריק" in s:
-        return "shop_banner.png"
-
-    if "תפריט ראשי" in s or "בחר פעולה" in s or "חזרת לתפריט" in s or "חזרת לתפריט הראשי" in s:
-        return "main_menu_banner.png"
-
-    return None
-
-
-async def send_banner_or_text(message, text, reply_markup=None, parse_mode="HTML"):
-    banner_name = detect_vendora_banner(text)
-    if banner_name:
-        path = vendora_banner_path(banner_name)
-        if os.path.exists(path):
-            return await message.answer_photo(
-                photo=FSInputFile(path),
-                caption=None,
-                reply_markup=reply_markup
-            )
-
-    return await message.answer(
-        widen_inline_screen_text(text),
-        reply_markup=reply_markup,
-        parse_mode=parse_mode
-    )
-
-async def send_temp_message(message, text, reply_markup=None, parse_mode="HTML", clear_previous=True):
     uid = message.from_user.id
-    users.setdefault(uid, {"cart": []})
-    users[uid].setdefault("temp_bot_messages", [])
+
+    if uid not in users:
+        users[uid] = {"cart": []}
 
     if clear_previous:
         await delete_temp_bot_messages(message.bot, uid)
 
-    sent = await send_banner_or_text(
-        message,
+    kwargs = {
+        "reply_markup": reply_markup,
+        "parse_mode": parse_mode
+    }
+
+    if disable_web_page_preview is not None:
+        kwargs["disable_web_page_preview"] = disable_web_page_preview
+
+    if isinstance(reply_markup, InlineKeyboardMarkup):
+        text = widen_inline_screen_text(text)
+
+    if not clear_previous:
+        try:
+            setattr(message, "_skip_inline_auto_delete_once", True)
+        except Exception:
+            pass
+
+    sent = await message.answer(
         text,
-        reply_markup=reply_markup,
-        parse_mode=parse_mode
+        **kwargs
     )
 
+    try:
+        if not clear_previous:
+            setattr(message, "_skip_inline_auto_delete_once", False)
+    except Exception:
+        pass
+
     users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
+
     return sent
 
 
@@ -660,6 +637,105 @@ async def cleanup_customer_order_screens(bot, uid):
 
 
 
+# ================== VENDORA BANNER UI HELPERS ==================
+def vendora_banner_path(name):
+    return os.path.join("images", name)
+
+
+async def send_banner_photo_message(message, banner_name, fallback_text, reply_markup=None, parse_mode="HTML"):
+    """
+    שולח באנר תמונה עם כפתורי Inline מתחת.
+    אם התמונה לא קיימת בשרת — חוזר להודעת טקסט כדי לא לשבור את הבוט.
+    """
+    path = vendora_banner_path(banner_name)
+    if os.path.exists(path):
+        return await message.answer_photo(
+            photo=FSInputFile(path),
+            caption=None,
+            reply_markup=reply_markup
+        )
+
+    return await message.answer(
+        widen_inline_screen_text(rtl(fallback_text)),
+        reply_markup=reply_markup,
+        parse_mode=parse_mode
+    )
+
+
+async def send_temp_banner_photo_message(message, banner_name, fallback_text, reply_markup=None, parse_mode="HTML"):
+    sent = await send_banner_photo_message(
+        message,
+        banner_name,
+        fallback_text,
+        reply_markup=reply_markup,
+        parse_mode=parse_mode
+    )
+    uid = message.from_user.id
+    users.setdefault(uid, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+    return sent
+
+
+async def send_callback_banner_photo(callback, banner_name, fallback_text, reply_markup=None, parse_mode="HTML"):
+    sent = await send_banner_photo_message(
+        callback.message,
+        banner_name,
+        fallback_text,
+        reply_markup=reply_markup,
+        parse_mode=parse_mode
+    )
+    uid = callback.from_user.id
+    users.setdefault(uid, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+    return sent
+
+
+
+# ================== VENDORA SAFE BANNER HELPERS ==================
+def vendora_banner_path(name):
+    return os.path.join("images", name)
+
+
+async def send_banner_photo_safe(message, banner_name, fallback_text, reply_markup=None, parse_mode="HTML"):
+    """
+    שולח באנר תמונה עם כפתורים מתחת.
+    אם יש בעיה בתמונה — חוזר לטקסט רגיל ולא שובר את הבוט.
+    """
+    path = vendora_banner_path(banner_name)
+
+    if os.path.exists(path):
+        try:
+            return await message.answer_photo(
+                photo=FSInputFile(path),
+                caption=None,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            print(f"BANNER_SEND_ERROR: {type(e).__name__}: {e}")
+
+    return await message.answer(
+        widen_inline_screen_text(rtl(fallback_text)),
+        reply_markup=reply_markup,
+        parse_mode=parse_mode
+    )
+
+
+async def send_temp_banner_photo_safe(message, banner_name, fallback_text, reply_markup=None, parse_mode="HTML", clear_previous=True):
+    uid = message.from_user.id
+    users.setdefault(uid, {"cart": []})
+    users[uid].setdefault("temp_bot_messages", [])
+
+    if clear_previous:
+        await delete_temp_bot_messages(message.bot, uid)
+
+    sent = await send_banner_photo_safe(
+        message,
+        banner_name,
+        fallback_text,
+        reply_markup=reply_markup,
+        parse_mode=parse_mode
+    )
+
+    users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
+    return sent
 
 async def reset_customer_to_main_menu(message, text):
     uid = message.from_user.id
@@ -678,13 +754,15 @@ async def reset_customer_to_main_menu(message, text):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    return await send_temp_message(
+    sent = await send_temp_banner_photo_message(
         message,
-        rtl(text),
+        "main_menu_banner.png",
+        text,
         reply_markup=main_keyboard(uid),
-        parse_mode="HTML",
-        clear_previous=False
+        parse_mode="HTML"
     )
+
+    return sent
 
 
 async def reset_callback_customer_to_main_menu(callback, text):
@@ -704,13 +782,15 @@ async def reset_callback_customer_to_main_menu(callback, text):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    return await send_temp_message(
-        callback.message,
-        rtl(text),
+    sent = await send_callback_banner_photo(
+        callback,
+        "main_menu_banner.png",
+        text,
         reply_markup=main_keyboard(uid),
-        parse_mode="HTML",
-        clear_previous=False
+        parse_mode="HTML"
     )
+
+    return sent
 
 
 def is_button_only_step_for_customer(step):
@@ -2728,10 +2808,8 @@ async def start(message: Message):
         "בחר פעולה:"
     )
 
-    sent = await send_banner_photo_message(
-        message,
-        "main_menu_banner.png",
-        start_text,
+    sent = await message.answer(
+        widen_inline_screen_text(start_text),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
@@ -2757,16 +2835,18 @@ async def my_details(message: Message):
     profile = get_customer_profile(uid)
 
     if not profile:
-        await send_temp_message(
-        message,
-        "<b>👤 הפרטים שלי</b>\n\nאין פרטים שמורים עדיין.",
-        reply_markup=back_only_main_keyboard(),
-        parse_mode="HTML"
-    )
+        await send_temp_banner_photo_message(
+            message,
+            "profile_banner.png",
+            "<b>👤 הפרטים שלי</b>\n\nאין פרטים שמורים עדיין.",
+            reply_markup=back_only_main_keyboard(),
+            parse_mode="HTML"
+        )
         return
 
-    await send_temp_message(
+    await send_temp_banner_photo_message(
         message,
+        "profile_banner.png",
         saved_profile_text(profile),
         reply_markup=back_only_main_keyboard(),
         parse_mode="HTML"
@@ -2795,8 +2875,9 @@ async def shop(message: Message):
         )
         return
 
-    await send_temp_message(
+    await send_temp_banner_photo_message(
         message,
+        "shop_banner.png",
         "<b>🛒 החנות</b>\n\nבחר קטגוריה:",
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
@@ -2853,8 +2934,9 @@ async def back_categories(message: Message):
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
     users[uid]["step"] = "browse_products"
-    await send_temp_message(
+    await send_temp_banner_photo_message(
         message,
+        "shop_banner.png",
         "<b>📂 קטגוריות</b>\n\nבחר קטגוריה:",
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
@@ -2867,8 +2949,9 @@ async def add_more(message: Message):
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
     users[uid]["step"] = "browse_products"
-    await send_temp_message(
+    await send_temp_banner_photo_message(
         message,
+        "shop_banner.png",
         "<b>➕ הוספת מוצר</b>\n\nבחר קטגוריה:",
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
@@ -3001,11 +3084,11 @@ async def checkout(message: Message):
     if not data or not data.get("cart"):
         await delete_temp_bot_messages(message.bot, uid)
         await send_temp_message(
-        message,
-        "<b>🛒 הסל שלך ריק.</b>\n\nקודם בחר מוצר.",
-        reply_markup=categories_keyboard(),
-        parse_mode="HTML"
-    )
+            message,
+            rtl("<b>🛒 הסל שלך ריק.</b>\n\nקודם בחר מוצר."),
+            reply_markup=categories_keyboard(),
+            parse_mode="HTML"
+        )
         return
 
     await delete_temp_bot_messages(message.bot, uid)
@@ -3606,8 +3689,8 @@ async def support(message: Message):
         }
 
         await send_temp_message(
-        message,
-        widen_inline_screen_text(
+            message,
+            widen_inline_screen_text(
                 rtl(
                     "<b>📞 שירות לקוחות</b>\n\n"
                     f"{field('מספר פנייה', existing_ticket['ticket_number'])}\n"
@@ -3615,9 +3698,9 @@ async def support(message: Message):
                     "יש לך פנייה פתוחה. כתוב את ההודעה שלך כאן והיא תועבר לנציג."
                 )
             ),
-        reply_markup=support_customer_keyboard(message.from_user.id),
-        parse_mode="HTML"
-    )
+            reply_markup=support_customer_keyboard(message.from_user.id),
+            parse_mode="HTML"
+        )
         return
 
     users[uid] = {
@@ -3945,12 +4028,13 @@ async def handle_shop(message: Message):
         data["step"] = "addresses_menu"
 
         await delete_temp_bot_messages(message.bot, uid)
-        await send_temp_message(
-        message,
-        "<b>🏠 הכתובות שלי</b>\n\nבחר פעולה מהתפריט.",
-        reply_markup=addresses_menu_keyboard(),
-        parse_mode="HTML"
-    )
+        await send_temp_banner_photo_message(
+            message,
+            "addresses_banner.png",
+            "<b>🏠 הכתובות שלי</b>\n\nבחר פעולה מהתפריט.",
+            reply_markup=addresses_menu_keyboard(),
+            parse_mode="HTML"
+        )
         return
 
     if data.get("step") == "payment_simulation":
