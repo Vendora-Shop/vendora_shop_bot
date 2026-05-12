@@ -48,12 +48,6 @@ router = Router()
 admin_states = {}
 
 
-# ================== VENDORA ADMIN BANNER UI HELPERS ==================
-def vendora_banner_path(name):
-    return os.path.join("images", name)
-
-
-
 # ================== CUSTOMER STATUS MENU BOTTOM FIX V3 ==================
 # שומר ומוחק את תפריט הלקוח האחרון גם אם הוא נשלח מ-shop_handlers.
 CUSTOMER_MENU_STORE_FILE = "customer_menu_messages.json"
@@ -122,6 +116,12 @@ def status_customer_inline_main_keyboard(customer_telegram_id=None):
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
+
+
+# ================== VENDORA ADMIN BANNER UI HELPERS ==================
+def vendora_banner_path(name):
+    return os.path.join("images", name)
+
 async def send_customer_main_menu_bottom(bot, customer_telegram_id):
     try:
         banner_path = vendora_banner_path("main_menu_banner.png")
@@ -189,8 +189,9 @@ def widen_inline_screen_text(text):
     """
     מרחיב הודעות עם InlineKeyboard כדי שהכפתורים ייפתחו רחב יותר.
     """
-    invisible = "\u2063" * 140
+    invisible = "\u2063" * 70
     return f"{text}\n{invisible}"
+
 
 
 # ================== ADMIN SAFE INPUT CLEANUP ==================
