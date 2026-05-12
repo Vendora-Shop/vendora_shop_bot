@@ -1,4 +1,3 @@
-import time
 import os
 import json
 import re
@@ -485,35 +484,23 @@ def remember_temp_bot_message(uid, message_obj):
         pass
 
 
-async def delete_temp_bot_messages(bot, uid):
-    """
-    ניקוי הודעות זמניות — גרסה מהירה.
-    לא נותנת למחיקות ישנות לתקוע פתיחת מסך חדש 20-30 שניות.
-    """
-    data = users.get(uid, {})
-    ids = list(data.get("temp_bot_messages", []) or [])
+async def delete_temp_bot_messages(bot, user_id):
+    data = users.get(user_id)
 
-    if not ids:
+    if not data:
         return
 
-    async def _safe_delete(mid):
+    message_ids = list(data.get("temp_bot_messages", []))
+
+    for message_id in message_ids:
         try:
-            await bot.delete_message(uid, int(mid))
+            await bot.delete_message(user_id, message_id)
         except Exception:
             pass
 
-    try:
-        await asyncio.wait_for(
-            asyncio.gather(*[_safe_delete(mid) for mid in ids[-25:]], return_exceptions=True),
-            timeout=VENDORA_DELETE_TIMEOUT_SECONDS
-        )
-    except Exception:
-        pass
+    data["temp_bot_messages"] = []
 
-    try:
-        users.setdefault(uid, {"cart": []})["temp_bot_messages"] = []
-    except Exception:
-        pass
+
 
 
 async def force_close_phone_keyboard(message: Message):
@@ -544,24 +531,8 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
 
     users[uid].setdefault("temp_bot_messages", [])
 
-    banner_name = detect_vendora_banner_for_text(text)
-
-    # למסכי באנר/ניווט: קודם מציגים מסך חדש מהר.
-    # לא מחכים למחיקת הודעות ישנות לפני שהמשתמש רואה תגובה.
-    should_skip_pre_delete = bool(
-        clear_previous and
-        VENDORA_SKIP_PRE_DELETE_FOR_BANNER_SCREENS and
-        banner_name
-    )
-
-    if clear_previous and not should_skip_pre_delete:
-        try:
-            await asyncio.wait_for(
-                delete_temp_bot_messages(message.bot, uid),
-                timeout=VENDORA_DELETE_TIMEOUT_SECONDS
-            )
-        except Exception:
-            pass
+    if clear_previous:
+        await delete_temp_bot_messages(message.bot, uid)
 
     sent = await send_vendora_banner_if_possible(
         message,
@@ -602,32 +573,6 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
             pass
 
     users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
-
-    # ניקוי אחרי שליחה, עם timeout קצר. לא מעכב פתיחת מסך.
-    if should_skip_pre_delete:
-        old_ids = [mid for mid in users[uid].get("temp_bot_messages", []) if mid != sent.message_id]
-        users[uid]["temp_bot_messages"] = [sent.message_id]
-
-        async def _cleanup_old():
-            async def _safe_delete(mid):
-                try:
-                    await message.bot.delete_message(uid, int(mid))
-                except Exception:
-                    pass
-
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(*[_safe_delete(mid) for mid in old_ids[-25:]], return_exceptions=True),
-                    timeout=VENDORA_DELETE_TIMEOUT_SECONDS
-                )
-            except Exception:
-                pass
-
-        try:
-            asyncio.create_task(_cleanup_old())
-        except Exception:
-            pass
-
     return sent
 
 
@@ -705,10 +650,6 @@ async def cleanup_customer_order_screens(bot, uid):
 VENDORA_BANNER_CACHE_FILE = "vendora_banner_file_ids.json"
 VENDORA_BANNER_CACHE_VERSION = "v3_main_menu_fixed"
 VENDORA_BANNER_FILE_IDS = None
-VENDORA_START_LOCKS = {}
-VENDORA_START_COOLDOWN_SECONDS = 3
-VENDORA_SKIP_PRE_DELETE_FOR_BANNER_SCREENS = True
-VENDORA_DELETE_TIMEOUT_SECONDS = 1.2
 
 
 def vendora_banner_path(name):
@@ -824,18 +765,17 @@ async def send_vendora_banner_if_possible(message, text, reply_markup=None):
 
 async def send_temp_banner_photo_message(message, banner_name, fallback_text, reply_markup=None, parse_mode="HTML", clear_previous=True):
     """
-    שליחת באנר מהירה עם file_id cache.
-    לא מחכה למחיקות לפני שליחת המסך.
+    תאימות לקריאות קיימות בקוד שכבר הוחלפו בעבר.
     """
     uid = message.from_user.id
 
     if uid not in users:
         users[uid] = {"cart": []}
 
-    users[uid].setdefault("temp_bot_messages", [])
+    if clear_previous:
+        await delete_temp_bot_messages(message.bot, uid)
 
-    old_ids = list(users[uid].get("temp_bot_messages", []) or [])
-
+    # נסה file_id לפי שם באנר ישירות
     file_ids = load_vendora_banner_file_ids()
     cache_key = f"{VENDORA_BANNER_CACHE_VERSION}:{banner_name}"
     cached_file_id = file_ids.get(cache_key)
@@ -877,30 +817,7 @@ async def send_temp_banner_photo_message(message, banner_name, fallback_text, re
             parse_mode=parse_mode
         )
 
-    users[uid]["temp_bot_messages"] = [sent.message_id]
-
-    if clear_previous and old_ids:
-        async def _cleanup_old():
-            async def _safe_delete(mid):
-                try:
-                    if int(mid) != int(sent.message_id):
-                        await message.bot.delete_message(uid, int(mid))
-                except Exception:
-                    pass
-
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(*[_safe_delete(mid) for mid in old_ids[-25:]], return_exceptions=True),
-                    timeout=VENDORA_DELETE_TIMEOUT_SECONDS
-                )
-            except Exception:
-                pass
-
-        try:
-            asyncio.create_task(_cleanup_old())
-        except Exception:
-            pass
-
+    users.setdefault(uid, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
     return sent
 
 
@@ -2960,53 +2877,57 @@ async def customer_inline_ui_router(callback: CallbackQuery):
 async def start(message: Message):
     uid = message.from_user.id
 
-    # מונע הצפה: אם המשתמש לוחץ /start כמה פעמים ברצף,
-    # לא פותחים כמה תפריטים ולא מכניסים את Telegram לתור.
-    now = time.time()
-    last_start = VENDORA_START_LOCKS.get(uid, 0)
+    # מנקה מסכים ישנים לפני פתיחת תפריט חדש.
+    old_data = users.get(uid)
+    if old_data:
+        try:
+            await delete_temp_bot_messages(message.bot, uid)
+        except Exception:
+            pass
 
-    if now - last_start < VENDORA_START_COOLDOWN_SECONDS:
-        return
-
-    VENDORA_START_LOCKS[uid] = now
-
+    # מנסה למחוק גם תפריט ראשי קודם שנשמר בקובץ.
     try:
-        # חשוב: לא מוחקים הודעות ישנות לפני שליחת התפריט.
-        # מחיקות רבות לפני send_photo יוצרות דיליי של 30-40 שניות.
-        users[uid] = {
-            "cart": [],
-            "step": "start",
-            "temp_bot_messages": []
-        }
+        store = load_customer_menu_store()
+        old_menu_id = store.get(str(uid))
+        if old_menu_id:
+            try:
+                await message.bot.delete_message(uid, int(old_menu_id))
+            except Exception:
+                pass
+            store.pop(str(uid), None)
+            save_customer_menu_store(store)
+    except Exception:
+        pass
 
-        customer_name = message.from_user.first_name or "לקוח יקר"
+    users[uid] = {
+        "cart": [],
+        "step": "start",
+        "temp_bot_messages": []
+    }
 
-        await force_close_phone_keyboard(message)
+    customer_name = message.from_user.first_name or "לקוח יקר"
 
-        start_text = rtl(
-            f"<b>👋 ברוך הבא {h(customer_name)}</b>\n\n"
-            "<b>🛍️ Vendora Shop</b>\n"
-            "חנות דיגיטלית חכמה להזמנות, משלוחים ואיסוף עצמי.\n\n"
-            "בחר פעולה:"
-        )
+    await force_close_phone_keyboard(message)
 
-        # שולח רק מסך אחד: באנר תפריט ראשי + כפתורים.
-        # אין fallback נוסף אחרי הצלחה, כדי שלא יופיע גם באנר וגם חלון טקסט.
-        sent = await send_temp_banner_photo_message(
-            message,
-            "main_menu_banner.png",
-            start_text,
-            reply_markup=main_keyboard(uid),
-            parse_mode="HTML",
-            clear_previous=False
-        )
+    start_text = rtl(
+        f"<b>👋 ברוך הבא {h(customer_name)}</b>\n\n"
+        "<b>🛍️ Vendora Shop</b>\n"
+        "חנות דיגיטלית חכמה להזמנות, משלוחים ואיסוף עצמי.\n\n"
+        "בחר פעולה:"
+    )
 
-        users[uid]["temp_bot_messages"] = [sent.message_id]
-        remember_customer_main_menu_message(uid, sent.message_id)
+    # שולח רק מסך אחד: באנר תפריט ראשי + כפתורים.
+    sent = await send_temp_banner_photo_message(
+        message,
+        "main_menu_banner.png",
+        start_text,
+        reply_markup=main_keyboard(uid),
+        parse_mode="HTML",
+        clear_previous=False
+    )
 
-    finally:
-        # משאיר cooldown קצר, אבל לא נועל את המשתמש.
-        VENDORA_START_LOCKS[uid] = time.time()
+    users[uid]["temp_bot_messages"] = [sent.message_id]
+    remember_customer_main_menu_message(uid, sent.message_id)
 
 
 @router.message(Command("menu"))
