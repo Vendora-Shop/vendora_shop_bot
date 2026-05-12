@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
@@ -640,25 +641,56 @@ async def cleanup_customer_order_screens(bot, uid):
 
 
 
-# ================== VENDORA BANNER ROUTER SAFE V4 ==================
+
+# ================== VENDORA FAST BANNER CACHE SYSTEM ==================
+# מערכת באנרים אחת נקייה:
+# 1. מנסה לשלוח לפי file_id שמור — הכי מהיר.
+# 2. אם אין file_id — מעלה תמונה פעם אחת ושומר file_id.
+# 3. אם חסרה תמונה/יש שגיאה — חוזר לטקסט רגיל ולא שובר את הבוט.
+VENDORA_BANNER_CACHE_FILE = "vendora_banner_file_ids.json"
+VENDORA_BANNER_FILE_IDS = None
+
+
 def vendora_banner_path(name):
     return os.path.join("images", name)
 
 
+def load_vendora_banner_file_ids():
+    global VENDORA_BANNER_FILE_IDS
+
+    if VENDORA_BANNER_FILE_IDS is not None:
+        return VENDORA_BANNER_FILE_IDS
+
+    try:
+        if os.path.exists(VENDORA_BANNER_CACHE_FILE):
+            with open(VENDORA_BANNER_CACHE_FILE, "r", encoding="utf-8") as f:
+                VENDORA_BANNER_FILE_IDS = json.load(f)
+        else:
+            VENDORA_BANNER_FILE_IDS = {}
+    except Exception:
+        VENDORA_BANNER_FILE_IDS = {}
+
+    return VENDORA_BANNER_FILE_IDS
+
+
+def save_vendora_banner_file_ids():
+    try:
+        with open(VENDORA_BANNER_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(load_vendora_banner_file_ids(), f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"VENDORA_BANNER_CACHE_SAVE_ERROR: {type(e).__name__}: {e}")
+
+
 def detect_vendora_banner_for_text(text):
-    """
-    מחזיר שם באנר לפי תוכן המסך.
-    לא משנה לוגיקה, לא משנה state, לא משנה callbacks.
-    """
     s = str(text or "")
 
     if "שירות לקוחות" in s or "נושא הפנייה" in s or "בחר את נושא הפנייה" in s or "פנייה לנציג" in s or "פנייה פתוחה" in s:
         return "support_banner.png"
 
-    if "הכתובות שלי" in s or "כתובות שמורות" in s or "כתובת" in s or "הוספת כתובת" in s:
+    if "הכתובות שלי" in s or "כתובות שמורות" in s or "הכתובות השמורות" in s or "פרטי כתובת" in s:
         return "addresses_banner.png"
 
-    if "הפרטים שלי" in s or "הפרטים השמורים" in s or "פרטים שמורים" in s or "פרופיל" in s:
+    if "הפרטים שלי" in s or "הפרטים השמורים" in s or "פרטים שמורים" in s or "הפרופיל" in s or "פרופיל" in s:
         return "profile_banner.png"
 
     if "ההזמנות שלי" in s or "הזמנות שלי" in s or "הזמנה חוזרת" in s or "סטטוס הזמנה" in s:
@@ -670,7 +702,7 @@ def detect_vendora_banner_for_text(text):
     if "משלוח" in s or "איסוף" in s or "בחירת משלוח" in s or "איך תרצה לקבל" in s:
         return "tracking_banner.png"
 
-    if "החנות" in s or "קטגוריות" in s or "בחר קטגוריה" in s or "בחר מוצר" in s or "הוספת מוצר" in s or "הסל" in s:
+    if "החנות" in s or "קטגוריות" in s or "בחר קטגוריה" in s or "בחר מוצר" in s or "הוספת מוצר" in s or "הסל שלך ריק" in s:
         return "shop_banner.png"
 
     if "תפריט ראשי" in s or "חזרת לתפריט" in s or "בחר פעולה" in s:
@@ -681,47 +713,98 @@ def detect_vendora_banner_for_text(text):
 
 async def send_vendora_banner_if_possible(message, text, reply_markup=None):
     banner_name = detect_vendora_banner_for_text(text)
+
     if not banner_name:
         return None
 
-    banner_path = vendora_banner_path(banner_name)
-    if not os.path.exists(banner_path):
+    file_ids = load_vendora_banner_file_ids()
+    cached_file_id = file_ids.get(banner_name)
+
+    # Fast path: Telegram file_id cache
+    if cached_file_id:
+        try:
+            return await message.answer_photo(
+                photo=cached_file_id,
+                caption=None,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            print(f"VENDORA_BANNER_FILE_ID_ERROR: {type(e).__name__}: {e}")
+            file_ids.pop(banner_name, None)
+            save_vendora_banner_file_ids()
+
+    # First upload path
+    path = vendora_banner_path(banner_name)
+
+    if not os.path.exists(path):
         return None
 
     try:
-        return await message.answer_photo(
-            photo=FSInputFile(banner_path),
+        sent = await message.answer_photo(
+            photo=FSInputFile(path),
             caption=None,
             reply_markup=reply_markup
         )
+
+        try:
+            if getattr(sent, "photo", None):
+                file_ids[banner_name] = sent.photo[-1].file_id
+                save_vendora_banner_file_ids()
+        except Exception as cache_error:
+            print(f"VENDORA_BANNER_CACHE_SET_ERROR: {type(cache_error).__name__}: {cache_error}")
+
+        return sent
+
     except Exception as e:
-        print(f"VENDORA_BANNER_SEND_ERROR: {type(e).__name__}: {e}")
+        print(f"VENDORA_BANNER_UPLOAD_ERROR: {type(e).__name__}: {e}")
         return None
 
 
 async def send_temp_banner_photo_message(message, banner_name, fallback_text, reply_markup=None, parse_mode="HTML", clear_previous=True):
     """
-    תאימות לקוד שכבר קיים אצלך.
+    תאימות לקריאות קיימות בקוד שכבר הוחלפו בעבר.
     """
     uid = message.from_user.id
-    users.setdefault(uid, {"cart": []})
-    users[uid].setdefault("temp_bot_messages", [])
+
+    if uid not in users:
+        users[uid] = {"cart": []}
 
     if clear_previous:
         await delete_temp_bot_messages(message.bot, uid)
 
-    path = vendora_banner_path(banner_name)
-
+    # נסה file_id לפי שם באנר ישירות
+    file_ids = load_vendora_banner_file_ids()
+    cached_file_id = file_ids.get(banner_name)
     sent = None
-    if os.path.exists(path):
+
+    if cached_file_id:
         try:
             sent = await message.answer_photo(
-                photo=FSInputFile(path),
+                photo=cached_file_id,
                 caption=None,
                 reply_markup=reply_markup
             )
-        except Exception as e:
-            print(f"VENDORA_DIRECT_BANNER_SEND_ERROR: {type(e).__name__}: {e}")
+        except Exception:
+            file_ids.pop(banner_name, None)
+            save_vendora_banner_file_ids()
+
+    if sent is None:
+        path = vendora_banner_path(banner_name)
+        if os.path.exists(path):
+            try:
+                sent = await message.answer_photo(
+                    photo=FSInputFile(path),
+                    caption=None,
+                    reply_markup=reply_markup
+                )
+                try:
+                    if getattr(sent, "photo", None):
+                        file_ids[banner_name] = sent.photo[-1].file_id
+                        save_vendora_banner_file_ids()
+                except Exception:
+                    pass
+            except Exception as e:
+                print(f"VENDORA_DIRECT_BANNER_ERROR: {type(e).__name__}: {e}")
 
     if sent is None:
         sent = await message.answer(
@@ -730,7 +813,7 @@ async def send_temp_banner_photo_message(message, banner_name, fallback_text, re
             parse_mode=parse_mode
         )
 
-    users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
+    users.setdefault(uid, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
     return sent
 
 
@@ -3805,7 +3888,7 @@ async def back_to_main_menu(message: Message):
 
     await send_temp_message(
         message,
-        rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה:"),
+        widen_inline_screen_text(widen_inline_screen_text(widen_inline_screen_text(widen_inline_screen_text(rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה:"))))),
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
