@@ -648,6 +648,7 @@ async def cleanup_customer_order_screens(bot, uid):
 # 2. אם אין file_id — מעלה תמונה פעם אחת ושומר file_id.
 # 3. אם חסרה תמונה/יש שגיאה — חוזר לטקסט רגיל ולא שובר את הבוט.
 VENDORA_BANNER_CACHE_FILE = "vendora_banner_file_ids.json"
+VENDORA_BANNER_CACHE_VERSION = "v3_main_menu_fixed"
 VENDORA_BANNER_FILE_IDS = None
 
 
@@ -684,6 +685,10 @@ def save_vendora_banner_file_ids():
 def detect_vendora_banner_for_text(text):
     s = str(text or "")
 
+    # חשוב: תפריט ראשי קודם, כי טקסט פתיחה כולל גם "משלוחים ואיסוף".
+    if "תפריט ראשי" in s or "חזרת לתפריט" in s or "בחר פעולה" in s or "Vendora Shop" in s or "ברוך הבא" in s:
+        return "main_menu_banner.png"
+
     if "שירות לקוחות" in s or "נושא הפנייה" in s or "בחר את נושא הפנייה" in s or "פנייה לנציג" in s or "פנייה פתוחה" in s:
         return "support_banner.png"
 
@@ -705,9 +710,6 @@ def detect_vendora_banner_for_text(text):
     if "החנות" in s or "קטגוריות" in s or "בחר קטגוריה" in s or "בחר מוצר" in s or "הוספת מוצר" in s or "הסל שלך ריק" in s:
         return "shop_banner.png"
 
-    if "תפריט ראשי" in s or "חזרת לתפריט" in s or "בחר פעולה" in s:
-        return "main_menu_banner.png"
-
     return None
 
 
@@ -718,7 +720,8 @@ async def send_vendora_banner_if_possible(message, text, reply_markup=None):
         return None
 
     file_ids = load_vendora_banner_file_ids()
-    cached_file_id = file_ids.get(banner_name)
+    cache_key = f"{VENDORA_BANNER_CACHE_VERSION}:{banner_name}"
+    cached_file_id = file_ids.get(cache_key)
 
     # Fast path: Telegram file_id cache
     if cached_file_id:
@@ -730,7 +733,7 @@ async def send_vendora_banner_if_possible(message, text, reply_markup=None):
             )
         except Exception as e:
             print(f"VENDORA_BANNER_FILE_ID_ERROR: {type(e).__name__}: {e}")
-            file_ids.pop(banner_name, None)
+            file_ids.pop(cache_key, None)
             save_vendora_banner_file_ids()
 
     # First upload path
@@ -748,7 +751,7 @@ async def send_vendora_banner_if_possible(message, text, reply_markup=None):
 
         try:
             if getattr(sent, "photo", None):
-                file_ids[banner_name] = sent.photo[-1].file_id
+                file_ids[cache_key] = sent.photo[-1].file_id
                 save_vendora_banner_file_ids()
         except Exception as cache_error:
             print(f"VENDORA_BANNER_CACHE_SET_ERROR: {type(cache_error).__name__}: {cache_error}")
@@ -774,7 +777,8 @@ async def send_temp_banner_photo_message(message, banner_name, fallback_text, re
 
     # נסה file_id לפי שם באנר ישירות
     file_ids = load_vendora_banner_file_ids()
-    cached_file_id = file_ids.get(banner_name)
+    cache_key = f"{VENDORA_BANNER_CACHE_VERSION}:{banner_name}"
+    cached_file_id = file_ids.get(cache_key)
     sent = None
 
     if cached_file_id:
@@ -785,7 +789,7 @@ async def send_temp_banner_photo_message(message, banner_name, fallback_text, re
                 reply_markup=reply_markup
             )
         except Exception:
-            file_ids.pop(banner_name, None)
+            file_ids.pop(cache_key, None)
             save_vendora_banner_file_ids()
 
     if sent is None:
@@ -799,7 +803,7 @@ async def send_temp_banner_photo_message(message, banner_name, fallback_text, re
                 )
                 try:
                     if getattr(sent, "photo", None):
-                        file_ids[banner_name] = sent.photo[-1].file_id
+                        file_ids[cache_key] = sent.photo[-1].file_id
                         save_vendora_banner_file_ids()
                 except Exception:
                     pass
@@ -2873,13 +2877,27 @@ async def customer_inline_ui_router(callback: CallbackQuery):
 async def start(message: Message):
     uid = message.from_user.id
 
-    # מנקה מסכים ישנים לפני פתיחת תפריט חדש בלבד.
+    # מנקה מסכים ישנים לפני פתיחת תפריט חדש.
     old_data = users.get(uid)
     if old_data:
         try:
             await delete_temp_bot_messages(message.bot, uid)
         except Exception:
             pass
+
+    # מנסה למחוק גם תפריט ראשי קודם שנשמר בקובץ.
+    try:
+        store = load_customer_menu_store()
+        old_menu_id = store.get(str(uid))
+        if old_menu_id:
+            try:
+                await message.bot.delete_message(uid, int(old_menu_id))
+            except Exception:
+                pass
+            store.pop(str(uid), None)
+            save_customer_menu_store(store)
+    except Exception:
+        pass
 
     users[uid] = {
         "cart": [],
@@ -2898,21 +2916,18 @@ async def start(message: Message):
         "בחר פעולה:"
     )
 
-    sent = await send_vendora_banner_if_possible(
+    # שולח רק מסך אחד: באנר תפריט ראשי + כפתורים.
+    sent = await send_temp_banner_photo_message(
         message,
+        "main_menu_banner.png",
         start_text,
-        reply_markup=main_keyboard(message.from_user.id)
+        reply_markup=main_keyboard(uid),
+        parse_mode="HTML",
+        clear_previous=False
     )
 
-    if sent is None:
-        sent = await message.answer(
-            widen_inline_screen_text(start_text),
-            reply_markup=main_keyboard(message.from_user.id),
-            parse_mode="HTML"
-        )
-
-    # רושמים את התפריט החדש רק אחרי שהוא נשלח.
     users[uid]["temp_bot_messages"] = [sent.message_id]
+    remember_customer_main_menu_message(uid, sent.message_id)
 
 
 @router.message(Command("menu"))
