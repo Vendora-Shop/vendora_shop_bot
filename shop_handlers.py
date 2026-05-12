@@ -1,3 +1,4 @@
+import time
 import os
 import json
 import re
@@ -650,6 +651,8 @@ async def cleanup_customer_order_screens(bot, uid):
 VENDORA_BANNER_CACHE_FILE = "vendora_banner_file_ids.json"
 VENDORA_BANNER_CACHE_VERSION = "v3_main_menu_fixed"
 VENDORA_BANNER_FILE_IDS = None
+VENDORA_START_LOCKS = {}
+VENDORA_START_COOLDOWN_SECONDS = 3
 
 
 def vendora_banner_path(name):
@@ -2877,57 +2880,53 @@ async def customer_inline_ui_router(callback: CallbackQuery):
 async def start(message: Message):
     uid = message.from_user.id
 
-    # מנקה מסכים ישנים לפני פתיחת תפריט חדש.
-    old_data = users.get(uid)
-    if old_data:
-        try:
-            await delete_temp_bot_messages(message.bot, uid)
-        except Exception:
-            pass
+    # מונע הצפה: אם המשתמש לוחץ /start כמה פעמים ברצף,
+    # לא פותחים כמה תפריטים ולא מכניסים את Telegram לתור.
+    now = time.time()
+    last_start = VENDORA_START_LOCKS.get(uid, 0)
 
-    # מנסה למחוק גם תפריט ראשי קודם שנשמר בקובץ.
+    if now - last_start < VENDORA_START_COOLDOWN_SECONDS:
+        return
+
+    VENDORA_START_LOCKS[uid] = now
+
     try:
-        store = load_customer_menu_store()
-        old_menu_id = store.get(str(uid))
-        if old_menu_id:
-            try:
-                await message.bot.delete_message(uid, int(old_menu_id))
-            except Exception:
-                pass
-            store.pop(str(uid), None)
-            save_customer_menu_store(store)
-    except Exception:
-        pass
+        # חשוב: לא מוחקים הודעות ישנות לפני שליחת התפריט.
+        # מחיקות רבות לפני send_photo יוצרות דיליי של 30-40 שניות.
+        users[uid] = {
+            "cart": [],
+            "step": "start",
+            "temp_bot_messages": []
+        }
 
-    users[uid] = {
-        "cart": [],
-        "step": "start",
-        "temp_bot_messages": []
-    }
+        customer_name = message.from_user.first_name or "לקוח יקר"
 
-    customer_name = message.from_user.first_name or "לקוח יקר"
+        await force_close_phone_keyboard(message)
 
-    await force_close_phone_keyboard(message)
+        start_text = rtl(
+            f"<b>👋 ברוך הבא {h(customer_name)}</b>\n\n"
+            "<b>🛍️ Vendora Shop</b>\n"
+            "חנות דיגיטלית חכמה להזמנות, משלוחים ואיסוף עצמי.\n\n"
+            "בחר פעולה:"
+        )
 
-    start_text = rtl(
-        f"<b>👋 ברוך הבא {h(customer_name)}</b>\n\n"
-        "<b>🛍️ Vendora Shop</b>\n"
-        "חנות דיגיטלית חכמה להזמנות, משלוחים ואיסוף עצמי.\n\n"
-        "בחר פעולה:"
-    )
+        # שולח רק מסך אחד: באנר תפריט ראשי + כפתורים.
+        # אין fallback נוסף אחרי הצלחה, כדי שלא יופיע גם באנר וגם חלון טקסט.
+        sent = await send_temp_banner_photo_message(
+            message,
+            "main_menu_banner.png",
+            start_text,
+            reply_markup=main_keyboard(uid),
+            parse_mode="HTML",
+            clear_previous=False
+        )
 
-    # שולח רק מסך אחד: באנר תפריט ראשי + כפתורים.
-    sent = await send_temp_banner_photo_message(
-        message,
-        "main_menu_banner.png",
-        start_text,
-        reply_markup=main_keyboard(uid),
-        parse_mode="HTML",
-        clear_previous=False
-    )
+        users[uid]["temp_bot_messages"] = [sent.message_id]
+        remember_customer_main_menu_message(uid, sent.message_id)
 
-    users[uid]["temp_bot_messages"] = [sent.message_id]
-    remember_customer_main_menu_message(uid, sent.message_id)
+    finally:
+        # משאיר cooldown קצר, אבל לא נועל את המשתמש.
+        VENDORA_START_LOCKS[uid] = time.time()
 
 
 @router.message(Command("menu"))
