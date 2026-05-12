@@ -704,15 +704,13 @@ async def reset_customer_to_main_menu(message, text):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    sent = await send_temp_banner_photo_message(
+    return await send_temp_banner_photo_message(
         message,
         "main_menu_banner.png",
         text,
         reply_markup=main_keyboard(uid),
         parse_mode="HTML"
     )
-
-    return sent
 
 
 async def reset_callback_customer_to_main_menu(callback, text):
@@ -732,15 +730,13 @@ async def reset_callback_customer_to_main_menu(callback, text):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    sent = await send_callback_banner_photo(
+    return await send_callback_banner_photo(
         callback,
         "main_menu_banner.png",
         text,
         reply_markup=main_keyboard(uid),
         parse_mode="HTML"
     )
-
-    return sent
 
 
 def is_button_only_step_for_customer(step):
@@ -3035,9 +3031,10 @@ async def checkout(message: Message):
 
     if not data or not data.get("cart"):
         await delete_temp_bot_messages(message.bot, uid)
-        await send_temp_message(
+        await send_temp_banner_photo_message(
             message,
-            rtl("<b>🛒 הסל שלך ריק.</b>\n\nקודם בחר מוצר."),
+            "shop_banner.png",
+            "<b>🛒 הסל שלך ריק.</b>\n\nקודם בחר מוצר.",
             reply_markup=categories_keyboard(),
             parse_mode="HTML"
         )
@@ -3640,9 +3637,10 @@ async def support(message: Message):
             "temp_bot_messages": previous_temp_messages
         }
 
-        await send_temp_message(
-            message,
-            widen_inline_screen_text(
+        await send_temp_banner_photo_message(
+        message,
+        "support_banner.png",
+        widen_inline_screen_text(
                 rtl(
                     "<b>📞 שירות לקוחות</b>\n\n"
                     f"{field('מספר פנייה', existing_ticket['ticket_number'])}\n"
@@ -3763,8 +3761,9 @@ async def my_addresses(message: Message):
 
     users[uid]["step"] = "addresses_menu"
 
-    await send_temp_message(
+    await send_temp_banner_photo_message(
         message,
+        "addresses_banner.png",
         rtl("<b>🏠 הכתובות שלי</b>\n\nבחר פעולה מהתפריט."),
         reply_markup=addresses_menu_keyboard(),
         parse_mode="HTML"
