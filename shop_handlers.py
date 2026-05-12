@@ -1,3 +1,4 @@
+import os
 import json
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
@@ -393,6 +394,54 @@ async def notify_admin_ticket_closed_by_customer(bot, ticket_number, user_full_n
 
 
 users = {}
+
+
+# ================== VENDORA BANNER UI HELPERS ==================
+def vendora_banner_path(name):
+    return os.path.join("images", name)
+
+
+async def send_banner_message(message, banner_name, fallback_text, reply_markup=None, parse_mode="HTML"):
+    """
+    שולח באנר מעוצב במקום חלון טקסט לבן.
+    אם התמונה לא קיימת בשרת — חוזר לטקסט רגיל כדי לא לשבור את הבוט.
+    """
+    path = vendora_banner_path(banner_name)
+
+    if os.path.exists(path):
+        return await send_temp_photo(
+            message,
+            photo=FSInputFile(path),
+            caption=None,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode
+        )
+
+    return await send_temp_message(
+        message,
+        rtl(fallback_text),
+        reply_markup=reply_markup,
+        parse_mode=parse_mode
+    )
+
+
+async def send_banner_bot(bot, chat_id, banner_name, fallback_text, reply_markup=None, parse_mode="HTML"):
+    path = vendora_banner_path(banner_name)
+
+    if os.path.exists(path):
+        return await bot.send_photo(
+            chat_id,
+            photo=FSInputFile(path),
+            reply_markup=reply_markup
+        )
+
+    return await bot.send_message(
+        chat_id,
+        rtl(fallback_text),
+        reply_markup=reply_markup,
+        parse_mode=parse_mode
+    )
+
 
 
 # ================== CUSTOMER MAIN MENU MESSAGE STORE ==================
