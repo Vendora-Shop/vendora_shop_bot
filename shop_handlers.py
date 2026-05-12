@@ -1,8 +1,7 @@
-import os
 import json
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from html import escape
 import asyncio
 
@@ -637,7 +636,9 @@ async def cleanup_customer_order_screens(bot, uid):
 
 
 
-# ================== VENDORA BANNER UI HELPERS ==================
+
+
+
 def vendora_banner_path(name):
     return os.path.join("images", name)
 
@@ -689,7 +690,9 @@ async def send_callback_banner_photo(callback, banner_name, fallback_text, reply
 
 
 
-# ================== VENDORA SAFE BANNER HELPERS ==================
+
+
+
 def vendora_banner_path(name):
     return os.path.join("images", name)
 
@@ -754,9 +757,8 @@ async def reset_customer_to_main_menu(message, text):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    sent = await send_temp_banner_photo_message(
+    sent = await send_temp_message(
         message,
-        "main_menu_banner.png",
         text,
         reply_markup=main_keyboard(uid),
         parse_mode="HTML"
@@ -782,7 +784,7 @@ async def reset_callback_customer_to_main_menu(callback, text):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    sent = await send_callback_banner_photo(
+    sent = await send_temp_message(
         callback,
         "main_menu_banner.png",
         text,
@@ -2835,18 +2837,16 @@ async def my_details(message: Message):
     profile = get_customer_profile(uid)
 
     if not profile:
-        await send_temp_banner_photo_message(
-            message,
-            "profile_banner.png",
-            "<b>👤 הפרטים שלי</b>\n\nאין פרטים שמורים עדיין.",
+        await send_temp_message(
+        message,
+        "<b>👤 הפרטים שלי</b>\n\nאין פרטים שמורים עדיין.",
             reply_markup=back_only_main_keyboard(),
             parse_mode="HTML"
         )
         return
 
-    await send_temp_banner_photo_message(
+    await send_temp_message(
         message,
-        "profile_banner.png",
         saved_profile_text(profile),
         reply_markup=back_only_main_keyboard(),
         parse_mode="HTML"
@@ -2875,9 +2875,8 @@ async def shop(message: Message):
         )
         return
 
-    await send_temp_banner_photo_message(
+    await send_temp_message(
         message,
-        "shop_banner.png",
         "<b>🛒 החנות</b>\n\nבחר קטגוריה:",
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
@@ -2934,9 +2933,8 @@ async def back_categories(message: Message):
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
     users[uid]["step"] = "browse_products"
-    await send_temp_banner_photo_message(
+    await send_temp_message(
         message,
-        "shop_banner.png",
         "<b>📂 קטגוריות</b>\n\nבחר קטגוריה:",
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
@@ -2949,9 +2947,8 @@ async def add_more(message: Message):
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
     users[uid]["step"] = "browse_products"
-    await send_temp_banner_photo_message(
+    await send_temp_message(
         message,
-        "shop_banner.png",
         "<b>➕ הוספת מוצר</b>\n\nבחר קטגוריה:",
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
@@ -4028,10 +4025,9 @@ async def handle_shop(message: Message):
         data["step"] = "addresses_menu"
 
         await delete_temp_bot_messages(message.bot, uid)
-        await send_temp_banner_photo_message(
-            message,
-            "addresses_banner.png",
-            "<b>🏠 הכתובות שלי</b>\n\nבחר פעולה מהתפריט.",
+        await send_temp_message(
+        message,
+        "<b>🏠 הכתובות שלי</b>\n\nבחר פעולה מהתפריט.",
             reply_markup=addresses_menu_keyboard(),
             parse_mode="HTML"
         )
@@ -5520,4 +5516,3 @@ async def handle_customer_free_text(message: Message):
                 clear_previous=False
             )
         return
-
