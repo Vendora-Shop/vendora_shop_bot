@@ -2750,19 +2750,113 @@ async def customer_inline_ui_router(callback: CallbackQuery):
 
         elif raw.startswith("ui:support:subject:"):
             subjects = ["📦 שאלה על הזמנה קיימת", "🚚 משלוח / איסוף", "💳 תשלום", "🛍️ מוצר / מלאי", "📝 שינוי פרטים", "❓ אחר"]
-            idx = int(parts[-1])
-            if 0 <= idx < len(subjects):
-                text = subjects[idx]
+
+            try:
+                idx = int(parts[-1])
+            except Exception:
+                await callback.answer("פעולה לא זמינה כרגע.", show_alert=True)
+                return
+
+            if not (0 <= idx < len(subjects)):
+                await callback.answer("פעולה לא זמינה כרגע.", show_alert=True)
+                return
+
+            subject = subjects[idx]
+            data["support_subject"] = subject
+            data["step"] = "support_faq"
+
+            # עונים מייד ל־callback כדי ש־Telegram לא יקפיץ שגיאת פעולה.
+            await callback.answer()
+
+            await delete_temp_bot_messages(callback.message.bot, uid)
+
+            sent = await callback.message.answer(
+                widen_inline_screen_text(
+                    rtl(
+                        "<b>📞 שירות לקוחות</b>\n\n"
+                        f"{field('נושא הפנייה', subject)}\n\n"
+                        "בחר שאלה נפוצה או פתח פנייה לנציג שירות:"
+                    )
+                ),
+                reply_markup=support_faq_keyboard(subject),
+                parse_mode="HTML"
+            )
+            data.setdefault("temp_bot_messages", []).append(sent.message_id)
+            return
 
         elif raw.startswith("ui:support:faq:"):
             subject = data.get("support_subject") or "❓ אחר"
             questions = SUPPORT_FAQ_BY_SUBJECT.get(subject, SUPPORT_FAQ_BY_SUBJECT.get("❓ אחר", []))
-            idx = int(parts[-1])
-            if 0 <= idx < len(questions):
-                text = questions[idx]
 
-        elif raw == "ui:support:rep": text = "✍️ פנייה לנציג שירות"
-        elif raw == "ui:support:back_subjects": text = "⬅️ חזרה לנושאים"
+            try:
+                idx = int(parts[-1])
+            except Exception:
+                await callback.answer("פעולה לא זמינה כרגע.", show_alert=True)
+                return
+
+            if not (0 <= idx < len(questions)):
+                await callback.answer("פעולה לא זמינה כרגע.", show_alert=True)
+                return
+
+            question = questions[idx]
+
+            # עונים מייד ל־callback לפני מחיקה/שליחה כדי למנוע Alert של "אירעה שגיאה בפעולה".
+            await callback.answer()
+
+            await delete_temp_bot_messages(callback.message.bot, uid)
+
+            sent = await callback.message.answer(
+                widen_inline_screen_text(
+                    support_faq_answer_text(uid, subject, question)
+                ),
+                reply_markup=support_faq_after_answer_keyboard(subject),
+                parse_mode="HTML"
+            )
+            data.setdefault("temp_bot_messages", []).append(sent.message_id)
+            return
+
+        elif raw == "ui:support:rep":
+            subject = data.get("support_subject") or "❓ אחר"
+            data["step"] = "support_phone"
+            data.pop("support_phone_warned", None)
+
+            await callback.answer()
+            await delete_temp_bot_messages(callback.message.bot, uid)
+
+            sent = await callback.message.answer(
+                widen_inline_screen_text(
+                    rtl(
+                        "<b>✍️ פנייה לנציג שירות</b>\n\n"
+                        f"{field('נושא הפנייה', subject)}\n\n"
+                        "רשום מספר פלאפון תקין.\n"
+                        "לדוגמה: 0547937503"
+                    )
+                ),
+                reply_markup=support_customer_keyboard(uid),
+                parse_mode="HTML"
+            )
+            data.setdefault("temp_bot_messages", []).append(sent.message_id)
+            return
+
+        elif raw == "ui:support:back_subjects":
+            data["step"] = "support_subject"
+
+            await callback.answer()
+            await delete_temp_bot_messages(callback.message.bot, uid)
+
+            sent = await callback.message.answer(
+                widen_inline_screen_text(
+                    rtl(
+                        "<b>📞 שירות לקוחות</b>\n\n"
+                        "בחר את נושא הפנייה:"
+                    )
+                ),
+                reply_markup=support_subject_keyboard(),
+                parse_mode="HTML"
+            )
+            data.setdefault("temp_bot_messages", []).append(sent.message_id)
+            return
+
         elif raw == "ui:support:resolved": text = "✅ הבעיה נפתרה"
 
         if not text:
