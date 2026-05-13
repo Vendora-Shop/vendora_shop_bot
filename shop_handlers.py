@@ -317,7 +317,7 @@ async def close_customer_open_support_ticket(message: Message, data=None):
             message,
             widen_inline_screen_text(
                 rtl(
-                    "<b>ℹ️ אין פנייה פתוחה לסגירה.</b>\n\n"
+                    "<b>ℹ️ אין כרגע פנייה פעילה.</b>\n\n"
                     "חזרת לתפריט הראשי."
                 )
             ),
@@ -2243,10 +2243,24 @@ def support_faq_after_answer_keyboard(subject):
     ]))
 
 
-def support_customer_keyboard(user_id=None):
+def support_phone_keyboard(user_id=None):
+    # לפני פתיחת פנייה בפועל — אין עדיין מה לסגור.
     return _inline(_wide_buttons([
         _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
     ]))
+
+
+def support_open_ticket_keyboard(user_id=None):
+    # אחרי שהפנייה נפתחה — ללקוח יש אפשרות לסגור אם הבעיה נפתרה.
+    return _inline(_wide_buttons([
+        _btn("✅ הבעיה נפתרה", "ui:support:resolved"),
+        _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
+    ]))
+
+
+def support_customer_keyboard(user_id=None):
+    # ברירת מחדל למקומות ישנים בקוד שבהם כבר יש פנייה פתוחה.
+    return support_open_ticket_keyboard(user_id)
 
 
 async def _dispatch_customer_inline(callback: CallbackQuery, text: str):
@@ -2606,10 +2620,6 @@ async def support_inline_router(callback: CallbackQuery):
             data["support_subject"] = subject
             data.pop("support_phone_warned", None)
 
-            rows = [
-                [InlineKeyboardButton(text="⬅️ חזרה לתפריט", callback_data="ui:nav:main")],
-            ]
-
             await _answer_ok()
 
             await _replace_screen(
@@ -2619,7 +2629,7 @@ async def support_inline_router(callback: CallbackQuery):
                     "רשום מספר פלאפון תקין.\n"
                     "לדוגמה: 0547937503"
                 ),
-                InlineKeyboardMarkup(inline_keyboard=rows)
+                support_phone_keyboard(uid)
             )
             return
 
@@ -2986,7 +2996,7 @@ async def customer_inline_ui_router(callback: CallbackQuery):
                         "לדוגמה: 0547937503"
                     )
                 ),
-                reply_markup=support_customer_keyboard(uid),
+                reply_markup=support_phone_keyboard(uid),
                 parse_mode="HTML"
             )
             data.setdefault("temp_bot_messages", []).append(sent.message_id)
@@ -3943,7 +3953,7 @@ async def support(message: Message):
                     "יש לך פנייה פתוחה. כתוב את ההודעה שלך כאן והיא תועבר לנציג."
                 )
             ),
-            reply_markup=support_customer_keyboard(message.from_user.id),
+            reply_markup=support_open_ticket_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -5023,7 +5033,7 @@ async def handle_shop(message: Message):
                         "לדוגמה: 0547937503"
                     )
                 ),
-                reply_markup=support_customer_keyboard(message.from_user.id),
+                reply_markup=support_phone_keyboard(message.from_user.id),
                 parse_mode="HTML"
             )
             return
@@ -5097,7 +5107,7 @@ async def handle_shop(message: Message):
                         "יש לך פנייה פתוחה. כתוב את ההודעה שלך כאן והיא תועבר לנציג."
                     )
                 ),
-                reply_markup=support_customer_keyboard(message.from_user.id),
+                reply_markup=support_open_ticket_keyboard(message.from_user.id),
                 parse_mode="HTML"
             )
             return
@@ -5112,7 +5122,7 @@ async def handle_shop(message: Message):
                     "כתוב עכשיו את ההודעה שלך ונעביר אותה לנציג שירות."
                 )
             ),
-            reply_markup=support_customer_keyboard(message.from_user.id),
+            reply_markup=support_phone_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -5186,6 +5196,15 @@ async def handle_shop(message: Message):
         data.pop("support_chat_warned", None)
         data.pop("support_message_warning_sent", None)
 
+        try:
+            cleanup_msg = await message.answer("\u2063", reply_markup=ReplyKeyboardRemove())
+            try:
+                await cleanup_msg.delete()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
         await send_temp_message(
             message,
             widen_inline_screen_text(
@@ -5195,7 +5214,7 @@ async def handle_shop(message: Message):
                     "נציג שירות יחזור אליך בהקדם האפשרי."
                 )
             ),
-            reply_markup=support_customer_keyboard(message.from_user.id),
+            reply_markup=support_open_ticket_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
