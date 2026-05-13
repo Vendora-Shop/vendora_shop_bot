@@ -1,9 +1,11 @@
 import json
+import re
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from html import escape
 import asyncio
+import os
 
 from config import ADMIN_ID
 from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard, support_subject_keyboard
@@ -639,106 +641,7 @@ async def cleanup_customer_order_screens(bot, uid):
 
 
 
-def vendora_banner_path(name):
-    return os.path.join("images", name)
 
-
-async def send_banner_photo_message(message, banner_name, fallback_text, reply_markup=None, parse_mode="HTML"):
-    """
-    שולח באנר תמונה עם כפתורי Inline מתחת.
-    אם התמונה לא קיימת בשרת — חוזר להודעת טקסט כדי לא לשבור את הבוט.
-    """
-    path = vendora_banner_path(banner_name)
-    if os.path.exists(path):
-        return await message.answer_photo(
-            photo=FSInputFile(path),
-            caption=None,
-            reply_markup=reply_markup
-        )
-
-    return await message.answer(
-        widen_inline_screen_text(rtl(fallback_text)),
-        reply_markup=reply_markup,
-        parse_mode=parse_mode
-    )
-
-
-async def send_temp_banner_photo_message(message, banner_name, fallback_text, reply_markup=None, parse_mode="HTML"):
-    sent = await send_banner_photo_message(
-        message,
-        banner_name,
-        fallback_text,
-        reply_markup=reply_markup,
-        parse_mode=parse_mode
-    )
-    uid = message.from_user.id
-    users.setdefault(uid, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
-    return sent
-
-
-async def send_callback_banner_photo(callback, banner_name, fallback_text, reply_markup=None, parse_mode="HTML"):
-    sent = await send_banner_photo_message(
-        callback.message,
-        banner_name,
-        fallback_text,
-        reply_markup=reply_markup,
-        parse_mode=parse_mode
-    )
-    uid = callback.from_user.id
-    users.setdefault(uid, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
-    return sent
-
-
-
-
-
-
-def vendora_banner_path(name):
-    return os.path.join("images", name)
-
-
-async def send_banner_photo_safe(message, banner_name, fallback_text, reply_markup=None, parse_mode="HTML"):
-    """
-    שולח באנר תמונה עם כפתורים מתחת.
-    אם יש בעיה בתמונה — חוזר לטקסט רגיל ולא שובר את הבוט.
-    """
-    path = vendora_banner_path(banner_name)
-
-    if os.path.exists(path):
-        try:
-            return await message.answer_photo(
-                photo=FSInputFile(path),
-                caption=None,
-                reply_markup=reply_markup
-            )
-        except Exception as e:
-            print(f"BANNER_SEND_ERROR: {type(e).__name__}: {e}")
-
-    return await message.answer(
-        widen_inline_screen_text(rtl(fallback_text)),
-        reply_markup=reply_markup,
-        parse_mode=parse_mode
-    )
-
-
-async def send_temp_banner_photo_safe(message, banner_name, fallback_text, reply_markup=None, parse_mode="HTML", clear_previous=True):
-    uid = message.from_user.id
-    users.setdefault(uid, {"cart": []})
-    users[uid].setdefault("temp_bot_messages", [])
-
-    if clear_previous:
-        await delete_temp_bot_messages(message.bot, uid)
-
-    sent = await send_banner_photo_safe(
-        message,
-        banner_name,
-        fallback_text,
-        reply_markup=reply_markup,
-        parse_mode=parse_mode
-    )
-
-    users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
-    return sent
 
 async def reset_customer_to_main_menu(message, text):
     uid = message.from_user.id
@@ -785,8 +688,7 @@ async def reset_callback_customer_to_main_menu(callback, text):
     users[uid].setdefault("temp_bot_messages", [])
 
     sent = await send_temp_message(
-        callback,
-        "main_menu_banner.png",
+        callback.message,
         text,
         reply_markup=main_keyboard(uid),
         parse_mode="HTML"
@@ -1760,18 +1662,28 @@ class CustomerCallbackMessage:
         except Exception:
             pass
 
+        old_ids = []
         if not skip_delete:
             try:
-                await delete_temp_bot_messages(self.bot, self.from_user.id)
+                old_ids = list(users.setdefault(self.from_user.id, {"cart": []}).get("temp_bot_messages", []) or [])
             except Exception:
-                pass
+                old_ids = []
 
         sent = await self.message.answer(*args, **kwargs)
 
         try:
-            users.setdefault(self.from_user.id, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+            data = users.setdefault(self.from_user.id, {"cart": []})
+            data["temp_bot_messages"] = [sent.message_id]
         except Exception:
             pass
+
+        if not skip_delete:
+            for mid in old_ids:
+                try:
+                    if int(mid) != int(sent.message_id):
+                        await self.bot.delete_message(self.from_user.id, int(mid))
+                except Exception:
+                    pass
 
         return sent
 
@@ -1779,18 +1691,28 @@ class CustomerCallbackMessage:
         # אותו עיקרון גם לתמונות מוצר/באנרים.
         skip_delete = bool(getattr(self, "_skip_inline_auto_delete_once", False))
 
+        old_ids = []
         if not skip_delete:
             try:
-                await delete_temp_bot_messages(self.bot, self.from_user.id)
+                old_ids = list(users.setdefault(self.from_user.id, {"cart": []}).get("temp_bot_messages", []) or [])
             except Exception:
-                pass
+                old_ids = []
 
         sent = await self.message.answer_photo(*args, **kwargs)
 
         try:
-            users.setdefault(self.from_user.id, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+            data = users.setdefault(self.from_user.id, {"cart": []})
+            data["temp_bot_messages"] = [sent.message_id]
         except Exception:
             pass
+
+        if not skip_delete:
+            for mid in old_ids:
+                try:
+                    if int(mid) != int(sent.message_id):
+                        await self.bot.delete_message(self.from_user.id, int(mid))
+                except Exception:
+                    pass
 
         return sent
 
@@ -2502,6 +2424,40 @@ async def show_reorder_choose_inline(callback: CallbackQuery):
     )
     data.setdefault("temp_bot_messages", []).append(sent.message_id)
 
+
+
+async def send_inline_transition_message(callback: CallbackQuery, text, reply_markup=None, parse_mode="HTML"):
+    """
+    מעבר Inline בטוח: קודם שולח מסך חדש, ורק אחר כך מנקה מסכים ישנים.
+    מונע מצב שבו חלון נעלם והחלון הבא לא נפתח.
+    """
+    uid = callback.from_user.id
+    data = users.setdefault(uid, {"cart": []})
+    old_ids = list(data.get("temp_bot_messages", []) or [])
+
+    sent = await callback.message.answer(
+        widen_inline_screen_text(text),
+        reply_markup=reply_markup,
+        parse_mode=parse_mode
+    )
+
+    data["temp_bot_messages"] = [sent.message_id]
+
+    for mid in old_ids:
+        try:
+            if int(mid) != int(sent.message_id):
+                await callback.message.bot.delete_message(uid, int(mid))
+        except Exception:
+            pass
+
+    try:
+        if callback.message and callback.message.message_id != sent.message_id:
+            await callback.message.delete()
+    except Exception:
+        pass
+
+    return sent
+
 @router.callback_query(F.data.startswith("ui:"))
 async def customer_inline_ui_router(callback: CallbackQuery):
     uid = callback.from_user.id
@@ -2509,10 +2465,14 @@ async def customer_inline_ui_router(callback: CallbackQuery):
     raw = callback.data or ""
     parts = raw.split(":")
 
-    # INLINE_CURRENT_SCREEN_DELETE_FIX
-    # מוחק ישירות את המסך שעליו לחצו לפני פתיחת המסך הבא.
-    # זה מטפל במקרים שבהם הודעה לא נשמרה ב-temp_bot_messages ולכן נשארה למעלה.
-    await safe_delete_current_message(callback.message)
+    # INLINE_TRANSITION_STABILITY_FIX
+    # לא מוחקים את המסך הנוכחי לפני שהמסך הבא נשלח.
+    # מחיקה מוקדמת גרמה לכך שבחלק מהמעברים המסך נעלם והחדש לא נפתח.
+    # הניקוי מתבצע דרך send_temp_message / CustomerCallbackMessage אחרי שיש שליחה תקינה.
+    try:
+        await callback.answer()
+    except Exception:
+        pass
 
     # ADDRESS_CLICK_EDIT_REAL_FIX
     if raw.startswith("ui:addr:id:"):
@@ -2768,20 +2728,16 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             # עונים מייד ל־callback כדי ש־Telegram לא יקפיץ שגיאת פעולה.
             await callback.answer()
 
-            await delete_temp_bot_messages(callback.message.bot, uid)
-
-            sent = await callback.message.answer(
-                widen_inline_screen_text(
-                    rtl(
-                        "<b>📞 שירות לקוחות</b>\n\n"
-                        f"{field('נושא הפנייה', subject)}\n\n"
-                        "בחר שאלה נפוצה או פתח פנייה לנציג שירות:"
-                    )
+            sent = await send_inline_transition_message(
+                callback,
+                rtl(
+                    "<b>📞 שירות לקוחות</b>\n\n"
+                    f"{field('נושא הפנייה', subject)}\n\n"
+                    "בחר שאלה נפוצה או פתח פנייה לנציג שירות:"
                 ),
                 reply_markup=support_faq_keyboard(subject),
                 parse_mode="HTML"
             )
-            data.setdefault("temp_bot_messages", []).append(sent.message_id)
             return
 
         elif raw.startswith("ui:support:faq:"):
@@ -2803,16 +2759,12 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             # עונים מייד ל־callback לפני מחיקה/שליחה כדי למנוע Alert של "אירעה שגיאה בפעולה".
             await callback.answer()
 
-            await delete_temp_bot_messages(callback.message.bot, uid)
-
-            sent = await callback.message.answer(
-                widen_inline_screen_text(
-                    support_faq_answer_text(uid, subject, question)
-                ),
+            sent = await send_inline_transition_message(
+                callback,
+                support_faq_answer_text(uid, subject, question),
                 reply_markup=support_faq_after_answer_keyboard(subject),
                 parse_mode="HTML"
             )
-            data.setdefault("temp_bot_messages", []).append(sent.message_id)
             return
 
         elif raw == "ui:support:rep":
@@ -2821,40 +2773,34 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             data.pop("support_phone_warned", None)
 
             await callback.answer()
-            await delete_temp_bot_messages(callback.message.bot, uid)
 
-            sent = await callback.message.answer(
-                widen_inline_screen_text(
-                    rtl(
-                        "<b>✍️ פנייה לנציג שירות</b>\n\n"
-                        f"{field('נושא הפנייה', subject)}\n\n"
-                        "רשום מספר פלאפון תקין.\n"
-                        "לדוגמה: 0547937503"
-                    )
+            sent = await send_inline_transition_message(
+                callback,
+                rtl(
+                    "<b>✍️ פנייה לנציג שירות</b>\n\n"
+                    f"{field('נושא הפנייה', subject)}\n\n"
+                    "רשום מספר פלאפון תקין.\n"
+                    "לדוגמה: 0547937503"
                 ),
                 reply_markup=support_customer_keyboard(uid),
                 parse_mode="HTML"
             )
-            data.setdefault("temp_bot_messages", []).append(sent.message_id)
             return
 
         elif raw == "ui:support:back_subjects":
             data["step"] = "support_subject"
 
             await callback.answer()
-            await delete_temp_bot_messages(callback.message.bot, uid)
 
-            sent = await callback.message.answer(
-                widen_inline_screen_text(
-                    rtl(
-                        "<b>📞 שירות לקוחות</b>\n\n"
-                        "בחר את נושא הפנייה:"
-                    )
+            sent = await send_inline_transition_message(
+                callback,
+                rtl(
+                    "<b>📞 שירות לקוחות</b>\n\n"
+                    "בחר את נושא הפנייה:"
                 ),
                 reply_markup=support_subject_keyboard(),
                 parse_mode="HTML"
             )
-            data.setdefault("temp_bot_messages", []).append(sent.message_id)
             return
 
         elif raw == "ui:support:resolved": text = "✅ הבעיה נפתרה"
