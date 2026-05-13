@@ -1324,7 +1324,6 @@ def support_faq_answer_text(user_id, subject, question):
 def support_customer_keyboard(user_id=None):
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="✅ הבעיה נפתרה")],
             [KeyboardButton(text="⬅️ חזרה לתפריט")]
         ],
         resize_keyboard=True
@@ -2246,7 +2245,6 @@ def support_faq_after_answer_keyboard(subject):
 
 def support_customer_keyboard(user_id=None):
     return _inline(_wide_buttons([
-        _btn("✅ הבעיה נפתרה", "ui:support:resolved"),
         _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
     ]))
 
@@ -2609,7 +2607,6 @@ async def support_inline_router(callback: CallbackQuery):
             data.pop("support_phone_warned", None)
 
             rows = [
-                [InlineKeyboardButton(text="✅ הבעיה נפתרה", callback_data="ui:support:resolved")],
                 [InlineKeyboardButton(text="⬅️ חזרה לתפריט", callback_data="ui:nav:main")],
             ]
 
