@@ -1201,7 +1201,7 @@ def support_faq_answer_text(user_id, subject, question):
 
     "<b>סטטוסים אפשריים:</b>\n\n"
 
-    "🆕 <b>התקבלה</b>\n"
+    "📥 <b>התקבלה</b>\n"
     "ההזמנה נקלטה במערכת וממתינה לטיפול.\n\n"
 
     "📦 <b>בטיפול</b>\n"
@@ -3054,13 +3054,33 @@ async def customer_inline_ui_router(callback: CallbackQuery):
 async def start(message: Message):
     uid = message.from_user.id
 
-    # מנקה מסכים ישנים לפני פתיחת תפריט חדש בלבד.
+    # מוחק את הודעת /start של הלקוח כדי שלא יצטברו הרבה /start בצ'אט.
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    # מנקה את התפריט/מסכים הקודמים של הבוט לפני פתיחת תפריט חדש.
     old_data = users.get(uid)
     if old_data:
         try:
             await delete_temp_bot_messages(message.bot, uid)
         except Exception:
             pass
+
+    # אם נשמר תפריט ראשי קודם בקובץ/זיכרון — מנסה למחוק גם אותו.
+    try:
+        store = load_customer_menu_store()
+        old_menu_id = store.get(str(uid))
+        if old_menu_id:
+            try:
+                await message.bot.delete_message(uid, int(old_menu_id))
+            except Exception:
+                pass
+            store.pop(str(uid), None)
+            save_customer_menu_store(store)
+    except Exception:
+        pass
 
     users[uid] = {
         "cart": [],
@@ -3087,6 +3107,11 @@ async def start(message: Message):
 
     # רושמים את התפריט החדש רק אחרי שהוא נשלח.
     users[uid]["temp_bot_messages"] = [sent.message_id]
+
+    try:
+        remember_customer_main_menu_message(uid, sent.message_id)
+    except Exception:
+        pass
 
 
 @router.message(Command("menu"))
