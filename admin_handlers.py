@@ -5,6 +5,7 @@ from html import escape
 from datetime import datetime
 import calendar
 import json
+import os
 
 from config import ADMIN_ID
 from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard, customers_menu_keyboard, customer_actions_keyboard, customer_select_keyboard, support_tickets_menu_keyboard, support_ticket_actions_keyboard, closed_support_ticket_actions_keyboard, support_ticket_select_keyboard
@@ -117,27 +118,14 @@ def status_customer_inline_main_keyboard(customer_telegram_id=None):
 
 
 
-# ================== VENDORA ADMIN BANNER UI HELPERS ==================
-def vendora_banner_path(name):
-    return os.path.join("images", name)
-
 async def send_customer_main_menu_bottom(bot, customer_telegram_id):
     try:
-        banner_path = vendora_banner_path("main_menu_banner.png")
-
-        if os.path.exists(banner_path):
-            sent_menu = await bot.send_photo(
-                customer_telegram_id,
-                photo=FSInputFile(banner_path),
-                reply_markup=status_customer_inline_main_keyboard(customer_telegram_id)
-            )
-        else:
-            sent_menu = await bot.send_message(
-                customer_telegram_id,
-                rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט:"),
-                reply_markup=status_customer_inline_main_keyboard(customer_telegram_id),
-                parse_mode="HTML"
-            )
+        sent_menu = await bot.send_message(
+            customer_telegram_id,
+            rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט:"),
+            reply_markup=status_customer_inline_main_keyboard(customer_telegram_id),
+            parse_mode="HTML"
+        )
 
         store = load_customer_menu_store()
         store[str(customer_telegram_id)] = int(sent_menu.message_id)
