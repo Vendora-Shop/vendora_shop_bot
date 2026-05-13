@@ -2444,44 +2444,94 @@ async def support_inline_router(callback: CallbackQuery):
     uid = callback.from_user.id
     data = users.setdefault(uid, {"cart": [], "step": None})
     raw = callback.data or ""
-    parts = raw.split(":")
+
+    subjects = [
+        "📦 שאלה על הזמנה קיימת",
+        "🚚 משלוח / איסוף",
+        "💳 תשלום",
+        "🛍️ מוצר / מלאי",
+        "📝 שינוי פרטים",
+        "❓ אחר",
+    ]
+
+    async def _answer_ok():
+        try:
+            await callback.answer()
+        except Exception:
+            pass
+
+    async def _answer_error(msg="פעולה לא זמינה כרגע."):
+        try:
+            await callback.answer(msg, show_alert=True)
+        except Exception:
+            pass
+
+    async def _replace_screen(text, keyboard):
+        """
+        שולח קודם את המסך החדש.
+        רק אחרי שליחה מוצלחת מנסה למחוק את המסך הישן.
+        """
+        sent = await callback.message.answer(
+            widen_inline_screen_text(text),
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+
+        old_ids = list(data.get("temp_bot_messages", []) or [])
+        data["temp_bot_messages"] = [sent.message_id]
+
+        # מחיקת המסך שעליו לחצו — אחרי שהחדש כבר נשלח.
+        try:
+            if callback.message and int(callback.message.message_id) != int(sent.message_id):
+                await callback.message.delete()
+        except Exception:
+            pass
+
+        # מחיקת מסכים ישנים נוספים
+        for mid in old_ids:
+            try:
+                if int(mid) != int(sent.message_id):
+                    await callback.message.bot.delete_message(uid, int(mid))
+            except Exception:
+                pass
+
+        return sent
 
     try:
         if raw.startswith("ui:support:subject:"):
-            subjects = [
-                "📦 שאלה על הזמנה קיימת",
-                "🚚 משלוח / איסוף",
-                "💳 תשלום",
-                "🛍️ מוצר / מלאי",
-                "📝 שינוי פרטים",
-                "❓ אחר",
-            ]
-
             try:
-                idx = int(parts[-1])
+                idx = int(raw.split(":")[-1])
             except Exception:
-                await answer_callback_safely(callback, "פעולה לא זמינה כרגע.", show_alert=True)
+                await _answer_error()
                 return
 
             if not (0 <= idx < len(subjects)):
-                await answer_callback_safely(callback, "פעולה לא זמינה כרגע.", show_alert=True)
+                await _answer_error()
                 return
 
             subject = subjects[idx]
             data["support_subject"] = subject
             data["step"] = "support_faq"
 
-            await answer_callback_safely(callback)
+            questions = SUPPORT_FAQ_BY_SUBJECT.get(subject, SUPPORT_FAQ_BY_SUBJECT.get("❓ אחר", []))
 
-            await send_inline_screen_replace(
-                callback,
+            rows = []
+            for i, question in enumerate(questions):
+                rows.append([InlineKeyboardButton(text=question, callback_data=f"ui:support:faq:{i}")])
+
+            rows.append([InlineKeyboardButton(text="✍️ פנייה לנציג שירות", callback_data="ui:support:rep")])
+            rows.append([InlineKeyboardButton(text="⬅️ חזרה לנושאים", callback_data="ui:support:back_subjects")])
+            rows.append([InlineKeyboardButton(text="⬅️ חזרה לתפריט", callback_data="ui:nav:main")])
+
+            await _answer_ok()
+
+            await _replace_screen(
                 rtl(
                     "<b>📞 שירות לקוחות</b>\n\n"
-                    f"{field('נושא הפנייה', subject)}\n\n"
+                    f"<b>נושא הפנייה:</b> {h(subject)}\n\n"
                     "בחר שאלה נפוצה או פתח פנייה לנציג שירות:"
                 ),
-                reply_markup=support_faq_keyboard(subject),
-                parse_mode="HTML"
+                InlineKeyboardMarkup(inline_keyboard=rows)
             )
             return
 
@@ -2490,86 +2540,85 @@ async def support_inline_router(callback: CallbackQuery):
             questions = SUPPORT_FAQ_BY_SUBJECT.get(subject, SUPPORT_FAQ_BY_SUBJECT.get("❓ אחר", []))
 
             try:
-                idx = int(parts[-1])
+                idx = int(raw.split(":")[-1])
             except Exception:
-                await answer_callback_safely(callback, "פעולה לא זמינה כרגע.", show_alert=True)
+                await _answer_error()
                 return
 
             if not (0 <= idx < len(questions)):
-                await answer_callback_safely(callback, "פעולה לא זמינה כרגע.", show_alert=True)
+                await _answer_error()
                 return
 
             question = questions[idx]
 
-            await answer_callback_safely(callback)
+            rows = [
+                [InlineKeyboardButton(text="✍️ פנייה לנציג שירות", callback_data="ui:support:rep")],
+                [InlineKeyboardButton(text="⬅️ חזרה לנושאים", callback_data="ui:support:back_subjects")],
+                [InlineKeyboardButton(text="⬅️ חזרה לתפריט", callback_data="ui:nav:main")],
+            ]
 
-            await send_inline_screen_replace(
-                callback,
+            await _answer_ok()
+
+            await _replace_screen(
                 support_faq_answer_text(uid, subject, question),
-                reply_markup=support_faq_after_answer_keyboard(subject),
-                parse_mode="HTML"
+                InlineKeyboardMarkup(inline_keyboard=rows)
             )
             return
 
         if raw == "ui:support:rep":
             subject = data.get("support_subject") or "❓ אחר"
             data["step"] = "support_phone"
+            data["support_subject"] = subject
             data.pop("support_phone_warned", None)
 
-            await answer_callback_safely(callback)
+            rows = [
+                [InlineKeyboardButton(text="✅ הבעיה נפתרה", callback_data="ui:support:resolved")],
+                [InlineKeyboardButton(text="⬅️ חזרה לתפריט", callback_data="ui:nav:main")],
+            ]
 
-            await send_inline_screen_replace(
-                callback,
+            await _answer_ok()
+
+            await _replace_screen(
                 rtl(
                     "<b>✍️ פנייה לנציג שירות</b>\n\n"
-                    f"{field('נושא הפנייה', subject)}\n\n"
+                    f"<b>נושא הפנייה:</b> {h(subject)}\n\n"
                     "רשום מספר פלאפון תקין.\n"
                     "לדוגמה: 0547937503"
                 ),
-                reply_markup=support_customer_keyboard(uid),
-                parse_mode="HTML"
+                InlineKeyboardMarkup(inline_keyboard=rows)
             )
             return
 
         if raw == "ui:support:back_subjects":
             data["step"] = "support_subject"
 
-            await answer_callback_safely(callback)
+            rows = []
+            for i, subject in enumerate(subjects):
+                rows.append([InlineKeyboardButton(text=subject, callback_data=f"ui:support:subject:{i}")])
+            rows.append([InlineKeyboardButton(text="⬅️ חזרה לתפריט", callback_data="ui:nav:main")])
 
-            await send_inline_screen_replace(
-                callback,
+            await _answer_ok()
+
+            await _replace_screen(
                 rtl(
                     "<b>📞 שירות לקוחות</b>\n\n"
                     "בחר את נושא הפנייה:"
                 ),
-                reply_markup=support_subject_keyboard(),
-                parse_mode="HTML"
+                InlineKeyboardMarkup(inline_keyboard=rows)
             )
             return
 
         if raw == "ui:support:resolved":
+            await _answer_ok()
             proxy = CustomerCallbackMessage(callback, "✅ הבעיה נפתרה")
-            await answer_callback_safely(callback)
             return await customer_close_support_ticket_button(proxy)
 
-        await answer_callback_safely(callback, "פעולה לא זמינה כרגע.", show_alert=True)
+        await _answer_error()
 
     except Exception as e:
         print(f"SUPPORT_INLINE_ROUTER_ERROR: {type(e).__name__}: {e}")
-        try:
-            await callback.message.answer(
-                widen_inline_screen_text(
-                    rtl(
-                        "<b>⚠️ לא הצלחתי לפתוח את המסך הבא.</b>\n\n"
-                        "נסה שוב או חזור לתפריט הראשי."
-                    )
-                ),
-                reply_markup=support_subject_keyboard(),
-                parse_mode="HTML"
-            )
-        except Exception:
-            pass
-        await answer_callback_safely(callback, "אירעה שגיאה בפעולה. נסה שוב.", show_alert=True)
+        await _answer_error("אירעה שגיאה בפעולה. נסה שוב.")
+
 
 @router.callback_query(F.data.startswith("ui:"))
 async def customer_inline_ui_router(callback: CallbackQuery):
