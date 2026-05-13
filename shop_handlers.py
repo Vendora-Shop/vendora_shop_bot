@@ -2,10 +2,9 @@ import json
 import re
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from html import escape
 import asyncio
-import os
 
 from config import ADMIN_ID
 from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard, support_subject_keyboard
@@ -634,14 +633,6 @@ async def cleanup_customer_order_screens(bot, uid):
                 pass
 
     data["temp_bot_messages"] = []
-
-
-
-
-
-
-
-
 
 async def reset_customer_to_main_menu(message, text):
     uid = message.from_user.id
@@ -1662,28 +1653,18 @@ class CustomerCallbackMessage:
         except Exception:
             pass
 
-        old_ids = []
         if not skip_delete:
             try:
-                old_ids = list(users.setdefault(self.from_user.id, {"cart": []}).get("temp_bot_messages", []) or [])
+                await delete_temp_bot_messages(self.bot, self.from_user.id)
             except Exception:
-                old_ids = []
+                pass
 
         sent = await self.message.answer(*args, **kwargs)
 
         try:
-            data = users.setdefault(self.from_user.id, {"cart": []})
-            data["temp_bot_messages"] = [sent.message_id]
+            users.setdefault(self.from_user.id, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
         except Exception:
             pass
-
-        if not skip_delete:
-            for mid in old_ids:
-                try:
-                    if int(mid) != int(sent.message_id):
-                        await self.bot.delete_message(self.from_user.id, int(mid))
-                except Exception:
-                    pass
 
         return sent
 
@@ -1691,28 +1672,18 @@ class CustomerCallbackMessage:
         # אותו עיקרון גם לתמונות מוצר/באנרים.
         skip_delete = bool(getattr(self, "_skip_inline_auto_delete_once", False))
 
-        old_ids = []
         if not skip_delete:
             try:
-                old_ids = list(users.setdefault(self.from_user.id, {"cart": []}).get("temp_bot_messages", []) or [])
+                await delete_temp_bot_messages(self.bot, self.from_user.id)
             except Exception:
-                old_ids = []
+                pass
 
         sent = await self.message.answer_photo(*args, **kwargs)
 
         try:
-            data = users.setdefault(self.from_user.id, {"cart": []})
-            data["temp_bot_messages"] = [sent.message_id]
+            users.setdefault(self.from_user.id, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
         except Exception:
             pass
-
-        if not skip_delete:
-            for mid in old_ids:
-                try:
-                    if int(mid) != int(sent.message_id):
-                        await self.bot.delete_message(self.from_user.id, int(mid))
-                except Exception:
-                    pass
 
         return sent
 
@@ -2425,11 +2396,10 @@ async def show_reorder_choose_inline(callback: CallbackQuery):
     data.setdefault("temp_bot_messages", []).append(sent.message_id)
 
 
-
 async def send_inline_transition_message(callback: CallbackQuery, text, reply_markup=None, parse_mode="HTML"):
     """
-    מעבר Inline בטוח: קודם שולח מסך חדש, ורק אחר כך מנקה מסכים ישנים.
-    מונע מצב שבו חלון נעלם והחלון הבא לא נפתח.
+    מעבר Inline יציב:
+    קודם שולח את המסך החדש, ורק אחר כך מוחק את הישן.
     """
     uid = callback.from_user.id
     data = users.setdefault(uid, {"cart": []})
@@ -2451,12 +2421,23 @@ async def send_inline_transition_message(callback: CallbackQuery, text, reply_ma
             pass
 
     try:
-        if callback.message and callback.message.message_id != sent.message_id:
+        if callback.message and int(callback.message.message_id) != int(sent.message_id):
             await callback.message.delete()
     except Exception:
         pass
 
     return sent
+
+
+async def safe_callback_answer(callback: CallbackQuery, text=None, show_alert=False):
+    try:
+        if text is None:
+            await callback.answer()
+        else:
+            await callback.answer(text, show_alert=show_alert)
+    except Exception:
+        pass
+
 
 @router.callback_query(F.data.startswith("ui:"))
 async def customer_inline_ui_router(callback: CallbackQuery):
@@ -2466,35 +2447,30 @@ async def customer_inline_ui_router(callback: CallbackQuery):
     parts = raw.split(":")
 
     # INLINE_TRANSITION_STABILITY_FIX
-    # לא מוחקים את המסך הנוכחי לפני שהמסך הבא נשלח.
-    # מחיקה מוקדמת גרמה לכך שבחלק מהמעברים המסך נעלם והחדש לא נפתח.
-    # הניקוי מתבצע דרך send_temp_message / CustomerCallbackMessage אחרי שיש שליחה תקינה.
-    try:
-        await callback.answer()
-    except Exception:
-        pass
+    # לא מוחקים את המסך הנוכחי בתחילת הפעולה.
+    # קודם שולחים את המסך החדש ורק אחר כך מוחקים את הישן.
 
     # ADDRESS_CLICK_EDIT_REAL_FIX
     if raw.startswith("ui:addr:id:"):
         try:
             address_id = int(raw.split(":")[-1])
         except Exception:
-            await callback.answer("כתובת לא תקינה.", show_alert=True)
+            await safe_callback_answer(callback, "כתובת לא תקינה.", show_alert=True)
             return
 
         await show_selected_address_profile_by_message(callback.message, uid, address_id)
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
 
     if raw == "ui:addr:edit":
         await show_address_edit_menu_by_message(callback.message, uid)
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
 
     if raw == "ui:addr:back_profile":
         address_id = data.get("selected_address_id")
         await show_selected_address_profile_by_message(callback.message, uid, address_id)
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
 
     if raw.startswith("ui:addr:edit_field:"):
@@ -2503,7 +2479,7 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         address = get_customer_address_by_id(uid, address_id)
 
         if not address:
-            await callback.answer("הכתובת לא נמצאה.", show_alert=True)
+            await safe_callback_answer(callback, "הכתובת לא נמצאה.", show_alert=True)
             return
 
         prompts = {
@@ -2517,7 +2493,7 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         step_prompt = prompts.get(field_name)
 
         if not step_prompt:
-            await callback.answer("פעולה לא זמינה.", show_alert=True)
+            await safe_callback_answer(callback, "פעולה לא זמינה.", show_alert=True)
             return
 
         step, prompt = step_prompt
@@ -2534,7 +2510,7 @@ async def customer_inline_ui_router(callback: CallbackQuery):
 
         data.setdefault("temp_bot_messages", []).append(sent.message_id)
 
-        await callback.answer()
+        await safe_callback_answer(callback)
         return
 
     # רשת ביטחון: כל מסך שממנו לוחצים Inline נחשב למסך פעיל למחיקה במעבר הבא.
@@ -2551,11 +2527,11 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         if raw == "ui:main:shop": text = "🛒 חנות"
         elif raw == "ui:main:details":
             await show_my_details_inline(callback)
-            await callback.answer()
+            await safe_callback_answer(callback)
             return
         elif raw == "ui:main:orders":
             await show_my_orders_inline(callback)
-            await callback.answer()
+            await safe_callback_answer(callback)
             return
         elif raw == "ui:main:addresses": text = "🏠 הכתובות שלי"
         elif raw == "ui:main:support": text = "📞 שירות לקוחות"
@@ -2577,7 +2553,7 @@ async def customer_inline_ui_router(callback: CallbackQuery):
 
         elif raw == "ui:order:confirm": text = "✅ אשר הזמנה"
         elif raw == "ui:order:edit":
-            await callback.answer()
+            await safe_callback_answer(callback)
             try:
                 await callback.message.delete()
             except Exception:
@@ -2609,7 +2585,7 @@ async def customer_inline_ui_router(callback: CallbackQuery):
 
         elif raw == "ui:saved:continue": text = "✅ המשך עם הפרטים השמורים"
         elif raw == "ui:saved:new":
-            await callback.answer()
+            await safe_callback_answer(callback)
             try:
                 await callback.message.delete()
             except Exception:
@@ -2633,35 +2609,35 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             # פתיחה ישירה של מסך בחירת הזמנה חוזרת.
             # לא עוברים דרך proxy/טקסט מדומה, כדי למנוע שגיאת callback.
             await show_reorder_choose_inline(callback)
-            await callback.answer()
+            await safe_callback_answer(callback)
             return
         elif raw == "ui:orders:back_my_orders":
             await show_my_orders_inline(callback)
-            await callback.answer()
+            await safe_callback_answer(callback)
             return
 
         elif raw == "ui:addr:show":
             # ADDRESS_FLOW_NAV_FIX_SHOW
             await show_addresses_list_screen(callback.message, uid)
-            await callback.answer()
+            await safe_callback_answer(callback)
             return
         elif raw == "ui:addr:add":
             text = "➕ הוסף כתובת"
         elif raw == "ui:addr:menu":
             # ADDRESS_FLOW_NAV_FIX_MENU_BACK
             await show_addresses_menu_screen(callback.message, uid)
-            await callback.answer()
+            await safe_callback_answer(callback)
             return
         elif raw == "ui:addr:delete": text = "🗑️ מחק כתובת"
         elif raw == "ui:addr:back_list":
             # ADDRESS_FLOW_NAV_FIX_BACK_LIST
             await show_addresses_list_screen(callback.message, uid)
-            await callback.answer()
+            await safe_callback_answer(callback)
             return
         elif raw == "ui:addr:cancel_add":
             # ADDRESS_FLOW_NAV_FIX_CANCEL_ADD
             await show_addresses_menu_screen(callback.message, uid)
-            await callback.answer()
+            await safe_callback_answer(callback)
             return
         elif raw == "ui:addr:back_city":
             text = "⬅️ חזרה לעיר / יישוב"
@@ -2700,7 +2676,7 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             # אחרת Telegram iOS עלול להציג Alert של "אירעה שגיאה בפעולה"
             # גם כשהשחזור עצמו מצליח, בגלל שהמענה ל־callback הגיע מאוחר מדי.
             try:
-                await callback.answer()
+                await safe_callback_answer(callback)
             except Exception:
                 pass
 
@@ -2714,21 +2690,20 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             try:
                 idx = int(parts[-1])
             except Exception:
-                await callback.answer("פעולה לא זמינה כרגע.", show_alert=True)
+                await safe_callback_answer(callback, "פעולה לא זמינה כרגע.", show_alert=True)
                 return
 
             if not (0 <= idx < len(subjects)):
-                await callback.answer("פעולה לא זמינה כרגע.", show_alert=True)
+                await safe_callback_answer(callback, "פעולה לא זמינה כרגע.", show_alert=True)
                 return
 
             subject = subjects[idx]
             data["support_subject"] = subject
             data["step"] = "support_faq"
 
-            # עונים מייד ל־callback כדי ש־Telegram לא יקפיץ שגיאת פעולה.
-            await callback.answer()
+            await safe_callback_answer(callback)
 
-            sent = await send_inline_transition_message(
+            await send_inline_transition_message(
                 callback,
                 rtl(
                     "<b>📞 שירות לקוחות</b>\n\n"
@@ -2747,19 +2722,18 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             try:
                 idx = int(parts[-1])
             except Exception:
-                await callback.answer("פעולה לא זמינה כרגע.", show_alert=True)
+                await safe_callback_answer(callback, "פעולה לא זמינה כרגע.", show_alert=True)
                 return
 
             if not (0 <= idx < len(questions)):
-                await callback.answer("פעולה לא זמינה כרגע.", show_alert=True)
+                await safe_callback_answer(callback, "פעולה לא זמינה כרגע.", show_alert=True)
                 return
 
             question = questions[idx]
 
-            # עונים מייד ל־callback לפני מחיקה/שליחה כדי למנוע Alert של "אירעה שגיאה בפעולה".
-            await callback.answer()
+            await safe_callback_answer(callback)
 
-            sent = await send_inline_transition_message(
+            await send_inline_transition_message(
                 callback,
                 support_faq_answer_text(uid, subject, question),
                 reply_markup=support_faq_after_answer_keyboard(subject),
@@ -2772,9 +2746,9 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             data["step"] = "support_phone"
             data.pop("support_phone_warned", None)
 
-            await callback.answer()
+            await safe_callback_answer(callback)
 
-            sent = await send_inline_transition_message(
+            await send_inline_transition_message(
                 callback,
                 rtl(
                     "<b>✍️ פנייה לנציג שירות</b>\n\n"
@@ -2790,9 +2764,9 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         elif raw == "ui:support:back_subjects":
             data["step"] = "support_subject"
 
-            await callback.answer()
+            await safe_callback_answer(callback)
 
-            sent = await send_inline_transition_message(
+            await send_inline_transition_message(
                 callback,
                 rtl(
                     "<b>📞 שירות לקוחות</b>\n\n"
@@ -2806,18 +2780,18 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         elif raw == "ui:support:resolved": text = "✅ הבעיה נפתרה"
 
         if not text:
-            await callback.answer("פעולה לא זמינה כרגע.", show_alert=True)
+            await safe_callback_answer(callback, "פעולה לא זמינה כרגע.", show_alert=True)
             return
 
         await _dispatch_customer_inline(callback, text)
-        await callback.answer()
+        await safe_callback_answer(callback)
 
     except Exception as e:
         print(f"CUSTOMER_INLINE_UI_ERROR: {type(e).__name__}: {e}")
         # לא שולחים כאן תפריט נוסף, כדי לא ליצור כפילות מסכים.
         # רק מציגים Alert לטלגרם; המשתמש יכול ללחוץ שוב או לחזור דרך הכפתור הקיים.
         try:
-            await callback.answer("אירעה שגיאה בפעולה. נסה שוב.", show_alert=True)
+            await safe_callback_answer(callback, "אירעה שגיאה בפעולה. נסה שוב.", show_alert=True)
         except Exception:
             pass
 
