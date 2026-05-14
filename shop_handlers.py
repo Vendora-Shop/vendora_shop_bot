@@ -6,6 +6,7 @@ from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from html import escape
 import asyncio
+import time
 
 from config import ADMIN_ID
 from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard, support_subject_keyboard
@@ -395,6 +396,8 @@ async def notify_admin_ticket_closed_by_customer(bot, ticket_number, user_full_n
 
 
 users = {}
+START_DEBOUNCE_SECONDS = 1.2
+START_LAST_RUN = {}
 
 
 # ================== CUSTOMER MAIN MENU MESSAGE STORE ==================
@@ -485,24 +488,34 @@ def remember_temp_bot_message(uid, message_obj):
 
 
 async def delete_temp_bot_messages(bot, user_id):
+    """
+    ניקוי הודעות זמניות בצורה בטוחה:
+    לא עוצר את כל הבוט אם הודעה כבר נמחקה / לא קיימת.
+    מוחק עד 40 הודעות אחרונות כדי למנוע עומס על Telegram.
+    """
     data = users.get(user_id)
 
     if not data:
         return
 
-    message_ids = list(data.get("temp_bot_messages", []))
+    message_ids = list(data.get("temp_bot_messages", []) or [])
 
-    for message_id in message_ids:
+    if not message_ids:
+        data["temp_bot_messages"] = []
+        return
+
+    async def _delete_one(message_id):
         try:
-            await bot.delete_message(user_id, message_id)
+            await bot.delete_message(user_id, int(message_id))
         except Exception:
             pass
 
+    try:
+        await asyncio.gather(*[_delete_one(mid) for mid in message_ids[-40:]], return_exceptions=True)
+    except Exception:
+        pass
+
     data["temp_bot_messages"] = []
-
-
-
-
 async def force_close_phone_keyboard(message: Message):
     """
     סוגר מקלדת Reply רגילה בלי השהיה ארוכה.
@@ -903,28 +916,23 @@ def admin_new_order_keyboard(order_number):
 
 def categories_keyboard():
     products = get_active_products()
-
-    keyboard = [[KeyboardButton(text=cat)] for cat in products.keys()]
-    keyboard.append([KeyboardButton(text="🛒 הסל שלי")])
-    keyboard.append([KeyboardButton(text="⬅️ חזרה")])
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
-
+    rows = []
+    for idx, cat in enumerate(products.keys()):
+        rows.append([_btn(str(cat), f"ui:cat:{idx}")])
+    rows.append([_btn("🛒 הסל שלי", "ui:nav:cart")])
+    rows.append([_btn("⬅️ חזרה לתפריט", "ui:nav:main")])
+    return _inline(rows)
 
 def products_keyboard(category):
     products = get_active_products()
-    keyboard = []
-
-    for product in products.get(category, []):
-        stock = int(product.get("stock", 0))
-        if stock <= 0:
-            keyboard.append([KeyboardButton(text=f"❌ {product['name']} - אזל מהמלאי")])
-        else:
-            keyboard.append([KeyboardButton(text=product["name"])])
-
-    keyboard.append([KeyboardButton(text="🛒 הסל שלי")])
-    keyboard.append([KeyboardButton(text="⬅️ חזרה לקטגוריות")])
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
-
+    rows = []
+    for idx, product in enumerate(products.get(category, [])):
+        stock = int(product.get("stock", 0) or 0)
+        text = f"❌ {product['name']} - אזל מהמלאי" if stock <= 0 else product["name"]
+        rows.append([_btn(text, f"ui:prod:{idx}")])
+    rows.append([_btn("🛒 הסל שלי", "ui:nav:cart")])
+    rows.append([_btn("⬅️ חזרה לקטגוריות", "ui:nav:categories")])
+    return _inline(rows)
 
 def cart_keyboard():
     # GLASS_COMPACT_V2_CART
@@ -941,24 +949,8 @@ def cart_keyboard():
 
 
 def quantity_keyboard(selected_qty, available_left, max_qty):
-    selected_qty = int(selected_qty)
-
-    keyboard = [
-        [
-            KeyboardButton(text="➖ פחות"),
-            KeyboardButton(text=f"כמות: {selected_qty}"),
-            KeyboardButton(text="➕ יותר")
-        ],
-        [KeyboardButton(text="🛒 הוסף לסל")],
-        [KeyboardButton(text="🛒 הסל שלי")],
-        [KeyboardButton(text="⬅️ חזרה לקטגוריות")]
-    ]
-
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
-
-
-
-
+    # תאימות ישנה בלבד. הזרימה החדשה משתמשת ב-quantity_inline_keyboard.
+    return quantity_inline_keyboard(selected_qty)
 
 def product_caption_text(product, qty):
     # PRODUCT_CAPTION_GENERAL_FIX
@@ -1081,25 +1073,18 @@ SUPPORT_FAQ_BY_SUBJECT = {
 
 def support_faq_keyboard(subject):
     questions = SUPPORT_FAQ_BY_SUBJECT.get(subject, SUPPORT_FAQ_BY_SUBJECT.get("❓ אחר", []))
-
-    keyboard = [[KeyboardButton(text=q)] for q in questions]
-    keyboard.append([KeyboardButton(text="✍️ פנייה לנציג שירות")])
-    keyboard.append([KeyboardButton(text="⬅️ חזרה לנושאים")])
-    keyboard.append([KeyboardButton(text="⬅️ חזרה לתפריט")])
-
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
-
+    rows = [[_btn(q, f"ui:support:faq:{i}")] for i, q in enumerate(questions)]
+    rows.append([_btn("✍️ פנייה לנציג שירות", "ui:support:rep")])
+    rows.append([_btn("⬅️ חזרה לנושאים", "ui:support:back_subjects")])
+    rows.append([_btn("⬅️ חזרה לתפריט", "ui:nav:main")])
+    return _inline(rows)
 
 def support_faq_after_answer_keyboard(subject):
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="✍️ פנייה לנציג שירות")],
-            [KeyboardButton(text="⬅️ חזרה לנושאים")],
-            [KeyboardButton(text="⬅️ חזרה לתפריט")]
-        ],
-        resize_keyboard=True
-    )
-
+    return _inline(_wide_buttons([
+        _btn("✍️ פנייה לנציג שירות", "ui:support:rep"),
+        _btn("⬅️ חזרה לנושאים", "ui:support:back_subjects"),
+        _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
+    ]))
 
 def latest_customer_order(telegram_id):
     try:
@@ -1341,13 +1326,8 @@ def support_faq_answer_text(user_id, subject, question):
 
 
 def support_customer_keyboard(user_id=None):
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="⬅️ חזרה לתפריט")]
-        ],
-        resize_keyboard=True
-    )
-
+    # ברירת מחדל: פנייה פתוחה.
+    return support_open_ticket_keyboard(user_id)
 
 def fulfillment_keyboard():
     # GLASS_COMPACT_V2_FULFILLMENT
@@ -3061,6 +3041,17 @@ async def customer_inline_ui_router(callback: CallbackQuery):
 @router.message(CommandStart())
 async def start(message: Message):
     uid = message.from_user.id
+
+    now = time.time()
+    last_run = START_LAST_RUN.get(uid, 0)
+    if now - last_run < START_DEBOUNCE_SECONDS:
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        return
+    START_LAST_RUN[uid] = now
+
 
     # מוחק את הודעת /start של הלקוח כדי שלא יצטברו הרבה /start בצ'אט.
     try:
