@@ -615,10 +615,9 @@ def remember_temp_bot_message(uid, message_obj):
 
 async def delete_temp_bot_messages(bot, user_id):
     """
-    ניקוי הודעות זמניות.
-    חשוב: אם אנחנו באמצע מעבר מכפתור Inline, לא מוחקים מיד.
-    במקום זה שומרים את ההודעות למחיקה אחרי שהמסך החדש נשלח.
-    זה מונע את הכפתור הכחול/Start שנתקע באנדרואיד ובאייפון.
+    ניקוי הודעות זמניות בצורה בטוחה:
+    לא עוצר את כל הבוט אם הודעה כבר נמחקה / לא קיימת.
+    מוחק עד 40 הודעות אחרונות כדי למנוע עומס על Telegram.
     """
     data = users.get(user_id)
 
@@ -631,28 +630,36 @@ async def delete_temp_bot_messages(bot, user_id):
         data["temp_bot_messages"] = []
         return
 
-    # במעבר Inline אסור ליצור רגע ריק בצ'אט.
-    # לכן לא מוחקים עכשיו, אלא אחרי שליחת המסך החדש.
-    if data.get("_inline_transition_active"):
-        pending = data.setdefault("_pending_delete_message_ids", [])
-        for mid in message_ids:
-            try:
-                if int(mid) not in [int(x) for x in pending]:
-                    pending.append(int(mid))
-            except Exception:
-                pass
-
-        current_mid = data.get("_inline_current_message_id")
-        data["temp_bot_messages"] = [current_mid] if current_mid else []
-        return
-
-    for message_id in message_ids[-40:]:
+    async def _delete_one(message_id):
         try:
             await bot.delete_message(user_id, int(message_id))
         except Exception:
             pass
 
+    try:
+        await asyncio.gather(*[_delete_one(mid) for mid in message_ids[-40:]], return_exceptions=True)
+    except Exception:
+        pass
+
     data["temp_bot_messages"] = []
+async def force_close_phone_keyboard(message: Message):
+    """
+    סוגר מקלדת Reply רגילה בלי השהיה ארוכה.
+    המטרה: למזער את הקפיצה של הפס הכחול/מקלדת בטלגרם בזמן מעבר מסכים.
+    """
+    try:
+        sent = await message.answer(
+            "\u2063",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        try:
+            await sent.delete()
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
 async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None, clean_input_warnings=True):
     """
     שליחת מסך זמני יציבה לכל מכשיר:
@@ -1797,46 +1804,23 @@ class CustomerCallbackMessage:
         self.message_id = callback.message.message_id
         self.chat = callback.message.chat
 
-        # מתחילים מעבר Inline בטוח:
-        # לא מוחקים את המסך הישן עד שהמסך החדש נשלח.
+        # חשוב: גם אם המסך שנלחץ לא נשמר ברשימת temp_bot_messages בגלל מעבר קודם,
+        # מוסיפים אותו כאן כדי שהמסך הישן יימחק לפני פתיחת המסך הבא.
+        # זה מונע מצב שבו נכנסים ל״פרטים שלי״ / ״הזמנות שלי״ והתפריט הראשי נשאר פתוח למטה.
         try:
             data = users.setdefault(self.from_user.id, {"cart": []})
-            data["_inline_transition_active"] = True
-            data["_inline_current_message_id"] = self.message_id
-
             temp = data.setdefault("temp_bot_messages", [])
             if self.message_id not in temp:
                 temp.append(self.message_id)
         except Exception:
             pass
 
-    async def _finish_inline_transition(self, sent):
-        uid = self.from_user.id
-        data = users.setdefault(uid, {"cart": []})
-
-        sent_id = getattr(sent, "message_id", None)
-
-        old_ids = []
-        old_ids.extend(data.get("_pending_delete_message_ids", []) or [])
-        old_ids.extend(data.get("temp_bot_messages", []) or [])
-
-        data["temp_bot_messages"] = [sent_id] if sent_id else []
-        data.pop("_pending_delete_message_ids", None)
-        data.pop("_inline_transition_active", None)
-        data.pop("_inline_current_message_id", None)
-
-        for mid in old_ids:
-            try:
-                if sent_id and int(mid) == int(sent_id):
-                    continue
-                await self.bot.delete_message(uid, int(mid))
-            except Exception:
-                pass
-
-        return sent
-
     async def answer(self, *args, **kwargs):
-        # שולחים קודם את המסך החדש ורק אחרי זה מוחקים את הישן.
+        # Inline UI: בכל מעבר מסך מוחקים את המסך הפעיל הקודם ושומרים את החדש.
+        # כש-send_temp_message נקרא עם clear_previous=False שומרים גם את ההודעה הקודמת
+        # למשל: תמונת מוצר + מסך בחירת כמות.
+        skip_delete = bool(getattr(self, "_skip_inline_auto_delete_once", False))
+
         try:
             reply_markup = kwargs.get("reply_markup")
             if isinstance(reply_markup, InlineKeyboardMarkup) and args:
@@ -1844,17 +1828,44 @@ class CustomerCallbackMessage:
         except Exception:
             pass
 
+        if not skip_delete:
+            try:
+                await delete_temp_bot_messages(self.bot, self.from_user.id)
+            except Exception:
+                pass
+
         sent = await self.message.answer(*args, **kwargs)
-        return await self._finish_inline_transition(sent)
+
+        try:
+            users.setdefault(self.from_user.id, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+        except Exception:
+            pass
+
+        return sent
 
     async def answer_photo(self, *args, **kwargs):
-        # אותו עיקרון גם בתמונות מוצר.
+        # אותו עיקרון גם לתמונות מוצר/באנרים.
+        skip_delete = bool(getattr(self, "_skip_inline_auto_delete_once", False))
+
+        if not skip_delete:
+            try:
+                await delete_temp_bot_messages(self.bot, self.from_user.id)
+            except Exception:
+                pass
+
         sent = await self.message.answer_photo(*args, **kwargs)
-        return await self._finish_inline_transition(sent)
+
+        try:
+            users.setdefault(self.from_user.id, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+        except Exception:
+            pass
+
+        return sent
 
     async def answer_document(self, *args, **kwargs):
+        # מאפשר לשלוח PDF/קבצים גם כאשר הפעולה הגיעה מכפתור Inline.
         sent = await self.message.answer_document(*args, **kwargs)
-        return await self._finish_inline_transition(sent)
+        return sent
 
     async def delete(self):
         # אין הודעת משתמש למחיקה ב־Inline Callback.
@@ -2951,8 +2962,9 @@ async def customer_inline_ui_router(callback: CallbackQuery):
 
         elif raw == "ui:saved:continue": text = "✅ המשך עם הפרטים השמורים"
         elif raw == "ui:saved:new":
+            await callback.answer()
             try:
-                await callback.answer()
+                await callback.message.delete()
             except Exception:
                 pass
             await delete_temp_bot_messages(callback.message.bot, uid)
@@ -3164,22 +3176,10 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             await callback.answer("פעולה לא זמינה כרגע.", show_alert=True)
             return
 
-        try:
-            await callback.answer()
-        except Exception:
-            pass
-
         await _dispatch_customer_inline(callback, text)
+        await callback.answer()
 
     except Exception as e:
-        try:
-            data = users.get(uid)
-            if data:
-                data.pop("_inline_transition_active", None)
-                data.pop("_inline_current_message_id", None)
-                data.pop("_pending_delete_message_ids", None)
-        except Exception:
-            pass
         print(f"CUSTOMER_INLINE_UI_ERROR: {type(e).__name__}: {e}")
         # לא שולחים כאן תפריט נוסף, כדי לא ליצור כפילות מסכים.
         # רק מציגים Alert לטלגרם; המשתמש יכול ללחוץ שוב או לחזור דרך הכפתור הקיים.
