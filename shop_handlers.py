@@ -450,6 +450,18 @@ def widen_inline_screen_text(text):
 # ================== SAFE INPUT CLEANUP ==================
 # מוחק קשקושים של לקוחות רק במקומות שבהם צריך לבחור מכפתורים.
 # לא מוחק סיכומי הזמנה, PDF או הודעות מעקב.
+async def safe_delete_bot_message_later(bot, chat_id, message_id, delay=0.35):
+    """
+    Android Telegram רגיש למחיקה מיידית של הודעת Inline שעליה לחצו.
+    לכן מוחקים בהשהיה קטנה ורק אחרי שהמסך החדש כבר נשלח.
+    """
+    try:
+        await asyncio.sleep(delay)
+        await bot.delete_message(chat_id, int(message_id))
+    except Exception:
+        pass
+
+
 async def delete_customer_message(message: Message):
     try:
         await message.delete()
@@ -613,11 +625,12 @@ def remember_temp_bot_message(uid, message_obj):
         pass
 
 
-async def delete_temp_bot_messages(bot, user_id):
+async def delete_temp_bot_messages(bot, user_id, skip_message_id=None, android_safe=True):
     """
     ניקוי הודעות זמניות בצורה בטוחה:
-    לא עוצר את כל הבוט אם הודעה כבר נמחקה / לא קיימת.
-    מוחק עד 40 הודעות אחרונות כדי למנוע עומס על Telegram.
+    - לא מוחק את ההודעה שעליה המשתמש לחץ אם היא מוגדרת כ-skip.
+    - באנדרואיד מחיקה מיידית יכולה להקפיץ את המשתמש למסך Start/רשימת צ'אטים,
+      לכן מוחקים בהשהיה קצרה.
     """
     data = users.get(user_id)
 
@@ -630,42 +643,38 @@ async def delete_temp_bot_messages(bot, user_id):
         data["temp_bot_messages"] = []
         return
 
-    async def _delete_one(message_id):
+    keep_ids = []
+    tasks = []
+
+    for message_id in message_ids[-40:]:
         try:
-            await bot.delete_message(user_id, int(message_id))
+            mid = int(message_id)
         except Exception:
-            pass
+            continue
 
-    try:
-        await asyncio.gather(*[_delete_one(mid) for mid in message_ids[-40:]], return_exceptions=True)
-    except Exception:
-        pass
+        if skip_message_id is not None:
+            try:
+                if mid == int(skip_message_id):
+                    keep_ids.append(mid)
+                    continue
+            except Exception:
+                pass
 
-    data["temp_bot_messages"] = []
-async def force_close_phone_keyboard(message: Message):
-    """
-    סוגר מקלדת Reply רגילה בלי השהיה ארוכה.
-    המטרה: למזער את הקפיצה של הפס הכחול/מקלדת בטלגרם בזמן מעבר מסכים.
-    """
-    try:
-        sent = await message.answer(
-            "\u2063",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        try:
-            await sent.delete()
-        except Exception:
-            pass
-    except Exception:
-        pass
+        if android_safe:
+            tasks.append(asyncio.create_task(safe_delete_bot_message_later(bot, user_id, mid)))
+        else:
+            try:
+                await bot.delete_message(user_id, mid)
+            except Exception:
+                pass
 
-
+    data["temp_bot_messages"] = keep_ids
 async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None, clean_input_warnings=True):
     """
-    שליחת מסך זמני יציבה לכל מכשיר:
-    1. מנקה אזהרות קלט ישנות.
-    2. קודם שולחת את המסך החדש.
-    3. רק אחרי שליחה מוצלחת מוחקת מסכים ישנים.
+    Android-safe screen transition:
+    קודם שולחים את המסך החדש.
+    רק אחר כך מנקים את המסכים הישנים בהשהיה קצרה.
+    כך Telegram Android לא קופץ למסך Start/רשימת צ'אטים.
     """
     uid = message.from_user.id
 
@@ -696,10 +705,7 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
     if disable_web_page_preview is not None:
         kwargs["disable_web_page_preview"] = disable_web_page_preview
 
-    sent = await message.answer(
-        text,
-        **kwargs
-    )
+    sent = await message.answer(text, **kwargs)
 
     if clear_previous:
         data["temp_bot_messages"] = [sent.message_id]
@@ -707,19 +713,19 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
         for message_id in old_ids:
             try:
                 if int(message_id) != int(sent.message_id):
-                    await message.bot.delete_message(uid, int(message_id))
+                    asyncio.create_task(
+                        safe_delete_bot_message_later(message.bot, uid, int(message_id), delay=0.45)
+                    )
             except Exception:
                 pass
     else:
         data.setdefault("temp_bot_messages", []).append(sent.message_id)
 
     return sent
-
-
 async def send_temp_photo(message: Message, photo, caption=None, reply_markup=None, parse_mode="HTML", clear_previous=True, clean_input_warnings=True):
     """
-    שליחת תמונת מוצר יציבה:
-    קודם מנקה אזהרות קלט, שולחת תמונה חדשה, אחר כך מנקה הודעות ישנות.
+    Android-safe photo transition:
+    קודם שולחים תמונת מוצר חדשה, אחר כך מוחקים ישנות בהשהיה.
     """
     uid = message.from_user.id
 
@@ -752,15 +758,15 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
         for message_id in old_ids:
             try:
                 if int(message_id) != int(sent.message_id):
-                    await message.bot.delete_message(uid, int(message_id))
+                    asyncio.create_task(
+                        safe_delete_bot_message_later(message.bot, uid, int(message_id), delay=0.45)
+                    )
             except Exception:
                 pass
     else:
         data.setdefault("temp_bot_messages", []).append(sent.message_id)
 
     return sent
-
-
 async def cleanup_customer_order_screens(bot, uid):
     """
     ניקוי מלא למסכי הזמנה/מוצר/תמונות לפני מעבר לתפריט או ביטול.
@@ -2466,7 +2472,7 @@ async def restore_reorder_from_inline(callback: CallbackQuery, order_number: str
     order = get_order_by_number(order_number)
 
     if not order or int(order.get("telegram_id") or 0) != uid:
-        await delete_temp_bot_messages(callback.message.bot, uid)
+        await delete_temp_bot_messages(callback.message.bot, uid, skip_message_id=getattr(callback.message, 'message_id', None))
         sent = await callback.message.answer(
             widen_inline_screen_text(rtl("<b>⚠️ ההזמנה לא נמצאה או אינה שייכת לחשבון שלך.</b>")),
             reply_markup=my_orders_keyboard(),
@@ -2479,7 +2485,7 @@ async def restore_reorder_from_inline(callback: CallbackQuery, order_number: str
     cloned_cart, unavailable_products = clone_cart_from_order(order)
 
     if not cloned_cart:
-        await delete_temp_bot_messages(callback.message.bot, uid)
+        await delete_temp_bot_messages(callback.message.bot, uid, skip_message_id=getattr(callback.message, 'message_id', None))
         sent = await callback.message.answer(
             widen_inline_screen_text(rtl("<b>⚠️ המוצר שבחרת אזל מהמלאי.</b>")),
             reply_markup=my_orders_keyboard(),
@@ -2492,7 +2498,7 @@ async def restore_reorder_from_inline(callback: CallbackQuery, order_number: str
     data["cart"] = cloned_cart
     data["step"] = "cart"
 
-    await delete_temp_bot_messages(callback.message.bot, uid)
+    await delete_temp_bot_messages(callback.message.bot, uid, skip_message_id=getattr(callback.message, 'message_id', None))
 
     if unavailable_products:
         warn = await callback.message.answer(
@@ -2521,7 +2527,7 @@ async def show_my_details_inline(callback: CallbackQuery):
     uid = callback.from_user.id
     users.setdefault(uid, {"cart": []})
     profile = get_customer_profile(uid)
-    await delete_temp_bot_messages(callback.message.bot, uid)
+    await delete_temp_bot_messages(callback.message.bot, uid, skip_message_id=getattr(callback.message, 'message_id', None))
 
     if not profile:
         body = rtl(
@@ -2550,7 +2556,7 @@ async def show_my_orders_inline(callback: CallbackQuery):
         data["last_order_number"] = orders[0].get("order_number")
 
     data["step"] = "my_orders"
-    await delete_temp_bot_messages(callback.message.bot, uid)
+    await delete_temp_bot_messages(callback.message.bot, uid, skip_message_id=getattr(callback.message, 'message_id', None))
 
     sent = await callback.message.answer(
         widen_inline_screen_text(customer_orders_text(orders)),
@@ -2565,7 +2571,7 @@ async def show_reorder_choose_inline(callback: CallbackQuery):
     uid = callback.from_user.id
     data = users.setdefault(uid, {"cart": []})
     orders = get_orders_by_customer_telegram_id(uid, 10)
-    await delete_temp_bot_messages(callback.message.bot, uid)
+    await delete_temp_bot_messages(callback.message.bot, uid, skip_message_id=getattr(callback.message, 'message_id', None))
 
     if not orders:
         data["step"] = "my_orders"
@@ -2872,7 +2878,7 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         data["step"] = step
         data["editing_address_field"] = field_name
 
-        await delete_temp_bot_messages(callback.message.bot, uid)
+        await delete_temp_bot_messages(callback.message.bot, uid, skip_message_id=getattr(callback.message, 'message_id', None))
 
         sent = await callback.message.answer(
             widen_inline_screen_text(rtl(prompt)),
@@ -2916,13 +2922,9 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         elif raw == "ui:nav:checkout": text = "✅ המשך להזמנה"
         elif raw == "ui:nav:clear_cart": text = "🧹 רוקן סל"
         elif raw == "ui:nav:cancel":
-            # INLINE_CANCEL_CURRENT_DELETE_FIX
+            # Android-safe: לא מוחקים את ההודעה מיידית לפני שהמסך הבא נפתח.
             try:
                 await cleanup_input_warnings(callback.message.bot, uid)
-            except Exception:
-                pass
-            try:
-                await callback.message.delete()
             except Exception:
                 pass
             text = "❌ בטל הזמנה"
@@ -2930,12 +2932,12 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         elif raw == "ui:order:confirm": text = "✅ אשר הזמנה"
         elif raw == "ui:order:edit":
             await callback.answer()
-            try:
-                await callback.message.delete()
-            except Exception:
-                pass
             await cleanup_input_warnings(callback.message.bot, uid)
-            await delete_temp_bot_messages(callback.message.bot, uid)
+            await delete_temp_bot_messages(
+                callback.message.bot,
+                uid,
+                skip_message_id=getattr(callback.message, "message_id", None)
+            )
 
             data["step"] = "name"
             data["editing_details"] = True
@@ -2963,11 +2965,11 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         elif raw == "ui:saved:continue": text = "✅ המשך עם הפרטים השמורים"
         elif raw == "ui:saved:new":
             await callback.answer()
-            try:
-                await callback.message.delete()
-            except Exception:
-                pass
-            await delete_temp_bot_messages(callback.message.bot, uid)
+            await delete_temp_bot_messages(
+                callback.message.bot,
+                uid,
+                skip_message_id=getattr(callback.message, "message_id", None)
+            )
 
             data["step"] = "name"
             data["editing_details"] = True
@@ -3081,7 +3083,7 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             # עונים מייד ל־callback כדי ש־Telegram לא יקפיץ שגיאת פעולה.
             await callback.answer()
 
-            await delete_temp_bot_messages(callback.message.bot, uid)
+            await delete_temp_bot_messages(callback.message.bot, uid, skip_message_id=getattr(callback.message, 'message_id', None))
 
             sent = await callback.message.answer(
                 widen_inline_screen_text(
@@ -3116,7 +3118,7 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             # עונים מייד ל־callback לפני מחיקה/שליחה כדי למנוע Alert של "אירעה שגיאה בפעולה".
             await callback.answer()
 
-            await delete_temp_bot_messages(callback.message.bot, uid)
+            await delete_temp_bot_messages(callback.message.bot, uid, skip_message_id=getattr(callback.message, 'message_id', None))
 
             sent = await callback.message.answer(
                 widen_inline_screen_text(
@@ -3134,7 +3136,7 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             data.pop("support_phone_warned", None)
 
             await callback.answer()
-            await delete_temp_bot_messages(callback.message.bot, uid)
+            await delete_temp_bot_messages(callback.message.bot, uid, skip_message_id=getattr(callback.message, 'message_id', None))
 
             sent = await callback.message.answer(
                 widen_inline_screen_text(
@@ -3155,7 +3157,7 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             data["step"] = "support_subject"
 
             await callback.answer()
-            await delete_temp_bot_messages(callback.message.bot, uid)
+            await delete_temp_bot_messages(callback.message.bot, uid, skip_message_id=getattr(callback.message, 'message_id', None))
 
             sent = await callback.message.answer(
                 widen_inline_screen_text(
@@ -3922,7 +3924,7 @@ async def quantity_inline_action(callback: CallbackQuery):
         data.pop("qty_manual_lock", None)
         data.pop("qty_manual_invalid_warned", None)
 
-        await delete_temp_bot_messages(callback.message.bot, uid)
+        await delete_temp_bot_messages(callback.message.bot, uid, skip_message_id=getattr(callback.message, 'message_id', None))
 
         proxy = CustomerCallbackMessage(callback, "⬅️ חזרה למוצרים")
         await send_temp_message(
@@ -4093,7 +4095,7 @@ async def quantity_inline_action(callback: CallbackQuery):
         data.pop("qty_manual_lock", None)
         data.pop("qty_manual_invalid_warned", None)
 
-        await delete_temp_bot_messages(callback.message.bot, uid)
+        await delete_temp_bot_messages(callback.message.bot, uid, skip_message_id=getattr(callback.message, 'message_id', None))
 
         sent = await callback.message.answer(
             widen_inline_screen_text(cart_text(data["cart"], title="✅ נוסף לסל")),
