@@ -121,36 +121,28 @@ def addresses_menu_keyboard():
         [_ibtn("⬅️ חזרה לתפריט", "ui:nav:main")],
     ])
 
-
 def address_select_keyboard(addresses):
-    keyboard = []
+    rows = []
 
     for address in addresses:
         address_id = address.get("id")
         label = address.get("label") or "כתובת"
         city = address.get("city") or "-"
         street = address.get("street") or "-"
-        keyboard.append([KeyboardButton(text=f"🏠 {address_id} | {label} | {city}, {street}")])
+        rows.append([_ibtn(f"🏠 {address_id} | {label} | {city}, {street}", f"ui:addr:id:{address_id}")])
 
-    keyboard.append([KeyboardButton(text="➕ הוסף כתובת")])
-    keyboard.append([KeyboardButton(text="⬅️ חזרה לכתובות")])
-    keyboard.append([KeyboardButton(text="⬅️ חזרה לתפריט")])
+    rows.append([_ibtn("➕ הוסף כתובת", "ui:addr:add")])
+    rows.append([_ibtn("⬅️ חזרה לכתובות", "ui:addr:menu")])
+    rows.append([_ibtn("⬅️ חזרה לתפריט", "ui:nav:main")])
 
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
-
+    return _inline_customer(rows)
 
 def address_actions_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🗑️ מחק כתובת")],
-            [KeyboardButton(text="⬅️ חזרה לרשימת כתובות")],
-            [KeyboardButton(text="⬅️ חזרה לתפריט")]
-        ],
-        resize_keyboard=True
-    )
-
-
-
+    return _inline_customer([
+        [_ibtn("🗑️ מחק כתובת", "ui:addr:delete")],
+        [_ibtn("⬅️ חזרה לרשימת כתובות", "ui:addr:back_list")],
+        [_ibtn("⬅️ חזרה לתפריט", "ui:nav:main")],
+    ])
 
 def translate_order_status_for_keyboard(status):
     statuses = {
@@ -168,26 +160,18 @@ def translate_order_status_for_keyboard(status):
 
 
 def reorder_select_keyboard(orders):
-    keyboard = []
+    rows = []
 
     for order in orders:
         order_number = order.get("order_number")
         total = int(float(order.get("final_total") or 0))
         status = translate_order_status_for_keyboard(order.get("status"))
+        rows.append([_ibtn(f"🔁 {order_number} | {total}₪ | {status}", f"ui:reorder:{order_number}")])
 
-        keyboard.append([
-            KeyboardButton(text=f"🔁 {order_number} | {total}₪ | {status}")
-        ])
+    rows.append([_ibtn("⬅️ חזרה להזמנות שלי", "ui:orders:back_my_orders")])
+    rows.append([_ibtn("⬅️ חזרה לתפריט", "ui:nav:main")])
 
-    keyboard.append([KeyboardButton(text="⬅️ חזרה להזמנות שלי")])
-    keyboard.append([KeyboardButton(text="⬅️ חזרה לתפריט")])
-
-    return ReplyKeyboardMarkup(
-        keyboard=keyboard,
-        resize_keyboard=True
-    )
-
-
+    return _inline_customer(rows)
 
 def customer_select_keyboard(customers):
     keyboard = []
@@ -224,7 +208,6 @@ def support_subject_keyboard():
     rows = [[_ibtn(subject, f"ui:support:subject:{i}")] for i, subject in enumerate(subjects)]
     rows.append([_ibtn("⬅️ חזרה לתפריט", "ui:nav:main")])
     return _inline_customer(rows)
-
 
 def support_tickets_menu_keyboard():
     return ReplyKeyboardMarkup(
