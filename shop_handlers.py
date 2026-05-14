@@ -462,8 +462,15 @@ async def warn_once_then_delete_invalid(message: Message, data: dict, warn_key: 
     טיפול מקצועי בקלט לא תקין:
     פעם ראשונה מציגים הסבר.
     מהפעם השנייה מוחקים את הודעת הלקוח כדי לא להציף את הצ'אט.
+    כל הודעת אזהרה נשמרת לניקוי אוטומטי במעבר מסך.
     """
     uid = message.from_user.id
+    deleted_ids = data.setdefault("invalid_deleted_message_ids", [])
+
+    try:
+        deleted_ids.append(message.message_id)
+    except Exception:
+        pass
 
     if data.get(warn_key):
         await delete_customer_message(message)
@@ -483,6 +490,7 @@ async def warn_once_then_delete_invalid(message: Message, data: dict, warn_key: 
     )
 
     data[f"{warn_key}_message_id"] = sent.message_id
+    data.setdefault("input_warning_message_ids", []).append(sent.message_id)
     data.setdefault("temp_bot_messages", []).append(sent.message_id)
     return sent
 
@@ -490,6 +498,50 @@ async def warn_once_then_delete_invalid(message: Message, data: dict, warn_key: 
 def clear_invalid_warning(data: dict, warn_key: str):
     data.pop(warn_key, None)
     data.pop(f"{warn_key}_message_id", None)
+
+
+async def cleanup_input_warnings(bot, user_id):
+    """
+    מוחק אזהרות קלט ישנות, לדוגמה:
+    'מספר פלאפון לא תקין', 'שם מלא לא תקין', 'רשום כמות במספרים'.
+    מופעל כשעוברים מסך/חוזרים לתפריט/ממשיכים בתהליך.
+    """
+    data = users.get(user_id)
+    if not data:
+        return
+
+    ids = []
+    ids.extend(data.get("input_warning_message_ids", []) or [])
+
+    for key, value in list(data.items()):
+        if key.endswith("_message_id") and any(token in key for token in ["warn", "warning", "invalid"]):
+            ids.append(value)
+
+    # הודעות לקוח שנמחקו כבר ייכשלו בשקט; זה בסדר.
+    ids.extend(data.get("invalid_deleted_message_ids", []) or [])
+
+    seen = set()
+    for mid in ids:
+        try:
+            mid = int(mid)
+        except Exception:
+            continue
+        if mid in seen:
+            continue
+        seen.add(mid)
+        try:
+            await bot.delete_message(user_id, mid)
+        except Exception:
+            pass
+
+    data.pop("input_warning_message_ids", None)
+    data.pop("invalid_deleted_message_ids", None)
+
+    for key in list(data.keys()):
+        if key.endswith("_warned") or key.endswith("_warning_sent") or key.endswith("_invalid_warned"):
+            data.pop(key, None)
+        if key.endswith("_message_id") and any(token in key for token in ["warn", "warning", "invalid"]):
+            data.pop(key, None)
 
 
 
@@ -570,12 +622,12 @@ async def force_close_phone_keyboard(message: Message):
         pass
 
 
-async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None):
+async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None, clean_input_warnings=True):
     """
     שליחת מסך זמני יציבה לכל מכשיר:
-    1. קודם שולחת את המסך החדש.
-    2. רק אחרי שליחה מוצלחת מוחקת מסכים ישנים.
-    כך לא נוצר מצב שהמסך הישן נעלם והחדש לא נפתח.
+    1. מנקה אזהרות קלט ישנות.
+    2. קודם שולחת את המסך החדש.
+    3. רק אחרי שליחה מוצלחת מוחקת מסכים ישנים.
     """
     uid = message.from_user.id
 
@@ -583,6 +635,13 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
         users[uid] = {"cart": []}
 
     data = users.setdefault(uid, {"cart": []})
+
+    if clean_input_warnings:
+        try:
+            await cleanup_input_warnings(message.bot, uid)
+        except Exception:
+            pass
+
     old_ids = list(data.get("temp_bot_messages", []) or [])
 
     try:
@@ -619,10 +678,10 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
     return sent
 
 
-async def send_temp_photo(message: Message, photo, caption=None, reply_markup=None, parse_mode="HTML", clear_previous=True):
+async def send_temp_photo(message: Message, photo, caption=None, reply_markup=None, parse_mode="HTML", clear_previous=True, clean_input_warnings=True):
     """
     שליחת תמונת מוצר יציבה:
-    קודם שולחת תמונה חדשה, אחר כך מנקה הודעות ישנות.
+    קודם מנקה אזהרות קלט, שולחת תמונה חדשה, אחר כך מנקה הודעות ישנות.
     """
     uid = message.from_user.id
 
@@ -630,6 +689,13 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
         users[uid] = {"cart": []}
 
     data = users.setdefault(uid, {"cart": []})
+
+    if clean_input_warnings:
+        try:
+            await cleanup_input_warnings(message.bot, uid)
+        except Exception:
+            pass
+
     old_ids = list(data.get("temp_bot_messages", []) or [])
 
     sent = await message.answer_photo(
@@ -3095,6 +3161,12 @@ async def start(message: Message):
     except Exception:
         pass
 
+    # מנקה אזהרות קלט ישנות, אם היו.
+    try:
+        await cleanup_input_warnings(message.bot, uid)
+    except Exception:
+        pass
+
     # סוגר מקלדת Reply אם נשארה פתוחה ממסך קודם.
     await force_close_phone_keyboard(message)
 
@@ -5143,6 +5215,7 @@ async def handle_shop(message: Message):
             return
 
         await consume_customer_click(message)
+        await cleanup_input_warnings(message.bot, uid)
         await delete_temp_bot_messages(message.bot, uid)
 
         existing_ticket = get_open_support_ticket_by_user(uid)
@@ -5630,6 +5703,10 @@ async def handle_shop(message: Message):
             return
 
         clear_invalid_warning(data, "name_invalid_warned")
+        try:
+            await cleanup_input_warnings(message.bot, uid)
+        except Exception:
+            pass
         data["name"] = txt
         data["step"] = "phone"
         await message.answer(
@@ -5652,6 +5729,10 @@ async def handle_shop(message: Message):
             return
 
         clear_invalid_warning(data, "phone_invalid_warned")
+        try:
+            await cleanup_input_warnings(message.bot, uid)
+        except Exception:
+            pass
         data["phone"] = phone
 
         order_type = str(data.get("order_type") or data.get("fulfillment_type") or data.get("receive_type") or "")
@@ -5827,6 +5908,10 @@ async def handle_customer_free_text(message: Message):
             return
 
         clear_invalid_warning(data, "qty_invalid_warned")
+        try:
+            await cleanup_input_warnings(message.bot, message.from_user.id)
+        except Exception:
+            pass
         data["selected_qty"] = qty
         data["waiting_for_qty"] = False
 
