@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
@@ -504,16 +505,14 @@ async def delete_temp_bot_messages(bot, user_id):
 
 async def force_close_phone_keyboard(message: Message):
     """
-    טריק לטלגרם iPhone/Android:
-    שולח ReplyKeyboardRemove, ממתין רגע קצר כדי שהאפליקציה תסגור את המקלדת,
-    ורק אז מוחק את הודעת הניקוי.
+    סוגר מקלדת Reply רגילה בלי השהיה ארוכה.
+    המטרה: למזער את הקפיצה של הפס הכחול/מקלדת בטלגרם בזמן מעבר מסכים.
     """
     try:
         sent = await message.answer(
             "\u2063",
             reply_markup=ReplyKeyboardRemove()
         )
-        await asyncio.sleep(0.45)
         try:
             await sent.delete()
         except Exception:
@@ -523,25 +522,25 @@ async def force_close_phone_keyboard(message: Message):
 
 
 async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None):
-    # GLOBAL_NBSP_INLINE_WIDTH_APPLIED
-    # תיקון גלובלי בטוח: רק מרחיב טקסט של הודעות עם InlineKeyboardMarkup.
-    # אין כאן מחיקה, אין שינוי state, ואין שינוי temp_bot_messages.
-    try:
-        if isinstance(reply_markup, InlineKeyboardMarkup):
-            text = widen_inline_screen_text(text)
-    except Exception:
-        pass
-
-
-
-
+    """
+    שליחת מסך זמני יציבה לכל מכשיר:
+    1. קודם שולחת את המסך החדש.
+    2. רק אחרי שליחה מוצלחת מוחקת מסכים ישנים.
+    כך לא נוצר מצב שהמסך הישן נעלם והחדש לא נפתח.
+    """
     uid = message.from_user.id
 
     if uid not in users:
         users[uid] = {"cart": []}
 
-    if clear_previous:
-        await delete_temp_bot_messages(message.bot, uid)
+    data = users.setdefault(uid, {"cart": []})
+    old_ids = list(data.get("temp_bot_messages", []) or [])
+
+    try:
+        if isinstance(reply_markup, InlineKeyboardMarkup):
+            text = widen_inline_screen_text(text)
+    except Exception:
+        pass
 
     kwargs = {
         "reply_markup": reply_markup,
@@ -551,39 +550,38 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
     if disable_web_page_preview is not None:
         kwargs["disable_web_page_preview"] = disable_web_page_preview
 
-    if isinstance(reply_markup, InlineKeyboardMarkup):
-        text = widen_inline_screen_text(text)
-
-    if not clear_previous:
-        try:
-            setattr(message, "_skip_inline_auto_delete_once", True)
-        except Exception:
-            pass
-
     sent = await message.answer(
         text,
         **kwargs
     )
 
-    try:
-        if not clear_previous:
-            setattr(message, "_skip_inline_auto_delete_once", False)
-    except Exception:
-        pass
+    if clear_previous:
+        data["temp_bot_messages"] = [sent.message_id]
 
-    users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
+        for message_id in old_ids:
+            try:
+                if int(message_id) != int(sent.message_id):
+                    await message.bot.delete_message(uid, int(message_id))
+            except Exception:
+                pass
+    else:
+        data.setdefault("temp_bot_messages", []).append(sent.message_id)
 
     return sent
 
 
 async def send_temp_photo(message: Message, photo, caption=None, reply_markup=None, parse_mode="HTML", clear_previous=True):
+    """
+    שליחת תמונת מוצר יציבה:
+    קודם שולחת תמונה חדשה, אחר כך מנקה הודעות ישנות.
+    """
     uid = message.from_user.id
 
     if uid not in users:
         users[uid] = {"cart": []}
 
-    if clear_previous:
-        await delete_temp_bot_messages(message.bot, uid)
+    data = users.setdefault(uid, {"cart": []})
+    old_ids = list(data.get("temp_bot_messages", []) or [])
 
     sent = await message.answer_photo(
         photo=photo,
@@ -591,13 +589,23 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
         reply_markup=reply_markup,
         parse_mode=parse_mode
     )
-    remember_temp_bot_message(uid, sent)
-    users[uid]["product_photo_message_id"] = sent.message_id
 
-    users[uid].setdefault("temp_bot_messages", []).append(sent.message_id)
+    remember_temp_bot_message(uid, sent)
+    data["product_photo_message_id"] = sent.message_id
+
+    if clear_previous:
+        data["temp_bot_messages"] = [sent.message_id]
+
+        for message_id in old_ids:
+            try:
+                if int(message_id) != int(sent.message_id):
+                    await message.bot.delete_message(uid, int(message_id))
+            except Exception:
+                pass
+    else:
+        data.setdefault("temp_bot_messages", []).append(sent.message_id)
 
     return sent
-
 
 
 async def cleanup_customer_order_screens(bot, uid):
@@ -3060,7 +3068,10 @@ async def start(message: Message):
     except Exception:
         pass
 
-    # מנקה את התפריט/מסכים הקודמים של הבוט לפני פתיחת תפריט חדש.
+    # סוגר מקלדת Reply אם נשארה פתוחה ממסך קודם.
+    await force_close_phone_keyboard(message)
+
+    # מנקה מסכים זמניים קודמים.
     old_data = users.get(uid)
     if old_data:
         try:
@@ -3068,7 +3079,7 @@ async def start(message: Message):
         except Exception:
             pass
 
-    # אם נשמר תפריט ראשי קודם בקובץ/זיכרון — מנסה למחוק גם אותו.
+    # מוחק תפריט ראשי קודם שנשמר בקובץ/זיכרון.
     try:
         store = load_customer_menu_store()
         old_menu_id = store.get(str(uid))
@@ -3090,8 +3101,6 @@ async def start(message: Message):
 
     customer_name = message.from_user.first_name or "לקוח יקר"
 
-    await force_close_phone_keyboard(message)
-
     start_text = rtl(
         f"<b>👋 ברוך הבא {h(customer_name)}</b>\n\n"
         "<b>🛍️ Vendora Shop</b>\n"
@@ -3105,7 +3114,6 @@ async def start(message: Message):
         parse_mode="HTML"
     )
 
-    # רושמים את התפריט החדש רק אחרי שהוא נשלח.
     users[uid]["temp_bot_messages"] = [sent.message_id]
 
     try:
