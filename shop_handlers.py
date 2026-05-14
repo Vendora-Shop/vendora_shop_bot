@@ -1929,8 +1929,8 @@ def products_keyboard(category):
 
 def cart_keyboard():
     return _inline(_wide_buttons([
-        _btn("➕ הוסף עוד מוצר", "ui:nav:add_more"),
         _btn("✅ המשך להזמנה", "ui:nav:checkout"),
+        _btn("➕ הוסף עוד מוצר", "ui:nav:add_more"),
         _btn("🧹 רוקן סל", "ui:nav:clear_cart"),
         _btn("❌ בטל הזמנה", "ui:nav:cancel"),
     ]))
