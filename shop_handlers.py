@@ -538,6 +538,7 @@ async def cleanup_input_warnings(bot, user_id):
 
     data.pop("input_warning_message_ids", None)
     data.pop("input_prompt_message_ids", None)
+    data.pop("customer_input_message_ids", None)
     data.pop("invalid_deleted_message_ids", None)
 
     for key in list(data.keys()):
@@ -559,6 +560,23 @@ def remember_input_prompt_message(data: dict, message_obj):
         if not msg_id:
             return
         data.setdefault("input_prompt_message_ids", []).append(msg_id)
+        data.setdefault("temp_bot_messages", []).append(msg_id)
+    except Exception:
+        pass
+
+
+def remember_customer_input_message(data: dict, message_obj):
+    """
+    שומר הודעות קלט של הלקוח, למשל שם/טלפון/כתובת,
+    כדי שאם הלקוח מבטל או חוזר שלב — ההודעות לא יישארו בצ'אט.
+    """
+    try:
+        if not message_obj:
+            return
+        msg_id = getattr(message_obj, "message_id", None)
+        if not msg_id:
+            return
+        data.setdefault("customer_input_message_ids", []).append(msg_id)
         data.setdefault("temp_bot_messages", []).append(msg_id)
     except Exception:
         pass
@@ -5255,6 +5273,7 @@ async def handle_shop(message: Message):
 
         existing_ticket = get_open_support_ticket_by_user(uid)
 
+        remember_customer_input_message(data, message)
         data["step"] = "support_chat"
         data["support_phone"] = phone
         clear_invalid_warning(data, "support_phone_warned")
@@ -5742,6 +5761,7 @@ async def handle_shop(message: Message):
             await cleanup_input_warnings(message.bot, uid)
         except Exception:
             pass
+        remember_customer_input_message(data, message)
         data["name"] = txt
         data["step"] = "phone"
         sent_prompt = await message.answer(
@@ -5769,6 +5789,7 @@ async def handle_shop(message: Message):
             await cleanup_input_warnings(message.bot, uid)
         except Exception:
             pass
+        remember_customer_input_message(data, message)
         data["phone"] = phone
 
         order_type = str(data.get("order_type") or data.get("fulfillment_type") or data.get("receive_type") or "")
