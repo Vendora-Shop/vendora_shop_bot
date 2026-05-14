@@ -469,6 +469,7 @@ async def warn_once_then_delete_invalid(message: Message, data: dict, warn_key: 
 
     try:
         deleted_ids.append(message.message_id)
+        data.setdefault("temp_bot_messages", []).append(message.message_id)
     except Exception:
         pass
 
@@ -512,6 +513,7 @@ async def cleanup_input_warnings(bot, user_id):
 
     ids = []
     ids.extend(data.get("input_warning_message_ids", []) or [])
+    ids.extend(data.get("input_prompt_message_ids", []) or [])
 
     for key, value in list(data.items()):
         if key.endswith("_message_id") and any(token in key for token in ["warn", "warning", "invalid"]):
@@ -535,6 +537,7 @@ async def cleanup_input_warnings(bot, user_id):
             pass
 
     data.pop("input_warning_message_ids", None)
+    data.pop("input_prompt_message_ids", None)
     data.pop("invalid_deleted_message_ids", None)
 
     for key in list(data.keys()):
@@ -542,6 +545,23 @@ async def cleanup_input_warnings(bot, user_id):
             data.pop(key, None)
         if key.endswith("_message_id") and any(token in key for token in ["warn", "warning", "invalid"]):
             data.pop(key, None)
+
+
+def remember_input_prompt_message(data: dict, message_obj):
+    """
+    שומר הודעת דרישה לקלט, למשל 'רשום מספר פלאפון תקין',
+    כדי שתימחק אם הלקוח מבטל/חוזר/עובר מסך.
+    """
+    try:
+        if not message_obj:
+            return
+        msg_id = getattr(message_obj, "message_id", None)
+        if not msg_id:
+            return
+        data.setdefault("input_prompt_message_ids", []).append(msg_id)
+        data.setdefault("temp_bot_messages", []).append(msg_id)
+    except Exception:
+        pass
 
 
 
@@ -2408,6 +2428,11 @@ async def _dispatch_customer_inline(callback: CallbackQuery, text: str):
 
     handler = direct_handlers.get(text)
     if handler:
+        if text in {"❌ בטל הזמנה", "⬅️ חזרה לתפריט", "⬅️ חזרה", "⬅️ חזרה לשלב קודם", "⬅️ חזרה לבחירת משלוח / איסוף"}:
+            try:
+                await cleanup_input_warnings(callback.message.bot, callback.from_user.id)
+            except Exception:
+                pass
         return await handler(proxy)
 
     # כל שאר המצבים נשארים בלוגיקת handle_shop המקורית.
@@ -2875,6 +2900,10 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         elif raw == "ui:nav:cancel":
             # INLINE_CANCEL_CURRENT_DELETE_FIX
             try:
+                await cleanup_input_warnings(callback.message.bot, uid)
+            except Exception:
+                pass
+            try:
                 await callback.message.delete()
             except Exception:
                 pass
@@ -2887,6 +2916,7 @@ async def customer_inline_ui_router(callback: CallbackQuery):
                 await callback.message.delete()
             except Exception:
                 pass
+            await cleanup_input_warnings(callback.message.bot, uid)
             await delete_temp_bot_messages(callback.message.bot, uid)
 
             data["step"] = "name"
@@ -3421,6 +3451,11 @@ async def cancel_order(message: Message):
 
     # CANCEL_EMPTY_CART_NO_ORDER_FIX
     # אם אין מוצר בסל — אין הזמנה לבטל. מנקים מסכים וחוזרים לתפריט.
+    try:
+        await cleanup_input_warnings(message.bot, uid)
+    except Exception:
+        pass
+
     try:
         await cleanup_customer_order_screens(message.bot, uid)
     except Exception:
@@ -5709,11 +5744,12 @@ async def handle_shop(message: Message):
             pass
         data["name"] = txt
         data["step"] = "phone"
-        await message.answer(
+        sent_prompt = await message.answer(
             rtl("<b>📞 מספר פלאפון</b>\n\nרשום מספר פלאפון תקין.\nלדוגמה: 0547937503"),
             reply_markup=ReplyKeyboardRemove(),
-                parse_mode="HTML"
+            parse_mode="HTML"
         )
+        remember_input_prompt_message(data, sent_prompt)
         return
 
     if data.get("step") == "phone":
