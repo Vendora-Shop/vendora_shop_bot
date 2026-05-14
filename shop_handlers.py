@@ -2963,10 +2963,6 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         elif raw == "ui:saved:continue": text = "✅ המשך עם הפרטים השמורים"
         elif raw == "ui:saved:new":
             await callback.answer()
-            try:
-                await callback.message.delete()
-            except Exception:
-                pass
             await delete_temp_bot_messages(callback.message.bot, uid)
 
             data["step"] = "name"
@@ -3176,8 +3172,12 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             await callback.answer("פעולה לא זמינה כרגע.", show_alert=True)
             return
 
+        try:
+            await callback.answer()
+        except Exception:
+            pass
+
         await _dispatch_customer_inline(callback, text)
-        await callback.answer()
 
     except Exception as e:
         print(f"CUSTOMER_INLINE_UI_ERROR: {type(e).__name__}: {e}")
