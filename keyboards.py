@@ -2,6 +2,15 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 from config import ADMIN_ID
 
 
+
+def _inline_customer(rows):
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _ibtn(text, data):
+    return InlineKeyboardButton(text=text, callback_data=data)
+
+
 def support_tickets_button_text():
     try:
         from database import get_open_support_tickets_count
@@ -100,23 +109,17 @@ def customer_actions_keyboard():
     )
 
 def my_orders_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🔁 הזמן שוב")],
-            [KeyboardButton(text="⬅️ חזרה לתפריט")]
-        ],
-        resize_keyboard=True
-    )
+    return _inline_customer([
+        [_ibtn("🔁 הזמנה חוזרת", "ui:orders:reorder")],
+        [_ibtn("⬅️ חזרה לתפריט", "ui:nav:main")],
+    ])
 
 def addresses_menu_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📋 הצג כתובות")],
-            [KeyboardButton(text="➕ הוסף כתובת")],
-            [KeyboardButton(text="⬅️ חזרה לתפריט")]
-        ],
-        resize_keyboard=True
-    )
+    return _inline_customer([
+        [_ibtn("📋 הצג כתובות", "ui:addr:show")],
+        [_ibtn("➕ הוסף כתובת", "ui:addr:add")],
+        [_ibtn("⬅️ חזרה לתפריט", "ui:nav:main")],
+    ])
 
 
 def address_select_keyboard(addresses):
@@ -210,18 +213,17 @@ def customer_select_keyboard(customers):
 
 
 def support_subject_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📦 שאלה על הזמנה קיימת")],
-            [KeyboardButton(text="🚚 משלוח / איסוף")],
-            [KeyboardButton(text="💳 תשלום")],
-            [KeyboardButton(text="🛍️ מוצר / מלאי")],
-            [KeyboardButton(text="📝 שינוי פרטים")],
-            [KeyboardButton(text="❓ אחר")],
-            [KeyboardButton(text="⬅️ חזרה לתפריט")]
-        ],
-        resize_keyboard=True
-    )
+    subjects = [
+        "📦 שאלה על הזמנה קיימת",
+        "🚚 משלוח / איסוף",
+        "💳 תשלום",
+        "🛍️ מוצר / מלאי",
+        "📝 שינוי פרטים",
+        "❓ אחר",
+    ]
+    rows = [[_ibtn(subject, f"ui:support:subject:{i}")] for i, subject in enumerate(subjects)]
+    rows.append([_ibtn("⬅️ חזרה לתפריט", "ui:nav:main")])
+    return _inline_customer(rows)
 
 
 def support_tickets_menu_keyboard():
