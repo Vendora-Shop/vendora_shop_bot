@@ -457,6 +457,42 @@ async def delete_customer_message(message: Message):
         pass
 
 
+async def warn_once_then_delete_invalid(message: Message, data: dict, warn_key: str, text: str, reply_markup=None):
+    """
+    טיפול מקצועי בקלט לא תקין:
+    פעם ראשונה מציגים הסבר.
+    מהפעם השנייה מוחקים את הודעת הלקוח כדי לא להציף את הצ'אט.
+    """
+    uid = message.from_user.id
+
+    if data.get(warn_key):
+        await delete_customer_message(message)
+        return None
+
+    data[warn_key] = True
+
+    try:
+        await delete_customer_message(message)
+    except Exception:
+        pass
+
+    sent = await message.answer(
+        widen_inline_screen_text(rtl(text)),
+        reply_markup=reply_markup,
+        parse_mode="HTML"
+    )
+
+    data[f"{warn_key}_message_id"] = sent.message_id
+    data.setdefault("temp_bot_messages", []).append(sent.message_id)
+    return sent
+
+
+def clear_invalid_warning(data: dict, warn_key: str):
+    data.pop(warn_key, None)
+    data.pop(f"{warn_key}_message_id", None)
+
+
+
 async def consume_customer_click(message: Message):
     try:
         await message.delete()
@@ -5098,23 +5134,12 @@ async def handle_shop(message: Message):
         phone = clean_phone(txt)
 
         if not valid_phone(phone):
-            await delete_customer_message(message)
-
-            if not data.get("support_phone_warned"):
-                data["support_phone_warned"] = True
-
-                sent = await message.answer(
-                    widen_inline_screen_text(
-                        rtl(
-                            "<b>⚠️ מספר פלאפון לא תקין.</b>\n\n"
-                            "רשום מספר ישראלי תקין.\n"
-                            "לדוגמה: 0547937503"
-                        )
-                    ),
-                    parse_mode="HTML"
-                )
-                data.setdefault("temp_bot_messages", []).append(sent.message_id)
-
+            await warn_once_then_delete_invalid(
+                message,
+                data,
+                "support_phone_warned",
+                "<b>⚠️ מספר פלאפון לא תקין.</b>\n\nרשום מספר ישראלי תקין.\nלדוגמה: 0547937503"
+            )
             return
 
         await consume_customer_click(message)
@@ -5124,7 +5149,7 @@ async def handle_shop(message: Message):
 
         data["step"] = "support_chat"
         data["support_phone"] = phone
-        data.pop("support_phone_warned", None)
+        clear_invalid_warning(data, "support_phone_warned")
         data.pop("support_chat_warned", None)
         data.pop("support_message_warning_sent", None)
 
@@ -5596,12 +5621,15 @@ async def handle_shop(message: Message):
 
     if data.get("step") == "name":
         if len(txt) < 2:
-            await message.answer(
-                rtl("<b>⚠️ נא לרשום שם מלא תקין.</b>"),
-                parse_mode="HTML"
+            await warn_once_then_delete_invalid(
+                message,
+                data,
+                "name_invalid_warned",
+                "<b>⚠️ שם מלא לא תקין.</b>\n\nרשום את השם המלא שלך."
             )
             return
 
+        clear_invalid_warning(data, "name_invalid_warned")
         data["name"] = txt
         data["step"] = "phone"
         await message.answer(
@@ -5615,12 +5643,15 @@ async def handle_shop(message: Message):
         phone = clean_phone(txt)
 
         if not valid_phone(phone):
-            await message.answer(
-                rtl("<b>⚠️ מספר פלאפון לא תקין.</b>\n\nלדוגמה: 0547937503"),
-                parse_mode="HTML"
+            await warn_once_then_delete_invalid(
+                message,
+                data,
+                "phone_invalid_warned",
+                "<b>⚠️ מספר פלאפון לא תקין.</b>\n\nרשום מספר ישראלי תקין.\nלדוגמה: 0547937503"
             )
             return
 
+        clear_invalid_warning(data, "phone_invalid_warned")
         data["phone"] = phone
 
         order_type = str(data.get("order_type") or data.get("fulfillment_type") or data.get("receive_type") or "")
@@ -5795,6 +5826,7 @@ async def handle_customer_free_text(message: Message):
             )
             return
 
+        clear_invalid_warning(data, "qty_invalid_warned")
         data["selected_qty"] = qty
         data["waiting_for_qty"] = False
 
