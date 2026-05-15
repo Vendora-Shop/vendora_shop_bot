@@ -2301,7 +2301,7 @@ def _wide_buttons(buttons):
 
 
 def main_keyboard(user_id=None):
-    # MAIN_MENU_INFO_LEGAL_UPDATE
+    # MAIN_MENU_INFO_LEGAL_UPDATE_FINAL
     rows = [
         [
             _btn("🛍️ חנות", "ui:main:shop"),
@@ -2316,7 +2316,7 @@ def main_keyboard(user_id=None):
             _btn("💬 שירות לקוחות", "ui:main:support"),
         ],
         [
-            _btn("🏢 אודות Vendora", "ui:info:about"),
+            _btn("🌐 אודות", "ui:info:about"),
             _btn("⚖️ מידע משפטי", "ui:legal:menu"),
         ],
     ]
@@ -2379,6 +2379,7 @@ def legal_menu_keyboard():
         [_btn("♿ הצהרת נגישות", "ui:legal:accessibility")],
         [_btn("⬅️ חזרה לתפריט", "ui:nav:main")],
     ])
+
 
 def empty_cart_keyboard():
     # EMPTY_CART_LOGIC_FIX_FINAL_ACTIVE
@@ -3422,6 +3423,187 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             temp.append(callback.message.message_id)
     except Exception:
         pass
+
+    # INFO_LEGAL_DIRECT_CALLBACK_FIX
+    # הכפתורים של אודות/מידע משפטי חייבים טיפול ישיר ולא דרך טקסט מדומה,
+    # אחרת הם לא עובדים ב-generic router.
+    if raw == "ui:info:about":
+        await answer_callback_safely(callback)
+
+        await cleanup_customer_order_screens(callback.message.bot, uid)
+
+        body = rtl("""
+<b>🌐 אודות Vendora</b>
+
+Vendora היא פלטפורמת קניות חכמה ומתקדמת,
+שנבנתה כדי להעניק ללקוחות חוויית הזמנה מהירה,
+נוחה, מאובטחת ומקצועית — במקום אחד.
+
+באמצעות Vendora ניתן לצפות במוצרים,
+לבחור קטגוריות, להוסיף מוצרים לסל,
+לבצע הזמנה בצורה פשוטה ולעקוב אחר פרטי ההזמנה.
+
+החזון של Vendora הוא לשלב בין טכנולוגיה,
+שירות איכותי וחוויית קנייה מודרנית,
+כדי להפוך את תהליך ההזמנה לנגיש,
+ברור, יעיל ונעים יותר עבור כל לקוח.
+
+ב־Vendora אנו שמים דגש על:
+• ממשק נוח וידידותי
+• תהליך הזמנה פשוט ומהיר
+• שירות מקצועי ואמין
+• שמירה על פרטיות ואבטחת מידע
+• חוויית קנייה חדשנית ומתקדמת
+
+תודה שבחרתם ב־Vendora 💚
+""")
+
+        sent = await callback.message.answer(
+            widen_inline_screen_text(body),
+            reply_markup=_inline([
+                [_btn("⚖️ מידע משפטי", "ui:legal:menu")],
+                [_btn("⬅️ חזרה לתפריט", "ui:nav:main")],
+            ]),
+            parse_mode="HTML"
+        )
+
+        users.setdefault(uid, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+        return
+
+    if raw == "ui:legal:menu":
+        await answer_callback_safely(callback)
+
+        await cleanup_customer_order_screens(callback.message.bot, uid)
+
+        body = rtl("""
+<b>⚖️ מידע משפטי</b>
+
+כאן ניתן למצוא את כל המידע המשפטי של Vendora:
+מדיניות פרטיות, תנאי שימוש, תקנון והצהרת נגישות.
+
+בחרו את המסמך שברצונכם לקרוא:
+""")
+
+        sent = await callback.message.answer(
+            widen_inline_screen_text(body),
+            reply_markup=legal_menu_keyboard(),
+            parse_mode="HTML"
+        )
+
+        users.setdefault(uid, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+        return
+
+    if raw in {
+        "ui:legal:privacy",
+        "ui:legal:terms",
+        "ui:legal:rules",
+        "ui:legal:accessibility",
+    }:
+        await answer_callback_safely(callback)
+
+        await cleanup_customer_order_screens(callback.message.bot, uid)
+
+        pages = {
+            "ui:legal:privacy": rtl("""
+<b>🔒 מדיניות פרטיות</b>
+
+Vendora מכבדת את פרטיות המשתמשים ופועלת לשמירה על המידע האישי הנמסר במסגרת השימוש בבוט.
+
+המידע שנאסף עשוי לכלול:
+• שם מלא
+• מספר טלפון
+• כתובת למשלוח
+• פרטי הזמנות
+• פרטי התקשרות עם שירות לקוחות
+
+המידע משמש לצורך:
+• ביצוע הזמנות
+• תיאום משלוחים או איסוף עצמי
+• מתן שירות לקוחות
+• שיפור חוויית המשתמש
+• שמירה על רציפות השירות
+
+Vendora אינה מעבירה מידע אישי לצדדים שלישיים שלא לצורך תפעול ההזמנה,
+אלא אם הדבר נדרש לפי דין או לצורך מתן השירות בפועל.
+
+המשתמש רשאי לפנות לשירות הלקוחות לצורך בירור, עדכון או מחיקת מידע אישי,
+בהתאם למדיניות החברה ולדרישות החוק.
+"""),
+            "ui:legal:terms": rtl("""
+<b>📜 תנאי שימוש</b>
+
+השימוש בבוט Vendora מהווה הסכמה לתנאי השימוש המפורטים במסמך זה.
+
+הבוט נועד לאפשר:
+• צפייה במוצרים
+• בחירת מוצרים והוספתם לסל
+• ביצוע הזמנה
+• בחירת משלוח או איסוף עצמי
+• קבלת עדכונים ושירות לקוחות
+
+המשתמש מתחייב למסור פרטים נכונים ומדויקים בעת ביצוע הזמנה.
+Vendora רשאית לעדכן מוצרים, מחירים, מלאי, זמני אספקה ותנאי שירות מעת לעת.
+
+במקרה של טעות בתיאור מוצר, מחיר, מלאי או פרטי הזמנה,
+Vendora תהיה רשאית לתקן את הטעות ולעדכן את הלקוח בהתאם.
+
+אין לעשות שימוש בבוט לצורך פעילות בלתי חוקית,
+הטרדה, פגיעה במערכת או מסירת פרטים כוזבים.
+"""),
+            "ui:legal:rules": rtl("""
+<b>📋 תקנון</b>
+
+תקנון זה מסדיר את אופן השימוש בשירותי Vendora.
+
+ביצוע הזמנה:
+• הזמנה נחשבת כנקלטה לאחר השלמת שלבי ההזמנה בבוט.
+• אישור ההזמנה כפוף לזמינות המוצרים, פרטי הלקוח ואזור השירות.
+• במידת הצורך, נציג שירות רשאי ליצור קשר לצורך אימות או השלמת פרטים.
+
+מוצרים ומלאי:
+• המלאי עשוי להשתנות מעת לעת.
+• מוצר שאזל מהמלאי לא יסופק, והלקוח יעודכן ככל שנדרש.
+• התמונות והתיאורים נועדו להמחשה, וייתכנו הבדלים מסוימים.
+
+משלוחים ואיסוף:
+• זמני משלוח או איסוף עשויים להשתנות לפי עומסים, מיקום וזמינות.
+• הלקוח אחראי למסירת כתובת וטלפון תקינים.
+
+ביטולים ושינויים:
+• ניתן לבטל או לשנות הזמנה כל עוד היא לא עברה לטיפול מתקדם.
+• לאחר טיפול בהזמנה, שינוי או ביטול יהיו כפופים לאישור החנות.
+"""),
+            "ui:legal:accessibility": rtl("""
+<b>♿ הצהרת נגישות</b>
+
+Vendora רואה חשיבות רבה בהנגשת השירות לכלל המשתמשים,
+ופועלת כדי לאפשר חוויית שימוש נוחה, ברורה ופשוטה ככל האפשר.
+
+הבוט נבנה עם דגש על:
+• טקסטים ברורים
+• תפריטים מסודרים
+• כפתורי פעולה מובנים
+• אפשרויות חזרה בין מסכים
+• תהליך הזמנה פשוט ונגיש
+
+אם נתקלתם בקושי בשימוש בבוט,
+ניתן לפנות לשירות הלקוחות ואנו נעשה מאמץ לסייע ולשפר את השירות.
+
+Vendora תמשיך לפעול לשיפור הנגישות והחוויה עבור כלל המשתמשים.
+"""),
+        }
+
+        sent = await callback.message.answer(
+            widen_inline_screen_text(pages[raw]),
+            reply_markup=_inline([
+                [_btn("⬅️ חזרה למידע משפטי", "ui:legal:menu")],
+                [_btn("⬅️ חזרה לתפריט", "ui:nav:main")],
+            ]),
+            parse_mode="HTML"
+        )
+
+        users.setdefault(uid, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+        return
 
     text = None
 
@@ -4639,116 +4821,6 @@ async def quantity_inline_action(callback: CallbackQuery):
     await callback.answer("פעולה לא תקינה.", show_alert=True)
 
 
-
-@router.callback_query(F.data == "ui:info:about")
-async def about_vendora(callback: CallbackQuery):
-    await answer_callback_safely(callback)
-
-    text = rtl("""
-<b>🏢 אודות Vendora</b>
-
-Vendora היא פלטפורמת קניות חכמה ומתקדמת,
-המאפשרת לבצע הזמנות אונליין בצורה מהירה,
-נוחה ומאובטחת — הכל במקום אחד.
-
-המערכת פותחה כדי לספק חוויית קנייה מודרנית,
-עם מגוון רחב של מוצרים, ממשק ידידותי,
-שירות מקצועי ותהליך הזמנה פשוט ויעיל.
-
-ב־Vendora אנו שמים דגש על:
-• חוויית משתמש מתקדמת
-• שירות אמין ומהיר
-• אבטחת מידע ופרטיות
-• ממשק חדשני ונוח לשימוש
-
-תודה שבחרתם ב־Vendora 💚
-""")
-
-    await cleanup_customer_order_screens(callback.message.bot, callback.from_user.id)
-
-    sent = await callback.message.answer(
-        text,
-        reply_markup=_inline([
-            [_btn("⚖️ מידע משפטי", "ui:legal:menu")],
-            [_btn("⬅️ חזרה לתפריט", "ui:nav:main")],
-        ]),
-        parse_mode="HTML"
-    )
-
-    users.setdefault(callback.from_user.id, {}).setdefault(
-        "temp_bot_messages", []
-    ).append(sent.message_id)
-
-
-@router.callback_query(F.data == "ui:legal:menu")
-async def legal_menu(callback: CallbackQuery):
-    await answer_callback_safely(callback)
-
-    text = rtl("""
-<b>⚖️ מידע משפטי</b>
-
-באזור זה ניתן לצפות במסמכים המשפטיים של Vendora.
-""")
-
-    await cleanup_customer_order_screens(callback.message.bot, callback.from_user.id)
-
-    sent = await callback.message.answer(
-        text,
-        reply_markup=legal_menu_keyboard(),
-        parse_mode="HTML"
-    )
-
-    users.setdefault(callback.from_user.id, {}).setdefault(
-        "temp_bot_messages", []
-    ).append(sent.message_id)
-
-
-@router.callback_query(F.data.in_([
-    "ui:legal:privacy",
-    "ui:legal:terms",
-    "ui:legal:rules",
-    "ui:legal:accessibility"
-]))
-async def legal_pages(callback: CallbackQuery):
-    await answer_callback_safely(callback)
-
-    pages = {
-        "ui:legal:privacy": (
-            "🔒 מדיניות פרטיות",
-            "מסמך מדיניות הפרטיות של Vendora יתווסף כאן."
-        ),
-        "ui:legal:terms": (
-            "📜 תנאי שימוש",
-            "מסמך תנאי השימוש של Vendora יתווסף כאן."
-        ),
-        "ui:legal:rules": (
-            "📋 תקנון",
-            "מסמך התקנון של Vendora יתווסף כאן."
-        ),
-        "ui:legal:accessibility": (
-            "♿ הצהרת נגישות",
-            "הצהרת הנגישות של Vendora תתווסף כאן."
-        ),
-    }
-
-    title, body = pages[callback.data]
-
-    text = rtl(f"<b>{title}</b>\n\n{body}")
-
-    await cleanup_customer_order_screens(callback.message.bot, callback.from_user.id)
-
-    sent = await callback.message.answer(
-        text,
-        reply_markup=_inline([
-            [_btn("⬅️ חזרה למידע משפטי", "ui:legal:menu")],
-            [_btn("⬅️ חזרה לתפריט", "ui:nav:main")],
-        ]),
-        parse_mode="HTML"
-    )
-
-    users.setdefault(callback.from_user.id, {}).setdefault(
-        "temp_bot_messages", []
-    ).append(sent.message_id)
 
 
 @router.message(F.text == "📞 שירות לקוחות")
