@@ -941,6 +941,72 @@ async def send_main_menu_with_banner(message: Message, text, banner_key=None, re
     return sent_menu
 
 
+
+async def send_main_menu_greeting_banner_caption(message: Message, greeting_text, caption_text, banner_key=None, reply_markup=None, parse_mode="HTML"):
+    """
+    MAIN_MENU_GREETING_THEN_BANNER_CAPTION_FIX
+    זרימה לתפריט ראשי:
+    1. הודעת שלום נפרדת לפי שם הלקוח.
+    2. באנר + caption קצר "בחר פעולה:" + כפתורים באותה הודעה.
+    כך התמונה והתפריט נשארים באותו רוחב, והשלום לא מכביד על caption.
+    """
+    uid = message.from_user.id
+
+    if uid not in users:
+        users[uid] = {"cart": []}
+
+    data = users.setdefault(uid, {"cart": []})
+    old_ids = list(data.get("temp_bot_messages", []) or [])
+
+    sent_greeting = await message.answer(
+        greeting_text,
+        parse_mode=parse_mode
+    )
+
+    banner_path = None
+    try:
+        banner_path = UI_BANNERS.get(banner_key) if banner_key else None
+    except Exception:
+        banner_path = None
+
+    sent_menu = None
+
+    if banner_path and os.path.exists(banner_path):
+        try:
+            sent_menu = await message.answer_photo(
+                photo=FSInputFile(banner_path),
+                caption=caption_text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode
+            )
+        except Exception as e:
+            print(f"MAIN_MENU_BANNER_CAPTION_SEND_ERROR: {type(e).__name__}: {e}")
+
+    if sent_menu is None:
+        sent_menu = await message.answer(
+            caption_text,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode
+        )
+
+    new_ids = [sent_greeting.message_id, sent_menu.message_id]
+    data["temp_bot_messages"] = new_ids
+
+    async def _cleanup_after_main_menu_send():
+        await _delete_messages_safely(
+            message.bot,
+            uid,
+            [mid for mid in old_ids if str(mid) not in {str(x) for x in new_ids}]
+        )
+
+    try:
+        asyncio.create_task(_cleanup_after_main_menu_send())
+    except Exception:
+        pass
+
+    return sent_menu
+
+
 async def reset_customer_to_main_menu(message, text):
     uid = message.from_user.id
     await cleanup_customer_order_screens(message.bot, uid)
@@ -3423,14 +3489,13 @@ async def start(message: Message):
 
     customer_name = message.from_user.first_name or "לקוח"
 
-    start_text = (
-        f"<b>👋 שלום {h(customer_name)}</b>\n\n"
-        f"{RTL}<b>בחר פעולה:</b>"
-    )
+    greeting_text = f"<b>👋 שלום {h(customer_name)}</b>"
+    menu_caption_text = f"{RTL}<b>בחר פעולה:</b>"
 
-    sent = await send_main_menu_with_banner(
+    sent = await send_main_menu_greeting_banner_caption(
         message,
-        start_text,
+        greeting_text=greeting_text,
+        caption_text=menu_caption_text,
         banner_key="main_menu",
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
