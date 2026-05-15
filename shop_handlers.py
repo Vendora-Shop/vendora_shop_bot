@@ -86,7 +86,7 @@ async def customer_cancel_payment_button(message: Message):
 
     await message.answer(
         rtl("<b>ℹ️ אין תשלום פעיל לביטול.</b>"),
-        reply_markup=main_keyboard_fixed_width(message.from_user.id),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
@@ -319,7 +319,7 @@ async def close_customer_open_support_ticket(message: Message, data=None):
                     "חזרת לתפריט הראשי."
                 )
             ),
-            reply_markup=main_keyboard_fixed_width(message.from_user.id),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return True
@@ -352,7 +352,7 @@ async def close_customer_open_support_ticket(message: Message, data=None):
                     "תודה שפנית אלינו."
                 )
             ),
-            reply_markup=main_keyboard_fixed_width(message.from_user.id),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return True
@@ -367,7 +367,7 @@ async def close_customer_open_support_ticket(message: Message, data=None):
                 "חזרת לתפריט הראשי."
             )
         ),
-        reply_markup=main_keyboard_fixed_width(message.from_user.id),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
     return True
@@ -913,13 +913,8 @@ async def send_main_menu_with_banner(message: Message, text, banner_key=None, re
     except Exception:
         menu_text = text
 
-    # MAIN_MENU_WIDTH_MATCH_BANNER_FIX
-    # רוחב הודעת התפריט קובע גם את רוחב הכפתורים שמתחתיה.
-    # הערך הזה מכוון כדי להתקרב לרוחב הבאנר מעליו בלי להתרחב מדי.
-    menu_text_to_send = str(menu_text)
-
     sent_menu = await message.answer(
-        menu_text_to_send,
+        menu_text,
         reply_markup=reply_markup,
         parse_mode=parse_mode
     )
@@ -949,11 +944,12 @@ async def send_main_menu_with_banner(message: Message, text, banner_key=None, re
 
 async def send_main_menu_greeting_banner_caption(message: Message, greeting_text=None, caption_text="", banner_key=None, reply_markup=None, parse_mode="HTML"):
     """
-    MAIN_MENU_GREETING_THEN_BANNER_CAPTION_FIX
-    זרימה לתפריט ראשי:
-    1. הודעת שלום נפרדת לפי שם הלקוח.
-    2. באנר + caption קצר "בחר פעולה:" + כפתורים באותה הודעה.
-    כך התמונה והתפריט נשארים באותו רוחב, והשלום לא מכביד על caption.
+    MAIN_MENU_SINGLE_WIDTH_LAYOUT_FINAL
+    מבנה תקין לתפריט הראשי:
+    1. greeting_text אופציונלי — נשלח רק ב-/start.
+    2. הבאנר, הטקסט "תפריט ראשי — בחרו פעולה" והכפתורים נשלחים יחד:
+       answer_photo(photo, caption, reply_markup)
+    כך הבאנר, הטקסט והכפתורים מקבלים אותו רוחב בדיוק בטלגרם.
     """
     uid = message.from_user.id
 
@@ -962,13 +958,14 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
 
     data = users.setdefault(uid, {"cart": []})
     old_ids = list(data.get("temp_bot_messages", []) or [])
+    new_ids = []
 
-    sent_greeting = None
     if greeting_text:
         sent_greeting = await message.answer(
             greeting_text,
             parse_mode=parse_mode
         )
+        new_ids.append(sent_greeting.message_id)
 
     banner_path = None
     try:
@@ -996,9 +993,6 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
             parse_mode=parse_mode
         )
 
-    new_ids = []
-    if sent_greeting:
-        new_ids.append(sent_greeting.message_id)
     new_ids.append(sent_menu.message_id)
     data["temp_bot_messages"] = new_ids
 
@@ -1015,96 +1009,6 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
         pass
 
     return sent_menu
-
-
-
-def main_keyboard_fixed_width(uid):
-    """
-    MAIN_MENU_KEYBOARD_FIXED_WIDTH_V1
-    משתמש במקלדת הראשית הקיימת בלי לשנות כפתורים או לוגיקה.
-    רק מבטל resize_keyboard אם זו ReplyKeyboardMarkup, כדי שהתפריט לא יהיה קטן/קופץ.
-    אם זו InlineKeyboardMarkup — מחזיר כמו שהוא.
-    """
-    kb = main_keyboard(uid)
-    try:
-        if hasattr(kb, "resize_keyboard"):
-            kb.resize_keyboard = False
-    except Exception:
-        pass
-    return kb
-
-
-
-async def send_main_menu_split_banner_text(message: Message, greeting_text=None, menu_text=None, banner_key="main_menu", reply_markup=None, parse_mode="HTML"):
-    """
-    MAIN_MENU_SPLIT_BANNER_TEXT_V1
-    מבנה ראשי יציב לטלגרם:
-    1. הודעת שלום אופציונלית — רק ב-/start.
-    2. באנר נקי ללא caption.
-    3. הודעת טקסט רגילה עם הכפתורים — כך RTL עובד כמו שצריך.
-    """
-    uid = message.from_user.id
-
-    if uid not in users:
-        users[uid] = {"cart": []}
-
-    data = users.setdefault(uid, {"cart": []})
-    old_ids = list(data.get("temp_bot_messages", []) or [])
-
-    new_ids = []
-
-    if greeting_text:
-        sent_greeting = await message.answer(
-            greeting_text,
-            parse_mode=parse_mode
-        )
-        new_ids.append(sent_greeting.message_id)
-
-    banner_path = None
-    try:
-        banner_path = UI_BANNERS.get(banner_key) if banner_key else None
-    except Exception:
-        banner_path = None
-
-    if banner_path and os.path.exists(banner_path):
-        try:
-            sent_banner = await message.answer_photo(
-                photo=FSInputFile(banner_path)
-            )
-            new_ids.append(sent_banner.message_id)
-        except Exception as e:
-            print(f"MAIN_MENU_SPLIT_BANNER_SEND_ERROR: {type(e).__name__}: {e}")
-
-    if not menu_text:
-        menu_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
-
-    # MAIN_MENU_WIDTH_TO_MARKED_LINE_FIX
-    menu_text_to_send = str(menu_text) + "\n" + ("\u00A0" * 74)
-
-    sent_menu = await message.answer(
-        menu_text_to_send,
-        reply_markup=reply_markup,
-        parse_mode=parse_mode
-    )
-    new_ids.append(sent_menu.message_id)
-
-    data["temp_bot_messages"] = new_ids
-
-    async def _cleanup_after_main_menu_send():
-        await _delete_messages_safely(
-            message.bot,
-            uid,
-            [mid for mid in old_ids if str(mid) not in {str(x) for x in new_ids}]
-        )
-
-    try:
-        asyncio.create_task(_cleanup_after_main_menu_send())
-    except Exception:
-        pass
-
-    return sent_menu
-
-
 
 
 async def reset_customer_to_main_menu(message, text=None):
@@ -1115,14 +1019,14 @@ async def reset_customer_to_main_menu(message, text=None):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    menu_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
+    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
 
-    sent = await send_main_menu_split_banner_text(
+    sent = await send_main_menu_greeting_banner_caption(
         message,
         greeting_text=None,
-        menu_text=menu_text,
+        caption_text=menu_caption_text,
         banner_key="main_menu",
-        reply_markup=main_keyboard_fixed_width(uid),
+        reply_markup=main_keyboard(uid),
         parse_mode="HTML"
     )
 
@@ -1139,14 +1043,14 @@ async def reset_callback_customer_to_main_menu(callback, text=None):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    menu_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
+    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
 
-    sent = await send_main_menu_split_banner_text(
+    sent = await send_main_menu_greeting_banner_caption(
         callback.message,
         greeting_text=None,
-        menu_text=menu_text,
+        caption_text=menu_caption_text,
         banner_key="main_menu",
-        reply_markup=main_keyboard_fixed_width(uid),
+        reply_markup=main_keyboard(uid),
         parse_mode="HTML"
     )
 
@@ -2948,7 +2852,7 @@ async def show_reorder_choose_inline(callback: CallbackQuery):
                 "<b>⚠️ אין הזמנות קודמות לשחזור.</b>\n\n"
                 "אפשר להיכנס לחנות ולבצע הזמנה חדשה."
             )),
-            reply_markup=main_keyboard_fixed_width(callback.from_user.id),
+            reply_markup=main_keyboard(callback.from_user.id),
             parse_mode="HTML"
         )
         data.setdefault("temp_bot_messages", []).append(sent.message_id)
@@ -3600,18 +3504,18 @@ async def start(message: Message):
     customer_name = message.from_user.first_name or "לקוח"
 
     greeting_text = f"<b>👋 שלום {h(customer_name)}</b>"
-    menu_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
+    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
 
-    sent = await send_main_menu_split_banner_text(
+    sent = await send_main_menu_greeting_banner_caption(
         message,
         greeting_text=greeting_text,
-        menu_text=menu_text,
+        caption_text=menu_caption_text,
         banner_key="main_menu",
-        reply_markup=main_keyboard_fixed_width(message.from_user.id),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
-    # helper already saved greeting + banner + menu message ids in temp_bot_messages
+    # helper already saved greeting + banner/menu message ids in temp_bot_messages
 
     try:
         remember_customer_main_menu_message(uid, sent.message_id)
@@ -3765,7 +3669,7 @@ async def back_main(message: Message):
     await send_temp_message(
         message,
         widen_inline_screen_text(rtl("<b>↩️ חזרת לתפריט הראשי</b>")),
-        reply_markup=main_keyboard_fixed_width(message.from_user.id),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
@@ -3900,7 +3804,7 @@ async def edit_details(message: Message):
         await send_temp_message(
             message,
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard_fixed_width(message.from_user.id),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -3966,7 +3870,7 @@ async def submit_paid_order(message: Message, data):
                 "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
                 "ההזמנה כבר נקלטה במערכת ונמצאת בטיפול."
             ),
-            reply_markup=main_keyboard_fixed_width(message.from_user.id),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -4114,7 +4018,7 @@ async def submit_paid_order(message: Message, data):
     sent_menu = await send_temp_message(
         message,
         rtl(customer_success_text),
-        reply_markup=main_keyboard_fixed_width(message.from_user.id),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
     if sent_menu:
@@ -4130,7 +4034,7 @@ async def back_to_fulfillment_choice(message: Message):
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard_fixed_width(message.from_user.id),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -4174,7 +4078,7 @@ async def back_from_order_summary_to_previous_step(message: Message):
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard_fixed_width(message.from_user.id),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -4237,7 +4141,7 @@ async def confirm_order(message: Message):
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard_fixed_width(message.from_user.id),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -4257,7 +4161,7 @@ async def confirm_order(message: Message):
                 "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
                 "ההזמנה כבר נקלטה במערכת ונמצאת בטיפול."
             ),
-            reply_markup=main_keyboard_fixed_width(message.from_user.id),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -4610,7 +4514,7 @@ async def reorder_choose_order(message: Message):
                 "<b>⚠️ אין הזמנות קודמות לשחזור.</b>\n\n"
                 "אפשר להיכנס לחנות ולבצע הזמנה חדשה."
             ),
-            reply_markup=main_keyboard_fixed_width(message.from_user.id),
+            reply_markup=main_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -4634,14 +4538,14 @@ async def back_to_main_menu(message: Message):
 
     users[uid]["step"] = "main"
 
-    menu_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
+    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
 
-    await send_main_menu_split_banner_text(
+    await send_main_menu_greeting_banner_caption(
         message,
         greeting_text=None,
-        menu_text=menu_text,
+        caption_text=menu_caption_text,
         banner_key="main_menu",
-        reply_markup=main_keyboard_fixed_width(message.from_user.id),
+        reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
