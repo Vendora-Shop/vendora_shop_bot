@@ -690,12 +690,11 @@ def remember_temp_bot_message(uid, message_obj):
 
 async def delete_temp_bot_messages(bot, user_id):
     """
-    STABLE_UI_V2 — ניקוי לא חוסם:
-    לא מחכים למחיקות מטלגרם לפני הצגת המסך הבא.
-    זה מונע תקיעה/בועות לבנות בזמן מעבר בין חלונות.
+    FAST_DELETE_TEMP_FINAL
+    לא מחכים למחיקות של Telegram לפני פתיחת המסך הבא.
+    מוחקים ברקע בלבד ומגבילים כמות כדי למנוע תקיעות.
     """
     data = users.get(user_id)
-
     if not data:
         return
 
@@ -705,11 +704,8 @@ async def delete_temp_bot_messages(bot, user_id):
     if not message_ids:
         return
 
-    async def _cleanup():
-        await _delete_messages_safely(bot, user_id, message_ids[-25:])
-
     try:
-        asyncio.create_task(_cleanup())
+        asyncio.create_task(_delete_messages_safely(bot, user_id, message_ids[-25:]))
     except Exception:
         pass
 
@@ -973,9 +969,7 @@ async def send_ui_banner_message(message: Message, text, banner_key=None, reply_
 async def cleanup_customer_order_screens(bot, uid):
     """
     FAST_CLEANUP_FINAL
-    ניקוי מסכים לא חוסם:
-    אוספים ids, מאפסים state זמני, ומוחקים ברקע בלבד.
-    אין await למחיקות של Telegram במסלול הקריטי.
+    ניקוי מסכים לא חוסם. לא מחכים למחיקות לפני שליחת מסך חדש.
     """
     data = users.setdefault(uid, {"cart": []})
 
@@ -1331,9 +1325,7 @@ STORE_CONTACT_TELEGRAM = "@Vendora"
 UI_BANNERS = {
     "main_menu": "assets/banners/main_menu.jpg",
     "shop_home": "assets/banners/shop_home.jpg",
-    "cart_banner": "assets/banners/cart_banner.jpg",
-    "support": "assets/banners/support_banner.jpg",
-}
+    "cart_banner": "assets/banners/cart_banner.jpg",}
 
 
 
@@ -1522,7 +1514,8 @@ SUPPORT_FAQ_BY_SUBJECT = {
     ],
     "❓ אחר": [
         "❓ הנושא שלי לא מופיע",
-    ],
+    ],    "support": "assets/banners/support_banner.jpg",
+
 }
 
 
@@ -2738,6 +2731,38 @@ def clear_city_autocomplete_state(data):
     data.pop("address_city_warning_sent", None)
 
 
+
+async def send_support_banner_screen(message: Message, text, reply_markup=None, parse_mode="HTML"):
+    """
+    SUPPORT_BANNER_ALL_SCREENS_FINAL
+    כל מסכי שירות הלקוחות הראשיים עוברים דרך הפונקציה הזאת,
+    כדי שהבאנר support_banner.jpg יופיע בכל כניסה/חזרה/בחירת נושא.
+    """
+    return await send_ui_banner_message(
+        message,
+        text,
+        banner_key="support",
+        reply_markup=reply_markup,
+        parse_mode=parse_mode
+    )
+
+
+async def show_support_subjects_screen(message: Message, uid):
+    users.setdefault(uid, {"cart": []})
+    users[uid]["step"] = "support_subject"
+
+    await send_support_banner_screen(
+        message,
+        rtl(
+            "<b>💬 שירות לקוחות</b>\n\n"
+            "ברוכים הבאים למרכז השירות של Vendora.\n"
+            "בחרו את נושא הפנייה הרצוי:"
+        ),
+        reply_markup=support_subject_keyboard(),
+        parse_mode="HTML"
+    )
+
+
 def support_subject_keyboard():
     subjects = [
         "📦 שאלה על הזמנה קיימת",
@@ -3055,11 +3080,13 @@ async def support_inline_router(callback: CallbackQuery):
 
     async def _replace_screen(text, keyboard):
         """
-        STABLE_UI_V4 — שולח קודם את המסך החדש.
-        מחיקת המסך הישן ושאר ההודעות מתבצעת ברקע, בלי לעצור את המעבר.
+        SUPPORT_INLINE_BANNER_REPLACE_FINAL
+        גם כל מסכי ה-inline של שירות לקוחות נשלחים עם באנר.
         """
-        sent = await callback.message.answer(
-            widen_inline_screen_text(text),
+        sent = await answer_cached_banner_photo(
+            callback.message,
+            "support",
+            caption=widen_inline_screen_text(text),
             reply_markup=keyboard,
             parse_mode="HTML"
         )
@@ -3077,7 +3104,7 @@ async def support_inline_router(callback: CallbackQuery):
 
         if cleanup_ids:
             try:
-                asyncio.create_task(_delete_messages_safely(callback.message.bot, uid, cleanup_ids))
+                asyncio.create_task(_delete_messages_safely(callback.message.bot, uid, cleanup_ids[-25:]))
             except Exception:
                 pass
 
@@ -4822,7 +4849,7 @@ async def support(message: Message):
     uid = message.from_user.id
 
     try:
-        await delete_temp_bot_messages(message.bot, uid)
+        await cleanup_customer_order_screens(message.bot, uid)
     except Exception:
         pass
 
@@ -4839,14 +4866,13 @@ async def support(message: Message):
             "temp_bot_messages": []
         }
 
-        await send_ui_banner_message(
+        await send_support_banner_screen(
             message,
             rtl(
                 "<b>💬 שירות לקוחות</b>\n\n"
                 f"{field('מספר פנייה פעילה', existing_ticket['ticket_number'])}\n"
                 "יש לך פנייה פתוחה. ניתן להמשיך את השיחה עם שירות הלקוחות."
             ),
-            banner_key="support",
             reply_markup=support_customer_keyboard(uid),
             parse_mode="HTML"
         )
@@ -4858,17 +4884,7 @@ async def support(message: Message):
         "temp_bot_messages": []
     }
 
-    await send_ui_banner_message(
-        message,
-        rtl(
-            "<b>💬 שירות לקוחות</b>\n\n"
-            "ברוכים הבאים למרכז השירות של Vendora.\n"
-            "בחרו את נושא הפנייה הרצוי:"
-        ),
-        banner_key="support",
-        reply_markup=support_subject_keyboard(),
-        parse_mode="HTML"
-    )
+    await show_support_subjects_screen(message, uid)
 
 
 
