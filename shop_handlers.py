@@ -656,8 +656,11 @@ def remember_customer_input_message(data: dict, message_obj):
 
 
 async def consume_customer_click(message: Message):
+    # FAST_TRANSITION_FIX
+    # לא מחכים למחיקת הודעת הלקוח לפני פתיחת המסך הבא.
+    # המחיקה רצה ברקע כדי למנוע תקיעה במעבר.
     try:
-        await message.delete()
+        asyncio.create_task(message.delete())
     except Exception:
         pass
 
@@ -703,7 +706,7 @@ async def delete_temp_bot_messages(bot, user_id):
         return
 
     async def _cleanup():
-        await _delete_messages_safely(bot, user_id, message_ids[-40:])
+        await _delete_messages_safely(bot, user_id, message_ids[-25:])
 
     try:
         asyncio.create_task(_cleanup())
@@ -731,7 +734,7 @@ async def _delete_message_safely(bot, chat_id, message_id):
 
 
 async def _delete_messages_safely(bot, chat_id, message_ids):
-    """מחיקה מקבילית ושקטה — לא עוצרת את מעבר המסכים."""
+    """מחיקה שקטה ברקע, בבאצ׳ים קטנים כדי לא להעמיס על Telegram."""
     clean_ids = []
     seen = set()
 
@@ -748,11 +751,18 @@ async def _delete_messages_safely(bot, chat_id, message_ids):
     if not clean_ids:
         return
 
+    # מספיק למחוק את המסכים האחרונים. מחיקות ישנות רבות גורמות לעומס ותחושת תקיעה.
+    clean_ids = clean_ids[-25:]
+
     try:
-        await asyncio.gather(
-            *[_delete_message_safely(bot, chat_id, mid) for mid in clean_ids],
-            return_exceptions=True
-        )
+        for i in range(0, len(clean_ids), 8):
+            batch = clean_ids[i:i + 8]
+            await asyncio.gather(
+                *[_delete_message_safely(bot, chat_id, mid) for mid in batch],
+                return_exceptions=True
+            )
+            if i + 8 < len(clean_ids):
+                await asyncio.sleep(0)
     except Exception:
         pass
 
@@ -895,55 +905,83 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
 
 async def send_ui_banner_message(message: Message, text, banner_key=None, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None, clean_input_warnings=True):
     """
-    UI_BANNER_ENGINE_V1
-    שולח מסך עם באנר בצורה יציבה, בלי הודעות ריקות ובלי לשבור Inline buttons.
-    אם הבאנר לא נמצא או הקובץ חסר — חוזר אוטומטית למסך טקסט רגיל.
+    UI_BANNER_ENGINE_FAST_FINAL
+    מנוע באנרים מהיר:
+    - משתמש ב-file_id cache של Telegram לכל הבאנרים, כולל cart_banner.
+    - שולח קודם את המסך החדש.
+    - מוחק מסכים ישנים ברקע בלבד.
     """
-    banner_path = None
+    uid = message.from_user.id
+    users.setdefault(uid, {"cart": []})
+    data = users.setdefault(uid, {"cart": []})
+
+    if clean_input_warnings:
+        try:
+            await cleanup_input_warnings(message.bot, uid)
+        except Exception:
+            pass
+
+    old_ids = list(data.get("temp_bot_messages", []) or [])
 
     try:
-        banner_path = UI_BANNERS.get(banner_key) if banner_key else None
+        if isinstance(reply_markup, InlineKeyboardMarkup):
+            text = widen_inline_screen_text(text)
     except Exception:
-        banner_path = None
+        pass
 
-    if banner_path and os.path.exists(banner_path):
+    sent = None
+
+    if banner_key:
         try:
-            return await send_temp_photo(
+            sent = await answer_cached_banner_photo(
                 message,
-                photo=FSInputFile(banner_path),
+                banner_key,
                 caption=text,
                 reply_markup=reply_markup,
-                parse_mode=parse_mode,
-                clear_previous=clear_previous,
-                clean_input_warnings=clean_input_warnings
+                parse_mode=parse_mode
             )
         except Exception as e:
-            print(f"UI_BANNER_SEND_ERROR: {type(e).__name__}: {e}")
+            print(f"UI_BANNER_FAST_SEND_ERROR: {type(e).__name__}: {e}")
 
-    return await send_temp_message(
-        message,
-        text,
-        reply_markup=reply_markup,
-        parse_mode=parse_mode,
-        clear_previous=clear_previous,
-        disable_web_page_preview=disable_web_page_preview,
-        clean_input_warnings=clean_input_warnings
-    )
+    if sent is None:
+        sent = await send_temp_message(
+            message,
+            text,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode,
+            clear_previous=clear_previous,
+            disable_web_page_preview=disable_web_page_preview,
+            clean_input_warnings=False
+        )
+        return sent
+
+    if clear_previous:
+        data["temp_bot_messages"] = [sent.message_id]
+
+        cleanup_ids = [mid for mid in old_ids if str(mid) != str(sent.message_id)]
+        if cleanup_ids:
+            try:
+                asyncio.create_task(_delete_messages_safely(message.bot, uid, cleanup_ids[-25:]))
+            except Exception:
+                pass
+    else:
+        data.setdefault("temp_bot_messages", []).append(sent.message_id)
+
+    return sent
 
 
 async def cleanup_customer_order_screens(bot, uid):
     """
-    STABLE_UI_V4 — ניקוי מלא ולא חוסם למסכי הזמנה/מוצר/תמונות.
-    לא מחכים ל-Telegram למחוק הודעות לפני שממשיכים למסך הבא.
+    FAST_CLEANUP_FINAL
+    ניקוי מסכים לא חוסם:
+    אוספים ids, מאפסים state זמני, ומוחקים ברקע בלבד.
+    אין await למחיקות של Telegram במסלול הקריטי.
     """
-    try:
-        await delete_temp_bot_messages(bot, uid)
-    except Exception:
-        pass
-
     data = users.setdefault(uid, {"cart": []})
 
     ids = []
+    ids.extend(list(data.get("temp_bot_messages", []) or []))
+
     for key in [
         "qty_manual_message_id",
         "qty_manual_warning_message_id",
@@ -964,10 +1002,9 @@ async def cleanup_customer_order_screens(bot, uid):
 
     if ids:
         try:
-            asyncio.create_task(_delete_messages_safely(bot, uid, ids))
+            asyncio.create_task(_delete_messages_safely(bot, uid, ids[-25:]))
         except Exception:
             pass
-
 
 
 async def send_main_menu_with_banner(message: Message, text, banner_key=None, reply_markup=None, parse_mode="HTML"):
@@ -1398,44 +1435,8 @@ def admin_new_order_keyboard(order_number):
     )
 
 
-def categories_keyboard():
-    products = get_active_products()
-    rows = []
-    for idx, cat in enumerate(products.keys()):
-        rows.append([_btn(str(cat), f"ui:cat:{idx}")])
-    rows.append([_btn("🛒 הסל שלי", "ui:nav:cart")])
-    rows.append([_btn("⬅️ חזרה לתפריט", "ui:nav:main")])
-    return _inline(rows)
 
-def products_keyboard(category):
-    products = get_active_products()
-    rows = []
-    for idx, product in enumerate(products.get(category, [])):
-        stock = int(product.get("stock", 0) or 0)
-        text = f"❌ {product['name']} - אזל מהמלאי" if stock <= 0 else product["name"]
-        rows.append([_btn(text, f"ui:prod:{idx}")])
-    rows.append([_btn("🛒 הסל שלי", "ui:nav:cart")])
-    rows.append([_btn("⬅️ חזרה לקטגוריות", "ui:nav:categories")])
-    return _inline(rows)
 
-def cart_keyboard():
-    # CART_NAVIGATION_FIX_FINAL_ACTIVE
-    # חשוב: יש בקובץ כמה הגדרות כפולות, לכן כל ההגדרות הוחלפו לגרסה הזאת.
-    # במסך סל עם מוצרים חייב להיות ניווט ברור:
-    # המשך הזמנה / הוסף מוצר / חזרה לתפריט / ריקון סל / ביטול.
-    return _inline([
-        [
-            _btn("✅ המשך להזמנה", "ui:nav:checkout"),
-            _btn("➕ הוסף עוד מוצר", "ui:nav:add_more"),
-        ],
-        [
-            _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
-            _btn("🧹 רוקן סל", "ui:nav:clear_cart"),
-        ],
-        [
-            _btn("❌ בטל הזמנה", "ui:nav:cancel"),
-        ],
-    ])
 
 
 def quantity_keyboard(selected_qty, available_left, max_qty):
@@ -1479,49 +1480,12 @@ def quantity_inline_keyboard(selected_qty):
     )
 
 
-def confirm_keyboard():
-    # GLASS_COMPACT_V2_CONFIRM
-    return _inline([
-        [_btn("✅ אשר הזמנה", "ui:order:confirm")],
-        [
-            _btn("↩️ חזרה", "ui:order:back_prev"),
-            _btn("✖️ ביטול", "ui:nav:cancel"),
-        ],
-    ])
 
 
-def payment_keyboard():
-    # GLASS_COMPACT_V2_PAYMENT
-    return _inline([
-        [_btn("✅ אישור תשלום", "ui:payment:ok")],
-        [
-            _btn("↩️ סיכום", "ui:payment:back_summary"),
-            _btn("✖️ ביטול", "ui:payment:cancel"),
-        ],
-    ])
 
 
-def use_saved_details_keyboard():
-    # GLASS_COMPACT_V2_SAVED
-    return _inline([
-        [_btn("✅ פרטים שמורים", "ui:saved:continue")],
-        [_btn("📝 פרטים חדשים", "ui:saved:new")],
-        [
-            _btn("↩️ משלוח/איסוף", "ui:fulfillment:back"),
-            _btn("✖️ ביטול", "ui:nav:cancel"),
-        ],
-    ])
 
 
-def manual_details_keyboard():
-    # GLASS_COMPACT_V2_MANUAL
-    return _inline([
-        [_btn("✅ פרטים שמורים", "ui:saved:continue")],
-        [
-            _btn("↩️ משלוח/איסוף", "ui:fulfillment:back"),
-            _btn("✖️ ביטול", "ui:nav:cancel"),
-        ],
-    ])
 
 
 SUPPORT_FAQ_BY_SUBJECT = {
@@ -1561,20 +1525,7 @@ SUPPORT_FAQ_BY_SUBJECT = {
 }
 
 
-def support_faq_keyboard(subject):
-    questions = SUPPORT_FAQ_BY_SUBJECT.get(subject, SUPPORT_FAQ_BY_SUBJECT.get("❓ אחר", []))
-    rows = [[_btn(q, f"ui:support:faq:{i}")] for i, q in enumerate(questions)]
-    rows.append([_btn("✍️ פנייה לנציג שירות", "ui:support:rep")])
-    rows.append([_btn("⬅️ חזרה לנושאים", "ui:support:back_subjects")])
-    rows.append([_btn("⬅️ חזרה לתפריט", "ui:nav:main")])
-    return _inline(rows)
 
-def support_faq_after_answer_keyboard(subject):
-    return _inline(_wide_buttons([
-        _btn("✍️ פנייה לנציג שירות", "ui:support:rep"),
-        _btn("⬅️ חזרה לנושאים", "ui:support:back_subjects"),
-        _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
-    ]))
 
 def latest_customer_order(telegram_id):
     try:
@@ -1815,22 +1766,7 @@ def support_faq_answer_text(user_id, subject, question):
     )
 
 
-def support_customer_keyboard(user_id=None):
-    # ברירת מחדל: פנייה פתוחה.
-    return support_open_ticket_keyboard(user_id)
 
-def fulfillment_keyboard():
-    # GLASS_COMPACT_V2_FULFILLMENT
-    return _inline([
-        [
-            _btn("🚚 משלוח", "ui:fulfillment:delivery"),
-            _btn("🏬 איסוף", "ui:fulfillment:pickup"),
-        ],
-        [
-            _btn("↩️ סל", "ui:fulfillment:back_cart"),
-            _btn("✖️ ביטול", "ui:nav:cancel"),
-        ],
-    ])
 
 
 def clean_product_name(text):
@@ -2002,8 +1938,6 @@ def pickup_text():
     )
 
 
-def order_summary_keyboard(data):
-    return confirm_keyboard()
 
 
 async def send_pickup_navigation_if_needed(message, data):
@@ -2133,12 +2067,10 @@ async def use_saved_profile_flow(message: Message, data):
 
 async def safe_delete_current_message(message):
     """
-    מוחק את המסך הנוכחי שעליו לחצו בכפתור Inline.
-    זה מונע שאריות של מסכי עריכה/כתובת/מוצר מעל המסך הבא.
-    לא משנה עיצוב, לא משנה state ולא משנה לוגיקת הזמנות.
+    מוחק מסך נוכחי ברקע בלבד, בלי לעכב את פתיחת המסך הבא.
     """
     try:
-        await message.delete()
+        asyncio.create_task(message.delete())
     except Exception:
         pass
 
@@ -2301,8 +2233,7 @@ def _wide_buttons(buttons):
 
 
 def main_keyboard(user_id=None):
-    # MAIN_MENU_PERSONAL_AREA_UPDATE
-    # האזור האישי מרכז פרטים/הזמנות/כתובות בכפתור אחד.
+    # MAIN_MENU_FINAL_CLEAN
     rows = [
         [
             _btn("🛍️ חנות", "ui:main:shop"),
@@ -2318,7 +2249,6 @@ def main_keyboard(user_id=None):
         ],
     ]
 
-    # פאנל ניהול מוצג רק לאדמין.
     if user_id == ADMIN_ID:
         rows.append([_btn("🛡️ פאנל ניהול", "ui:main:admin")])
 
@@ -2348,10 +2278,6 @@ def products_keyboard(category):
 
 
 def cart_keyboard():
-    # CART_NAVIGATION_FIX_FINAL_ACTIVE
-    # חשוב: יש בקובץ כמה הגדרות כפולות, לכן כל ההגדרות הוחלפו לגרסה הזאת.
-    # במסך סל עם מוצרים חייב להיות ניווט ברור:
-    # המשך הזמנה / הוסף מוצר / חזרה לתפריט / ריקון סל / ביטול.
     return _inline([
         [
             _btn("✅ המשך להזמנה", "ui:nav:checkout"),
@@ -3051,12 +2977,18 @@ async def show_reorder_choose_inline(callback: CallbackQuery):
 
 async def send_inline_screen_replace(callback: CallbackQuery, text, reply_markup=None, parse_mode="HTML"):
     """
-    STABLE_UI_V4 — שולח מסך חדש מיד; מחיקות רצות ברקע.
+    FAST_INLINE_REPLACE_FINAL
+    שולח מסך חדש מיד, מוחק את המסך הקודם ברקע ולא מחכה למחיקות.
     """
     await force_close_callback_phone_keyboard(callback)
     uid = callback.from_user.id
     data = users.setdefault(uid, {"cart": []})
     old_ids = list(data.get("temp_bot_messages", []) or [])
+
+    try:
+        delete_message_now_background(callback.message.bot, uid, callback.message.message_id)
+    except Exception:
+        pass
 
     sent = await callback.message.answer(
         widen_inline_screen_text(text),
@@ -3075,7 +3007,7 @@ async def send_inline_screen_replace(callback: CallbackQuery, text, reply_markup
 
     if cleanup_ids:
         try:
-            asyncio.create_task(_delete_messages_safely(callback.message.bot, uid, cleanup_ids))
+            asyncio.create_task(_delete_messages_safely(callback.message.bot, uid, cleanup_ids[-25:]))
         except Exception:
             pass
 
