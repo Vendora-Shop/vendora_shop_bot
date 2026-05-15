@@ -1031,13 +1031,11 @@ def rtl_caption_right(text):
 
 
 def main_menu_caption_text():
-    # MAIN_MENU_RTL_EACH_LINE_FIX
-    # Telegram iOS מפרש כל שורת caption בנפרד.
-    # לכן מוסיפים RLM בתחילת כל שורה, כדי שגם "בחרו פעולה:" ייצמד לימין.
-    return (
-        "\u200f<b>💎 תפריט ראשי</b>\n\n"
-        "\u200fבחרו פעולה:"
-    )
+    # MAIN_MENU_EXACT_SUPPORT_FORMAT_FIX
+    # אותו פורמט כמו שירות לקוחות:
+    # rtl(...) ואז widen_inline_screen_text(...) בזמן השליחה.
+    # בלי padding מיוחד, בלי RLI/PDI, בלי ניסיונות דחיפה ידנית.
+    return rtl("<b>💎 תפריט ראשי</b>\n\nבחרו פעולה:")
 
 
 
@@ -1060,10 +1058,9 @@ async def send_main_menu_with_banner(message: Message, text, banner_key=None, re
 
 async def send_main_menu_greeting_banner_caption(message: Message, greeting_text=None, caption_text="", banner_key=None, reply_markup=None, parse_mode="HTML"):
     """
-    MAIN_MENU_STRICT_SUPPORT_CLONE_FINAL
-    שליחה כמו שירות לקוחות:
-    answer_cached_banner_photo + caption + keyboard.
-    בלי widen_inline_screen_text ובלי wrapper אחר.
+    MAIN_MENU_EXACT_SUPPORT_SEND_FIX
+    Clone נקי של שירות לקוחות:
+    answer_cached_banner_photo + caption=widen_inline_screen_text(rtl(...)) + keyboard.
     """
     uid = message.from_user.id
     users.setdefault(uid, {"cart": []})
@@ -1083,14 +1080,14 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
     sent = await answer_cached_banner_photo(
         message,
         banner_key or "main_menu",
-        caption=caption_text,
+        caption=widen_inline_screen_text(caption_text),
         reply_markup=reply_markup,
         parse_mode=parse_mode
     )
 
     if sent is None:
         sent = await message.answer(
-            caption_text,
+            widen_inline_screen_text(caption_text),
             reply_markup=reply_markup,
             parse_mode=parse_mode
         )
