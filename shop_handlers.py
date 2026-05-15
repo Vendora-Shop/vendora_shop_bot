@@ -1002,10 +1002,12 @@ async def cleanup_customer_order_screens(bot, uid):
 
 
 def main_menu_caption_text():
-    # MAIN_MENU_RTL_CAPTION_FIX
-    # אותו מנגנון כמו שירות לקוחות: caption קצר דרך rtl(...)
-    # כדי שהטקסט יישב נכון בצד ימין.
-    return rtl("<b>💎 תפריט ראשי</b> — בחרו פעולה:")
+    # MAIN_MENU_RTL_CAPTION_FIX_V2
+    # כמו במסך שירות לקוחות: קודם הטקסט בעברית ואז האייקון.
+    # בטלגרם זה מצמיד את האייקון והטקסט לצד ימין בצורה יציבה יותר.
+    return rtl("<b>תפריט ראשי</b> 💎 — בחרו פעולה:")
+
+
 
 
 async def send_main_menu_with_banner(message: Message, text, banner_key=None, reply_markup=None, parse_mode="HTML"):
@@ -1017,7 +1019,7 @@ async def send_main_menu_with_banner(message: Message, text, banner_key=None, re
     return await send_main_menu_greeting_banner_caption(
         message,
         greeting_text=None,
-        caption_text=rtl(text),
+        caption_text=main_menu_caption_text() if "תפריט ראשי" in str(text) else rtl(text),
         banner_key=banner_key,
         reply_markup=reply_markup,
         parse_mode=parse_mode
