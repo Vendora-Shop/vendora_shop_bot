@@ -642,23 +642,54 @@ async def delete_temp_bot_messages(bot, user_id):
         pass
 
     data["temp_bot_messages"] = []
-async def force_close_phone_keyboard(message: Message):
-    """
-    סוגר מקלדת Reply רגילה בלי השהיה ארוכה.
-    המטרה: למזער את הקפיצה של הפס הכחול/מקלדת בטלגרם בזמן מעבר מסכים.
-    """
+async def _delete_message_safely(bot, chat_id, message_id):
     try:
-        sent = await message.answer(
-            "\u2063",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        try:
-            await asyncio.sleep(0.15)
-            await sent.delete()
-        except Exception:
-            pass
+        await bot.delete_message(chat_id, int(message_id))
     except Exception:
         pass
+
+
+async def _delete_messages_safely(bot, chat_id, message_ids):
+    seen = set()
+    for mid in message_ids or []:
+        try:
+            mid = int(mid)
+        except Exception:
+            continue
+        if mid in seen:
+            continue
+        seen.add(mid)
+        await _delete_message_safely(bot, chat_id, mid)
+
+
+async def _send_reply_keyboard_remove_marker(message: Message):
+    """
+    UI_ENGINE_V1
+    Telegram סוגר ReplyKeyboard רק כשנשלחת הודעה עם ReplyKeyboardRemove.
+    לא מוחקים את הודעת הניקוי לפני שהמסך החדש נשלח, כדי שבאייפון/אנדרואיד
+    הפס הכחול לא יישאר תקוע בזמן מעבר למסך הבא.
+    """
+    try:
+        return await message.answer("\u2063", reply_markup=ReplyKeyboardRemove())
+    except Exception:
+        return None
+
+
+async def force_close_phone_keyboard(message: Message):
+    """תאימות לאחור: סגירת ReplyKeyboard דרך מנוע UI אחיד."""
+    return await _send_reply_keyboard_remove_marker(message)
+
+
+async def force_close_callback_phone_keyboard(callback: CallbackQuery):
+    """
+    מאשר מיידית את לחיצת ה־Inline כדי שלא תהיה טעינת כפתור,
+    וסגירת הפס הכחול מתבצעת בפועל בתוך send_temp_message/send_temp_photo.
+    """
+    try:
+        await callback.answer()
+    except Exception:
+        pass
+    return None
 
 
 async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None, clean_input_warnings=True):
@@ -683,11 +714,16 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
 
     old_ids = list(data.get("temp_bot_messages", []) or [])
 
+    close_marker = None
+    is_inline_screen = False
+
     try:
-        if isinstance(reply_markup, InlineKeyboardMarkup):
+        is_inline_screen = isinstance(reply_markup, InlineKeyboardMarkup)
+        if is_inline_screen:
             text = widen_inline_screen_text(text)
+            close_marker = await _send_reply_keyboard_remove_marker(message)
     except Exception:
-        pass
+        close_marker = None
 
     kwargs = {
         "reply_markup": reply_markup,
@@ -702,10 +738,14 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
         **kwargs
     )
 
+    cleanup_ids = list(old_ids)
+    if close_marker:
+        cleanup_ids.append(close_marker.message_id)
+
     if clear_previous:
         data["temp_bot_messages"] = [sent.message_id]
 
-        for message_id in old_ids:
+        for message_id in cleanup_ids:
             try:
                 if int(message_id) != int(sent.message_id):
                     await message.bot.delete_message(uid, int(message_id))
@@ -713,6 +753,11 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
                 pass
     else:
         data.setdefault("temp_bot_messages", []).append(sent.message_id)
+        if close_marker:
+            try:
+                await message.bot.delete_message(uid, int(close_marker.message_id))
+            except Exception:
+                pass
 
     return sent
 
@@ -737,6 +782,13 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
 
     old_ids = list(data.get("temp_bot_messages", []) or [])
 
+    close_marker = None
+    try:
+        if isinstance(reply_markup, InlineKeyboardMarkup):
+            close_marker = await _send_reply_keyboard_remove_marker(message)
+    except Exception:
+        close_marker = None
+
     sent = await message.answer_photo(
         photo=photo,
         caption=caption,
@@ -747,10 +799,14 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
     remember_temp_bot_message(uid, sent)
     data["product_photo_message_id"] = sent.message_id
 
+    cleanup_ids = list(old_ids)
+    if close_marker:
+        cleanup_ids.append(close_marker.message_id)
+
     if clear_previous:
         data["temp_bot_messages"] = [sent.message_id]
 
-        for message_id in old_ids:
+        for message_id in cleanup_ids:
             try:
                 if int(message_id) != int(sent.message_id):
                     await message.bot.delete_message(uid, int(message_id))
@@ -758,6 +814,11 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
                 pass
     else:
         data.setdefault("temp_bot_messages", []).append(sent.message_id)
+        if close_marker:
+            try:
+                await message.bot.delete_message(uid, int(close_marker.message_id))
+            except Exception:
+                pass
 
     return sent
 
@@ -2640,6 +2701,7 @@ async def send_inline_screen_replace(callback: CallbackQuery, text, reply_markup
     שולח מסך חדש ורק אחר כך מוחק מסכים ישנים.
     מיועד למנוע מצב שבו המסך הישן נעלם והחדש לא נפתח.
     """
+    await force_close_callback_phone_keyboard(callback)
     uid = callback.from_user.id
     data = users.setdefault(uid, {"cart": []})
     old_ids = list(data.get("temp_bot_messages", []) or [])
@@ -2680,6 +2742,7 @@ async def answer_callback_safely(callback: CallbackQuery, text=None, show_alert=
 
 @router.callback_query(F.data.startswith("ui:support:"))
 async def support_inline_router(callback: CallbackQuery):
+    await force_close_callback_phone_keyboard(callback)
     uid = callback.from_user.id
     data = users.setdefault(uid, {"cart": [], "step": None})
     raw = callback.data or ""
@@ -2856,6 +2919,7 @@ async def support_inline_router(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("ui:"))
 async def customer_inline_ui_router(callback: CallbackQuery):
+    await force_close_callback_phone_keyboard(callback)
     uid = callback.from_user.id
     data = users.setdefault(uid, {"cart": [], "step": None})
     raw = callback.data or ""
@@ -3969,6 +4033,7 @@ async def confirm_order(message: Message):
 
 @router.callback_query(F.data.startswith("qty_action:"))
 async def quantity_inline_action(callback: CallbackQuery):
+    await force_close_callback_phone_keyboard(callback)
     uid = callback.from_user.id
     data = users.setdefault(uid, {"cart": []})
     action = (callback.data or "").split(":", 1)[1]
