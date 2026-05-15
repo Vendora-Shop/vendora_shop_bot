@@ -1294,6 +1294,7 @@ STORE_CONTACT_TELEGRAM = "@Vendora"
 UI_BANNERS = {
     "main_menu": "assets/banners/main_menu.jpg",
     "shop_home": "assets/banners/shop_home.jpg",
+    "cart_banner": "assets/banners/cart_banner.jpg",
 }
 
 
@@ -3868,27 +3869,23 @@ async def add_more(message: Message):
 
 @router.message(F.text == "🛒 הסל שלי")
 async def show_cart(message: Message):
-    await consume_customer_click(message)
     uid = message.from_user.id
-    data = users.setdefault(uid, {"cart": [], "step": None})
+    data = users.setdefault(uid, {"cart": []})
 
-    if not data.get("cart"):
-        data["step"] = "main"
-        await send_temp_message(
-            message,
-            cart_text([], title="🛒 הסל שלך"),
-            reply_markup=empty_cart_keyboard(),
-            parse_mode="HTML"
-        )
-        return
+    await cleanup_customer_order_screens(message.bot, uid)
 
-    data["step"] = "cart"
-    await send_temp_message(
+    text = cart_text(data["cart"])
+
+    await send_ui_banner_message(
         message,
-        cart_text(data["cart"]),
+        text=text,
+        banner_key="cart_banner",
         reply_markup=cart_keyboard(),
         parse_mode="HTML"
     )
+
+    data["step"] = "cart"
+
 
 
 @router.message(F.text == "🧹 רוקן סל")
