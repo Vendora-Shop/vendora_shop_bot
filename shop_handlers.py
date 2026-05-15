@@ -1419,15 +1419,19 @@ def products_keyboard(category):
     return _inline(rows)
 
 def cart_keyboard():
-    # GLASS_COMPACT_V2_CART
+    # CART_NAVIGATION_FIX
+    # גם אחרי הוספת מוצר חייבת להיות דרך לחזור לתפריט הראשי בלי לאבד את הסל.
     return _inline([
         [
-            _btn("➕ מוצר", "ui:nav:add_more"),
-            _btn("✅ המשך", "ui:nav:checkout"),
+            _btn("✅ המשך להזמנה", "ui:nav:checkout"),
+            _btn("➕ הוסף עוד מוצר", "ui:nav:add_more"),
         ],
         [
-            _btn("🗑️ ריקון", "ui:nav:clear_cart"),
-            _btn("✖️ ביטול", "ui:nav:cancel"),
+            _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
+            _btn("🧹 רוקן סל", "ui:nav:clear_cart"),
+        ],
+        [
+            _btn("❌ בטל הזמנה", "ui:nav:cancel"),
         ],
     ])
 
@@ -1474,45 +1478,61 @@ def quantity_inline_keyboard(selected_qty):
 
 
 def confirm_keyboard():
-    # GLASS_COMPACT_V2_CONFIRM
+    # ORDER_SUMMARY_NAVIGATION_FIX
     return _inline([
         [_btn("✅ אשר הזמנה", "ui:order:confirm")],
         [
-            _btn("↩️ חזרה", "ui:order:back_prev"),
+            _btn("↩️ חזרה לשלב קודם", "ui:order:back_prev"),
+            _btn("⬅️ חזרה לסל", "ui:fulfillment:back_cart"),
+        ],
+        [
+            _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
             _btn("✖️ ביטול", "ui:nav:cancel"),
         ],
     ])
 
 
 def payment_keyboard():
-    # GLASS_COMPACT_V2_PAYMENT
+    # PAYMENT_NAVIGATION_FIX
     return _inline([
         [_btn("✅ אישור תשלום", "ui:payment:ok")],
         [
-            _btn("↩️ סיכום", "ui:payment:back_summary"),
+            _btn("↩️ חזרה לסיכום", "ui:payment:back_summary"),
+            _btn("⬅️ חזרה לסל", "ui:fulfillment:back_cart"),
+        ],
+        [
+            _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
             _btn("✖️ ביטול", "ui:payment:cancel"),
         ],
     ])
 
 
 def use_saved_details_keyboard():
-    # GLASS_COMPACT_V2_SAVED
+    # SAVED_DETAILS_NAVIGATION_FIX
     return _inline([
         [_btn("✅ פרטים שמורים", "ui:saved:continue")],
         [_btn("📝 פרטים חדשים", "ui:saved:new")],
         [
             _btn("↩️ משלוח/איסוף", "ui:fulfillment:back"),
+            _btn("⬅️ חזרה לסל", "ui:fulfillment:back_cart"),
+        ],
+        [
+            _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
             _btn("✖️ ביטול", "ui:nav:cancel"),
         ],
     ])
 
 
 def manual_details_keyboard():
-    # GLASS_COMPACT_V2_MANUAL
+    # MANUAL_DETAILS_NAVIGATION_FIX
     return _inline([
         [_btn("✅ פרטים שמורים", "ui:saved:continue")],
         [
             _btn("↩️ משלוח/איסוף", "ui:fulfillment:back"),
+            _btn("⬅️ חזרה לסל", "ui:fulfillment:back_cart"),
+        ],
+        [
+            _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
             _btn("✖️ ביטול", "ui:nav:cancel"),
         ],
     ])
@@ -1814,14 +1834,17 @@ def support_customer_keyboard(user_id=None):
     return support_open_ticket_keyboard(user_id)
 
 def fulfillment_keyboard():
-    # GLASS_COMPACT_V2_FULFILLMENT
+    # FULFILLMENT_NAVIGATION_FIX
     return _inline([
         [
             _btn("🚚 משלוח", "ui:fulfillment:delivery"),
             _btn("🏬 איסוף", "ui:fulfillment:pickup"),
         ],
         [
-            _btn("↩️ סל", "ui:fulfillment:back_cart"),
+            _btn("⬅️ חזרה לסל", "ui:fulfillment:back_cart"),
+            _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
+        ],
+        [
             _btn("✖️ ביטול", "ui:nav:cancel"),
         ],
     ])
