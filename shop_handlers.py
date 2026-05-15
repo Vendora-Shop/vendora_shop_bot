@@ -1629,7 +1629,7 @@ def dynamic_customer_profile_answer(user_id):
 
     if not profile:
         return rtl(
-            "<b>👤 הפרטים השמורים שלך</b>\n\n"
+            "<b>👤 האזור האישי</b>\n\n"
             "עדיין לא נמצאו פרטים שמורים בחשבון שלך.\n"
             "הפרטים נשמרים לאחר ביצוע הזמנה או עדכון פרטים בבוט."
         )
@@ -1637,7 +1637,7 @@ def dynamic_customer_profile_answer(user_id):
     address = f"{profile.get('city') or '-'}, {profile.get('street') or '-'}, קומה {profile.get('floor') or '-'}, דירה {profile.get('apartment') or '-'}"
 
     return rtl(
-        "<b>👤 הפרטים השמורים שלך</b>\n\n"
+        "<b>👤 האזור האישי</b>\n\n"
         f"{field('שם', profile.get('customer_name') or '-')}\n"
         f"{field('טלפון', profile.get('phone') or '-')}\n"
         f"{field('כתובת', address)}"
@@ -1919,7 +1919,7 @@ def saved_profile_text(profile):
     address = f"{profile['city']}, {profile['street']}, קומה {profile['floor']}, דירה {profile['apartment']}"
 
     text = (
-        "<b>👤 הפרטים השמורים שלך</b>\n\n"
+        "<b>👤 האזור האישי</b>\n\n"
         f"{field('שם', profile['customer_name'])}\n"
         f"{field('טלפון', profile['phone'])}\n"
         f"{field('כתובת', address)}\n\n"
@@ -2371,6 +2371,12 @@ def cart_keyboard():
 
 
 
+def back_to_personal_area_keyboard():
+    return _inline([
+        [_btn("⬅️ חזרה לאזור אישי", "ui:personal:menu")],
+    ])
+
+
 def personal_area_keyboard():
     return _inline([
         [_btn("👤 הפרטים שלי", "ui:personal:details")],
@@ -2445,10 +2451,10 @@ def fulfillment_keyboard():
 
 
 def my_orders_keyboard():
-    # GLASS_COMPACT_V2_ORDERS
+    # PERSONAL_AREA_BACK_FIX_ORDERS
     return _inline([
         [_btn("🔁 הזמנה חוזרת", "ui:orders:reorder")],
-        [_btn("↩️ תפריט", "ui:nav:main")],
+        [_btn("⬅️ חזרה לאזור אישי", "ui:personal:menu")],
     ])
 
 
@@ -2468,9 +2474,9 @@ def translate_order_status_for_keyboard(status):
 
 
 def back_only_main_keyboard():
-    return _inline(_wide_buttons([
-        _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
-    ]))
+    # PERSONAL_AREA_BACK_FIX
+    # במסכים של האזור האישי חוזרים לאזור האישי, לא ישירות לתפריט.
+    return back_to_personal_area_keyboard()
 
 
 def reorder_select_keyboard(orders):
@@ -2481,7 +2487,7 @@ def reorder_select_keyboard(orders):
         status = translate_order_status_for_keyboard(order.get("status"))
         rows.append([_btn(f"🔁 {order_number} | {total}₪ | {status}", f"ui:reorder:{order_number}")])
     rows.append([_btn("⬅️ חזרה להזמנות שלי", "ui:orders:back_my_orders")])
-    rows.append([_btn("⬅️ חזרה לתפריט", "ui:nav:main")])
+    rows.append([_btn("⬅️ חזרה לאזור אישי", "ui:personal:menu")])
     return _inline(rows)
 
 
@@ -2492,7 +2498,7 @@ def addresses_menu_keyboard():
             _btn("📍 הכתובות שלי", "ui:addr:show"),
             _btn("➕ הוסף כתובת", "ui:addr:add"),
         ],
-        [_btn("↩️ תפריט", "ui:nav:main")],
+        [_btn("⬅️ חזרה לאזור אישי", "ui:personal:menu")],
     ])
 
 
@@ -2508,7 +2514,7 @@ def address_select_keyboard(addresses):
 
     rows.append([_btn("➕ הוסף כתובת", "ui:addr:add")])
     rows.append([_btn("↩️ כתובות", "ui:addr:menu")])
-    rows.append([_btn("↩️ תפריט", "ui:nav:main")])
+    rows.append([_btn("⬅️ חזרה לאזור אישי", "ui:personal:menu")])
     return _inline(rows)
 
 
@@ -2520,7 +2526,7 @@ def address_actions_keyboard():
             _btn("🗑️ מחיקה", "ui:addr:delete"),
         ],
         [_btn("↩️ רשימת כתובות", "ui:addr:back_list")],
-        [_btn("↩️ תפריט", "ui:nav:main")],
+        [_btn("⬅️ חזרה לאזור אישי", "ui:personal:menu")],
     ])
 
 
@@ -2591,7 +2597,7 @@ async def show_addresses_list_screen(message, uid):
     if not addresses:
         await send_temp_message(
             message,
-            rtl("<b>🏠 הכתובות שלי</b>\n\nאין כרגע כתובות שמורות."),
+            rtl("<b>👤 האזור האישי</b>\n\n<b>🏠 הכתובות שלי</b>\n\nאין כרגע כתובות שמורות."),
             reply_markup=addresses_menu_keyboard(),
             parse_mode="HTML"
         )
@@ -2599,7 +2605,7 @@ async def show_addresses_list_screen(message, uid):
 
     await send_temp_message(
         message,
-        rtl("<b>🏠 הכתובות שלי</b>\n\nבחר כתובת מהרשימה כדי לצפות או לערוך אותה."),
+        rtl("<b>👤 האזור האישי</b>\n\n<b>🏠 הכתובות שלי</b>\n\nבחר כתובת מהרשימה כדי לצפות או לערוך אותה."),
         reply_markup=address_select_keyboard(addresses),
         parse_mode="HTML"
     )
@@ -2617,7 +2623,7 @@ async def show_addresses_menu_screen(message, uid):
 
     await send_temp_message(
         message,
-        rtl("<b>🏠 הכתובות שלי</b>\n\nבחר פעולה:"),
+        rtl("<b>👤 האזור האישי</b>\n\n<b>🏠 הכתובות שלי</b>\n\nבחר פעולה:"),
         reply_markup=addresses_menu_keyboard(),
         parse_mode="HTML"
     )
@@ -2697,7 +2703,7 @@ def add_address_cancel_keyboard():
     # ADDRESS_FLOW_NAV_FIX_ADD_LABEL
     return _inline([
         [_btn("↩️ כתובות", "ui:addr:cancel_add")],
-        [_btn("↩️ תפריט", "ui:nav:main")],
+        [_btn("⬅️ חזרה לאזור אישי", "ui:personal:menu")],
     ])
 
 
@@ -2706,7 +2712,7 @@ def add_address_street_keyboard():
     return _inline([
         [_btn("↩️ עיר / יישוב", "ui:addr:back_city")],
         [_btn("↩️ כתובות", "ui:addr:cancel_add")],
-        [_btn("↩️ תפריט", "ui:nav:main")],
+        [_btn("⬅️ חזרה לאזור אישי", "ui:personal:menu")],
     ])
 
 
@@ -2715,7 +2721,7 @@ def add_address_floor_keyboard():
     return _inline([
         [_btn("↩️ רחוב", "ui:addr:back_street")],
         [_btn("↩️ כתובות", "ui:addr:cancel_add")],
-        [_btn("↩️ תפריט", "ui:nav:main")],
+        [_btn("⬅️ חזרה לאזור אישי", "ui:personal:menu")],
     ])
 
 
@@ -2724,7 +2730,7 @@ def add_address_apartment_keyboard():
     return _inline([
         [_btn("↩️ קומה", "ui:addr:back_floor")],
         [_btn("↩️ כתובות", "ui:addr:cancel_add")],
-        [_btn("↩️ תפריט", "ui:nav:main")],
+        [_btn("⬅️ חזרה לאזור אישי", "ui:personal:menu")],
     ])
 
 
@@ -2979,7 +2985,7 @@ async def show_my_details_inline(callback: CallbackQuery):
 
     if not profile:
         body = rtl(
-            "<b>👤 הפרטים שלי</b>\n\n"
+            "<b>👤 האזור האישי</b>\n\n"
             "אין פרטים שמורים עדיין.\n"
             "אחרי ההזמנה הראשונה, הבוט ישמור את הפרטים שלך להזמנות הבאות."
         )
