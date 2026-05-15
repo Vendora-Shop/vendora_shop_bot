@@ -92,7 +92,6 @@ async def customer_cancel_payment_button(message: Message):
 
 
 
-
 # ================== SAVED ADDRESSES UI ==================
 def format_address(address):
     return (
