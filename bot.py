@@ -27,8 +27,13 @@ async def main():
 
     await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
 
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+    except Exception:
+        pass
+
     print("Vendora Shop Running...")
-    await dp.start_polling(bot)
+    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
 
 
 if __name__ == "__main__":
