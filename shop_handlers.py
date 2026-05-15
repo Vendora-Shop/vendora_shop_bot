@@ -2069,158 +2069,10 @@ async def use_saved_profile_flow(message: Message, data):
 # ============================================================
 
 async def safe_delete_current_message(message):
-    """
-    מוחק מסך נוכחי ברקע בלבד, בלי לעכב את פתיחת המסך הבא.
-    """
     try:
         asyncio.create_task(message.delete())
     except Exception:
         pass
-
-
-class CustomerCallbackMessage:
-    """Proxy קטן שמאפשר להשתמש בלוגיקה הקיימת גם מכפתורי Inline."""
-    def __init__(self, callback: CallbackQuery, text: str):
-        self.callback = callback
-        self.message = callback.message
-        self.from_user = callback.from_user
-        self.bot = callback.message.bot
-        self.text = text
-        self.message_id = callback.message.message_id
-        self.chat = callback.message.chat
-
-        # חשוב: גם אם המסך שנלחץ לא נשמר ברשימת temp_bot_messages בגלל מעבר קודם,
-        # מוסיפים אותו כאן כדי שהמסך הישן יימחק לפני פתיחת המסך הבא.
-        # זה מונע מצב שבו נכנסים ל״פרטים שלי״ / ״הזמנות שלי״ והתפריט הראשי נשאר פתוח למטה.
-        try:
-            data = users.setdefault(self.from_user.id, {"cart": []})
-            temp = data.setdefault("temp_bot_messages", [])
-            if self.message_id not in temp:
-                temp.append(self.message_id)
-        except Exception:
-            pass
-
-    async def answer(self, *args, **kwargs):
-        # INLINE_BLUE_MENU_FIX_V5
-        # הבעיה שהמשתמש ראה: מעבר מתפריט ראשי -> חנות דרך Inline משאיר למטה את הכפתור הכחול Start/Menu.
-        # הסיבה: InlineKeyboardMarkup לא סוגר ReplyKeyboard/כפתור תחתון קיים.
-        # לכן בכל מסך Inline חדש אנחנו סוגרים קודם את המקלדת התחתונה עם ReplyKeyboardRemove,
-        # שולחים מיד את המסך החדש, ורק אחרי זה מנקים הודעות ישנות ברקע.
-        skip_delete = bool(getattr(self, "_skip_inline_auto_delete_once", False))
-        reply_markup = kwargs.get("reply_markup")
-        is_inline_screen = isinstance(reply_markup, InlineKeyboardMarkup)
-
-        try:
-            if is_inline_screen and args:
-                args = (widen_inline_screen_text(args[0]),) + tuple(args[1:])
-        except Exception:
-            pass
-
-        # STABLE_UI_V2: לא שולחים הודעת ניקוי ריקה — היא יוצרת בועה לבנה ותקיעה.
-        cleanup_msg = None
-
-        old_ids = []
-        if not skip_delete:
-            try:
-                old_ids = list(users.setdefault(self.from_user.id, {"cart": []}).get("temp_bot_messages", []) or [])
-            except Exception:
-                old_ids = []
-
-            # מוחקים את המסך הנוכחי מיד ברקע כדי שלא יישאר תקוע 2-3 שניות.
-            delete_message_now_background(self.bot, self.from_user.id, self.message_id)
-
-        sent = await self.message.answer(*args, **kwargs)
-
-        try:
-            data = users.setdefault(self.from_user.id, {"cart": []})
-            data["temp_bot_messages"] = [sent.message_id]
-        except Exception:
-            pass
-
-        async def _cleanup_after_send():
-            ids_to_delete = []
-            if cleanup_msg is not None:
-                try:
-                    ids_to_delete.append(cleanup_msg.message_id)
-                except Exception:
-                    pass
-            if not skip_delete:
-                ids_to_delete.extend(old_ids)
-                try:
-                    ids_to_delete.append(self.message_id)
-                except Exception:
-                    pass
-
-            seen = set()
-            for mid in ids_to_delete:
-                try:
-                    mid = int(mid)
-                except Exception:
-                    continue
-                if mid in seen or mid == int(sent.message_id):
-                    continue
-                seen.add(mid)
-                try:
-                    await self.bot.delete_message(self.from_user.id, mid)
-                except Exception:
-                    pass
-
-        try:
-            asyncio.create_task(_cleanup_after_send())
-        except Exception:
-            pass
-
-        return sent
-
-    async def answer_photo(self, *args, **kwargs):
-        # אותו עיקרון גם לתמונות מוצר/באנרים.
-        skip_delete = bool(getattr(self, "_skip_inline_auto_delete_once", False))
-
-        old_ids = []
-        if not skip_delete:
-            try:
-                old_ids = list(users.setdefault(self.from_user.id, {"cart": []}).get("temp_bot_messages", []) or [])
-            except Exception:
-                old_ids = []
-
-            # מוחקים את המסך הנוכחי מיד ברקע כדי שלא יישאר תקוע 2-3 שניות.
-            delete_message_now_background(self.bot, self.from_user.id, self.message_id)
-
-        sent = await self.message.answer_photo(*args, **kwargs)
-
-        try:
-            data = users.setdefault(self.from_user.id, {"cart": []})
-            data["temp_bot_messages"] = [sent.message_id]
-        except Exception:
-            pass
-
-        async def _cleanup_after_send():
-            ids_to_delete = list(old_ids)
-            try:
-                ids_to_delete.append(self.message_id)
-            except Exception:
-                pass
-            await _delete_messages_safely(
-                self.bot,
-                self.from_user.id,
-                [mid for mid in ids_to_delete if str(mid) != str(sent.message_id)]
-            )
-
-        try:
-            asyncio.create_task(_cleanup_after_send())
-        except Exception:
-            pass
-
-        return sent
-
-    async def answer_document(self, *args, **kwargs):
-        # מאפשר לשלוח PDF/קבצים גם כאשר הפעולה הגיעה מכפתור Inline.
-        sent = await self.message.answer_document(*args, **kwargs)
-        return sent
-
-    async def delete(self):
-        # אין הודעת משתמש למחיקה ב־Inline Callback.
-        return None
 
 
 def _btn(text, data):
@@ -2281,6 +2133,8 @@ def products_keyboard(category):
 
 
 def cart_keyboard():
+    # FULL_CART_LOGIC_FIX
+    # כפתורי פעולה מלאים מופיעים רק כשיש מוצרים בסל.
     return _inline([
         [
             _btn("✅ המשך להזמנה", "ui:nav:checkout"),
@@ -2296,13 +2150,10 @@ def cart_keyboard():
     ])
 
 
-
-
-
-
 def back_to_personal_area_keyboard():
     return _inline([
         [_btn("⬅️ חזרה לאזור אישי", "ui:personal:menu")],
+        [_btn("⬅️ חזרה לתפריט", "ui:nav:main")],
     ])
 
 
@@ -2313,6 +2164,7 @@ def personal_area_keyboard():
         [_btn("📍 הכתובות שלי", "ui:personal:addresses")],
         [_btn("⬅️ חזרה לתפריט", "ui:nav:main")],
     ])
+
 
 def legal_menu_keyboard():
     return _inline([
@@ -2325,10 +2177,10 @@ def legal_menu_keyboard():
 
 
 def empty_cart_keyboard():
-    # EMPTY_CART_LOGIC_FIX_FINAL_ACTIVE
-    # בסל ריק מציגים רק פעולות הגיוניות.
+    # EMPTY_CART_LOGIC_FIX
+    # בסל ריק לא מציגים רוקן סל / בטל הזמנה.
     return _inline([
-        [_btn("🛍️ עבור לחנות", "ui:main:shop")],
+        [_btn("🛍️ מעבר לחנות", "ui:main:shop")],
         [_btn("⬅️ חזרה לתפריט", "ui:nav:main")],
     ])
 
@@ -2380,10 +2232,10 @@ def fulfillment_keyboard():
 
 
 def my_orders_keyboard():
-    # PERSONAL_AREA_BACK_FIX_ORDERS
     return _inline([
         [_btn("🔁 הזמנה חוזרת", "ui:orders:reorder")],
         [_btn("⬅️ חזרה לאזור אישי", "ui:personal:menu")],
+        [_btn("⬅️ חזרה לתפריט", "ui:nav:main")],
     ])
 
 
@@ -2953,7 +2805,7 @@ async def show_my_details_inline(callback: CallbackQuery):
 
     sent = await callback.message.answer(
         widen_inline_screen_text(body),
-        reply_markup=back_only_main_keyboard(),
+        reply_markup=back_to_personal_area_keyboard(),
         parse_mode="HTML"
     )
     users.setdefault(uid, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
@@ -3442,6 +3294,45 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         await cleanup_customer_order_screens(callback.message.bot, uid)
 
         # משתמשים בזרימה הקיימת של הכתובות דרך טקסט מדומה, כדי לא לשבור לוגיקה קיימת.
+        proxy = CustomerCallbackMessage(callback, "🏠 הכתובות שלי")
+        await handle_shop(proxy)
+        return
+
+    # PERSONAL_AREA_DIRECT_CALLBACK_FIX_FINAL
+    if raw == "ui:personal:menu":
+        await answer_callback_safely(callback)
+        await cleanup_customer_order_screens(callback.message.bot, uid)
+
+        body = rtl("""
+<b>👤 האזור האישי</b>
+
+כאן ניתן לצפות בפרטים השמורים שלך,
+בהזמנות שביצעת ובכתובות השמורות בחשבון.
+
+בחר פעולה:
+""")
+
+        sent = await callback.message.answer(
+            widen_inline_screen_text(body),
+            reply_markup=personal_area_keyboard(),
+            parse_mode="HTML"
+        )
+
+        users.setdefault(uid, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+        return
+
+    if raw == "ui:personal:details":
+        await answer_callback_safely(callback)
+        await show_my_details_inline(callback)
+        return
+
+    if raw == "ui:personal:orders":
+        await answer_callback_safely(callback)
+        await show_my_orders_inline(callback)
+        return
+
+    if raw == "ui:personal:addresses":
+        await answer_callback_safely(callback)
         proxy = CustomerCallbackMessage(callback, "🏠 הכתובות שלי")
         await handle_shop(proxy)
         return
@@ -4006,7 +3897,7 @@ async def my_details(message: Message):
     await send_temp_message(
         message,
         saved_profile_text(profile),
-        reply_markup=back_only_main_keyboard(),
+        reply_markup=back_to_personal_area_keyboard(),
         parse_mode="HTML"
     )
 
@@ -4864,12 +4755,13 @@ async def support(message: Message):
     existing_ticket = get_open_support_ticket_by_user(uid)
 
     if existing_ticket:
-        users[uid] = {
+        users.setdefault(uid, {"cart": []})
+        users[uid].update({
             "cart": previous_cart,
             "step": "support_chat",
             "support_ticket_number": existing_ticket["ticket_number"],
             "temp_bot_messages": []
-        }
+        })
 
         await send_support_banner_screen(
             message,
@@ -4883,11 +4775,12 @@ async def support(message: Message):
         )
         return
 
-    users[uid] = {
+    users.setdefault(uid, {"cart": []})
+    users[uid].update({
         "cart": previous_cart,
         "step": "support_subject",
         "temp_bot_messages": []
-    }
+    })
 
     await show_support_subjects_screen(message, uid)
 
