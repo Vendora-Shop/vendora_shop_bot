@@ -1041,6 +1041,17 @@ def widen_main_menu_caption_text(text):
     return text.rstrip() + "\n" + compact_wide_line
 
 
+def widen_category_caption_text(text):
+    # CATEGORY_CAPTION_RTL_FIX
+    # אותה שיטה שעבדה בתפריט הראשי:
+    # rtl(...) + שורת רוחב בלתי נראית + answer_cached_banner_photo(...)
+    text = str(text or "")
+    category_wide_line = "\u00A0" * 65
+    if category_wide_line in text:
+        return text
+    return text.rstrip() + "\n" + category_wide_line
+
+
 def main_menu_caption_text():
     return rtl(
         "<b>💎 תפריט ראשי</b> — בחרו פעולה:"
@@ -1324,9 +1335,10 @@ UI_BANNERS = {
 
 async def send_shop_home_screen(message: Message, text, reply_markup=None, parse_mode="HTML"):
     """
-    SHOP_HOME_SCREEN_FAST_FINAL
-    שולח באנר חנות + טקסט + כפתורים באותה הודעה.
-    משתמש ב-file_id cache ולכן לא אמור להיתקע.
+    SHOP_HOME_RTL_CAPTION_FIX
+    מסך חנות עובד באותה שיטה כמו התפריט הראשי:
+    banner + caption + inline keyboard באותה הודעה,
+    עם הרחבת RTL קומפקטית כדי שהטקסט יישאר בצד ימין.
     """
     uid = message.from_user.id
     users.setdefault(uid, {"cart": []})
@@ -1334,522 +1346,37 @@ async def send_shop_home_screen(message: Message, text, reply_markup=None, parse
 
     old_ids = list(data.get("temp_bot_messages", []) or [])
 
+    caption_text = widen_category_caption_text(rtl(text))
+
     sent = None
     try:
         sent = await answer_cached_banner_photo(
             message,
             "shop_home",
-            caption=text,
+            caption=caption_text,
             reply_markup=reply_markup,
             parse_mode=parse_mode
         )
     except Exception as e:
-        print(f"SHOP_HOME_SCREEN_FAST_ERROR: {type(e).__name__}: {e}")
+        print(f"SHOP_HOME_RTL_CAPTION_ERROR: {type(e).__name__}: {e}")
 
     if sent is None:
         sent = await message.answer(
-            text,
+            caption_text,
             reply_markup=reply_markup,
             parse_mode=parse_mode
         )
 
     data["temp_bot_messages"] = [sent.message_id]
 
-    ids_to_delete = [mid for mid in old_ids if str(mid) != str(sent.message_id)]
-    if ids_to_delete:
+    delete_ids = [mid for mid in old_ids if str(mid) != str(sent.message_id)]
+    if delete_ids:
         try:
-            asyncio.create_task(_delete_messages_safely(message.bot, uid, ids_to_delete[-25:]))
+            asyncio.create_task(_delete_messages_safely(message.bot, uid, delete_ids[-25:]))
         except Exception:
             pass
 
     return sent
-
-
-def h(text):
-    return escape(str(text))
-
-
-def rtl(text):
-    return RTL + str(text)
-
-
-def money(value):
-    value = float(value)
-    if value.is_integer():
-        return f"{int(value)}₪"
-    return f"{value:g}₪"
-
-
-def field(label, value):
-    return f"<b>{h(label)}:</b> {h(value)}"
-
-
-
-def large_quantity_contact_text(max_qty):
-    return rtl(
-        "<b>⚠️ להזמנות בכמות גדולה יש ליצור קשר עם החנות.</b>\n\n"
-        f"{field('כמות מקסימלית להזמנה רגילה', str(max_qty) + ' יחידות')}\n"
-        f"{field('טלפון', STORE_CONTACT_PHONE)}\n"
-        f"{field('Telegram', STORE_CONTACT_TELEGRAM)}"
-    )
-
-
-
-
-def admin_support_reply_keyboard(telegram_id):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="↩️ השב ללקוח",
-                    callback_data=f"support_reply:{telegram_id}"
-                )
-            ]
-        ]
-    )
-
-
-def admin_new_order_keyboard(order_number):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="✅ אשר הזמנה", callback_data=f"order_action:approve:{order_number}"),
-                InlineKeyboardButton(text="❌ בטל", callback_data=f"order_action:cancel:{order_number}")
-            ]
-        ]
-    )
-
-
-
-
-
-
-def quantity_keyboard(selected_qty, available_left, max_qty):
-    # תאימות ישנה בלבד. הזרימה החדשה משתמשת ב-quantity_inline_keyboard.
-    return quantity_inline_keyboard(selected_qty)
-
-def product_caption_text(product, qty):
-    # PRODUCT_CAPTION_GENERAL_FIX
-    stock = int(product.get("stock", 0) or 0)
-    stock_text = "<b>🟢 במלאי</b>" if stock > 0 else "<b>🔴 אזל מהמלאי</b>"
-
-    total_price = float(product.get("price", 0) or 0) * int(qty)
-
-    return rtl(
-        f"<b>🛍️ {h(product['name'])}</b>\n\n"
-        f"{h(product.get('description', ''))}\n\n"
-        f"<b>מחיר:</b> {money(total_price)}\n\n"
-        f"{stock_text}\n\n"
-        f"<b>כמות נבחרת:</b> {int(qty)}\n"
-        "בחר כמות ואז לחץ על 🛒 הוסף לסל."
-    )
-
-
-def quantity_inline_keyboard(selected_qty):
-    selected_qty = int(selected_qty or 1)
-
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="−", callback_data="qty_action:minus"),
-                InlineKeyboardButton(text=f"כמות: {selected_qty}", callback_data="qty_action:manual"),
-                InlineKeyboardButton(text="+", callback_data="qty_action:plus"),
-            ],
-            [
-                InlineKeyboardButton(text="🛒 הוסף לסל", callback_data="qty_action:add")
-            ],
-            [
-                InlineKeyboardButton(text="↩️ חזרה למוצרים", callback_data="qty_action:back_products")
-            ]
-        ]
-    )
-
-
-
-
-
-
-
-
-
-
-SUPPORT_FAQ_BY_SUBJECT = {
-    "📦 שאלה על הזמנה קיימת": [
-        "📌 מה הסטטוס של ההזמנה האחרונה שלי?",
-        "🔔 איך אדע כשהסטטוס משתנה?",
-        "✏️ אפשר לשנות פרטים אחרי הזמנה?",
-        "📄 איפה סיכום ההזמנה שלי?",
-    ],
-    "🚚 משלוח / איסוף": [
-        "🚚 מה מצב המשלוח או האיסוף?",
-        "🛍️ איך עובד איסוף עצמי?",
-        "🔁 אפשר לשנות משלוח לאיסוף?",
-        "⏱️ מתי ההזמנה יוצאת למשלוח או מוכנה לאיסוף?",
-    ],
-    "💳 תשלום": [
-        "💳 איך מתבצע התשלום?",
-        "✅ איך אדע שהתשלום עבר?",
-        "⚠️ מה עושים אם התשלום לא הצליח?",
-        "📄 האם מקבלים סיכום הזמנה?",
-    ],
-    "🛍️ מוצר / מלאי": [
-        "🛍️ איך יודעים אם מוצר במלאי?",
-        "🔢 למה יש הגבלת כמות?",
-        "🖼️ האם אפשר לראות תמונת מוצר?",
-        "🛒 איך מוסיפים עוד מוצר לסל?",
-    ],
-    "📝 שינוי פרטים": [
-        "👤 אילו פרטים שמורים אצלי?",
-        "🏠 איך רואים או מוסיפים כתובת?",
-        "✏️ איך מעדכנים פרטים בהזמנה חדשה?",
-        "☎️ למה צריך מספר טלפון?",
-    ],
-    "❓ אחר": [
-        "❓ הנושא שלי לא מופיע",
-    ],    "support": "assets/banners/support_banner.jpg",
-
-}
-
-
-
-
-def latest_customer_order(telegram_id):
-    try:
-        orders = get_orders_by_customer_telegram_id(telegram_id, 1)
-        return orders[0] if orders else None
-    except Exception:
-        return None
-
-
-def order_receive_type_text(order):
-    if not order:
-        return "-"
-
-    try:
-        if is_pickup_order(order):
-            return "🛍️ איסוף עצמי"
-    except Exception:
-        pass
-
-    base_city = str(order.get("base_city") or "")
-    city = str(order.get("city") or "")
-
-    if "איסוף" in base_city or "איסוף" in city:
-        return "🛍️ איסוף עצמי"
-
-    return "🚚 משלוח עד הבית"
-
-
-def dynamic_order_status_answer(user_id):
-    order = latest_customer_order(user_id)
-
-    if not order:
-        return rtl(
-            "<b>📦 סטטוס הזמנה</b>\n\n"
-            "לא נמצאה הזמנה קודמת בחשבון שלך.\n"
-            "אם ביצעת הזמנה ממספר Telegram אחר, ניתן לפתוח פנייה לנציג שירות."
-        )
-
-    return rtl(
-        "<b>📦 סטטוס ההזמנה האחרונה שלך</b>\n\n"
-        f"{field('מספר הזמנה', order.get('order_number') or '-')}\n"
-        f"{field('סטטוס נוכחי', translate_order_status(order.get('status')))}\n"
-        f"{field('סוג קבלה', order_receive_type_text(order))}\n"
-        f"{field('סה״כ לתשלום', money(order.get('final_total') or 0))}\n"
-        f"{field('תאריך הזמנה', order.get('created_at') or '-')}\n\n"
-        "חשוב לדעת: אין כרגע מעקב שליח בזמן אמת. עדכוני סטטוס נשלחים כאשר החנות מעדכנת את ההזמנה."
-    )
-
-
-def dynamic_customer_profile_answer(user_id):
-    profile = get_customer_profile(user_id)
-
-    if not profile:
-        return rtl(
-            "<b>👤 האזור האישי</b>\n\n"
-            "עדיין לא נמצאו פרטים שמורים בחשבון שלך.\n"
-            "הפרטים נשמרים לאחר ביצוע הזמנה או עדכון פרטים בבוט."
-        )
-
-    address = f"{profile.get('city') or '-'}, {profile.get('street') or '-'}, קומה {profile.get('floor') or '-'}, דירה {profile.get('apartment') or '-'}"
-
-    return rtl(
-        "<b>👤 האזור האישי</b>\n\n"
-        f"{field('שם', profile.get('customer_name') or '-')}\n"
-        f"{field('טלפון', profile.get('phone') or '-')}\n"
-        f"{field('כתובת', address)}"
-    )
-
-
-def dynamic_addresses_answer(user_id):
-    addresses = get_customer_addresses(user_id)
-
-    if not addresses:
-        return rtl(
-            "<b>🏠 כתובות שמורות</b>\n\n"
-            "אין כרגע כתובות שמורות בחשבון שלך.\n"
-            "אפשר להוסיף כתובת דרך הכפתור: 🏠 הכתובות שלי."
-        )
-
-    text = "<b>🏠 הכתובות השמורות שלך</b>\n\n"
-
-    for address in addresses[:5]:
-        text += (
-            f"<b>{h(address.get('label') or 'כתובת')}</b>\n"
-            f"{field('עיר / יישוב', address.get('city') or '-')}\n"
-            f"{field('רחוב', address.get('street') or '-')}\n"
-            f"{field('קומה', address.get('floor') or '-')}\n"
-            f"{field('דירה', address.get('apartment') or '-')}\n\n"
-        )
-
-    return rtl(text.strip())
-
-
-def support_faq_answer_text(user_id, subject, question):
-    if question in {
-        "📌 מה הסטטוס של ההזמנה האחרונה שלי?",
-        "🚚 מה מצב המשלוח או האיסוף?",
-    }:
-        return dynamic_order_status_answer(user_id)
-
-    if question == "🔔 איך אדע כשהסטטוס משתנה?":
-        return rtl(
-            "<b>🔔 עדכוני סטטוס הזמנה</b>\n\n"
-
-    "כאשר סטטוס ההזמנה משתנה,\n"
-    "תקבלו הודעה אוטומטית מהמערכת.\n\n"
-
-    "<b>סטטוסים אפשריים:</b>\n\n"
-
-    "📥 <b>התקבלה</b>\n"
-    "ההזמנה נקלטה במערכת וממתינה לטיפול.\n\n"
-
-    "📦 <b>בטיפול</b>\n"
-    "החנות מכינה את ההזמנה שלכם.\n\n"
-
-    "🚚 <b>בדרך אליכם</b>\n"
-    "ההזמנה יצאה למשלוח.\n\n"
-
-    "✅ <b>הושלמה</b>\n"
-    "ההזמנה סופקה בהצלחה.\n\n"
-
-    "ℹ️ עדכוני הסטטוס נשלחים בזמן אמת."
-        )
-
-    if question == "✏️ אפשר לשנות פרטים אחרי הזמנה?":
-        return rtl(
-            "<b>✏️ שינוי פרטים אחרי הזמנה</b>\n\n"
-            "כרגע אין שינוי אוטומטי של הזמנה שכבר נשלחה.\n"
-            "אם צריך לעדכן טלפון, כתובת או פרט אחר — פתח פנייה לנציג שירות ונבדוק אם עדיין ניתן לעדכן."
-        )
-
-    if question in {"📄 איפה סיכום ההזמנה שלי?", "📄 האם מקבלים סיכום הזמנה?"}:
-        return rtl(
-            "<b>📄 סיכום הזמנה</b>\n\n"
-            "לאחר ביצוע הזמנה הבוט שולח סיכום הזמנה וקובץ PDF עם פרטי ההזמנה.\n"
-            "אם לא קיבלת את הסיכום, ניתן לפתוח פנייה לנציג שירות."
-        )
-
-    if question == "🛍️ איך עובד איסוף עצמי?":
-        return rtl(
-            "<b>🛍️ איסוף עצמי</b>\n\n"
-            "בעת ביצוע ההזמנה ניתן לבחור באפשרות איסוף עצמי.\n"
-            "לאחר שההזמנה תטופל, החנות תעדכן את הסטטוס ותשלח הודעה כשההזמנה מוכנה לאיסוף."
-        )
-
-    if question == "🔁 אפשר לשנות משלוח לאיסוף?":
-        return rtl(
-            "<b>🔁 שינוי משלוח / איסוף</b>\n\n"
-            "כרגע אין שינוי אוטומטי לאחר שליחת ההזמנה.\n"
-            "אם ההזמנה עדיין לא טופלה, אפשר לפתוח פנייה לנציג שירות ונבדוק אם ניתן לשנות."
-        )
-
-    if question == "⏱️ מתי ההזמנה יוצאת למשלוח או מוכנה לאיסוף?":
-        return rtl(
-            "<b>⏱️ זמני טיפול</b>\n\n"
-            "הבוט שולח עדכון כאשר החנות משנה את סטטוס ההזמנה.\n"
-            "כאשר ההזמנה תצא למשלוח או תהיה מוכנה לאיסוף — תקבל הודעה אוטומטית."
-        )
-
-    if question == "💳 איך מתבצע התשלום?":
-        return rtl(
-            "<b>💳 תשלום</b>\n\n"
-            "בשלב הנוכחי של הבוט התשלום מתבצע דרך מסך התשלום שמופיע בתהליך ההזמנה.\n"
-            "לאחר אישור התשלום, ההזמנה נשלחת לטיפול החנות."
-        )
-
-    if question == "✅ איך אדע שהתשלום עבר?":
-        return rtl(
-            "<b>✅ אישור תשלום</b>\n\n"
-            "לאחר אישור התשלום בבוט, תקבל סיכום הזמנה וההזמנה תועבר לחנות לטיפול.\n"
-            "אם נראה שהתשלום לא עבר או שלא התקבל סיכום — ניתן לפתוח פנייה לנציג שירות."
-        )
-
-    if question == "⚠️ מה עושים אם התשלום לא הצליח?":
-        return rtl(
-            "<b>⚠️ תשלום לא הצליח</b>\n\n"
-            "אם התשלום לא הושלם, ההזמנה לא תעבור לטיפול מלא.\n"
-            "אפשר לנסות שוב או לפתוח פנייה לנציג שירות לבדיקה."
-        )
-
-    if question == "🛍️ איך יודעים אם מוצר במלאי?":
-        return rtl(
-            "<b>🛍️ זמינות מוצר</b>\n\n"
-            "במסך המוצר מופיע האם המוצר במלאי או אזל מהמלאי.\n"
-            "מוצר שאזל מהמלאי לא אמור להיכנס להזמנה רגילה."
-        )
-
-    if question == "🔢 למה יש הגבלת כמות?":
-        return rtl(
-            "<b>🔢 הגבלת כמות</b>\n\n"
-            "בחלק מהמוצרים קיימת כמות מקסימלית להזמנה כדי למנוע הזמנות לא תקינות או חריגות.\n"
-            "אם צריך כמות גדולה יותר, ניתן לפתוח פנייה לנציג שירות."
-        )
-
-    if question == "🖼️ האם אפשר לראות תמונת מוצר?":
-        return rtl(
-            "<b>🖼️ תמונת מוצר</b>\n\n"
-            "אם הוגדרה תמונה למוצר, היא תופיע בכרטיס המוצר בחנות.\n"
-            "אם אין תמונה, יוצגו שם המוצר, תיאור, מחיר וסטטוס מלאי."
-        )
-
-    if question == "🛒 איך מוסיפים עוד מוצר לסל?":
-        return rtl(
-            "<b>🛒 הוספת מוצרים לסל</b>\n\n"
-            "לאחר הוספת מוצר לסל, ניתן ללחוץ על ➕ הוסף עוד מוצר ולבחור מוצרים נוספים.\n"
-            "בסיום ניתן להמשיך להזמנה מתוך הסל."
-        )
-
-    if question == "👤 אילו פרטים שמורים אצלי?":
-        return dynamic_customer_profile_answer(user_id)
-
-    if question == "🏠 איך רואים או מוסיפים כתובת?":
-        return dynamic_addresses_answer(user_id)
-
-    if question == "✏️ איך מעדכנים פרטים בהזמנה חדשה?":
-        return rtl(
-            "<b>✏️ עדכון פרטים בהזמנה חדשה</b>\n\n"
-            "במהלך ביצוע הזמנה ניתן להמשיך עם הפרטים השמורים או להזין פרטים חדשים.\n"
-            "הפרטים החדשים ישמשו להזמנה הנוכחית וניתן לשמור אותם להמשך."
-        )
-
-    if question == "☎️ למה צריך מספר טלפון?":
-        return rtl(
-            "<b>☎️ מספר טלפון</b>\n\n"
-            "מספר הטלפון נדרש כדי שנציג או שליח יוכל ליצור קשר במקרה הצורך,\n"
-            "וגם כדי לזהות פניות שירות בצורה ברורה יותר."
-        )
-
-    if question == "❓ הנושא שלי לא מופיע":
-        return rtl(
-            "<b>❓ נושא אחר</b>\n\n"
-            "אם לא מצאת תשובה מתאימה, אפשר לפתוח פנייה לנציג שירות ולכתוב את פרטי הבקשה."
-        )
-
-    return rtl(
-        "<b>📞 שירות לקוחות</b>\n\n"
-        "אם לא מצאת תשובה מתאימה, ניתן לפתוח פנייה לנציג שירות."
-    )
-
-
-
-
-
-def clean_product_name(text):
-    return text.replace("❌ ", "").replace(" - אזל מהמלאי", "").strip()
-
-
-def find_product(name):
-    name = clean_product_name(name)
-    products = get_active_products()
-
-    for category, items in products.items():
-        for item in items:
-            if item["name"] == name:
-                return item
-
-    return None
-
-
-def cart_total(cart):
-    return sum(float(item["price"]) * int(item["qty"]) for item in cart)
-
-
-def product_qty_in_cart(cart, product_name):
-    return sum(int(item["qty"]) for item in cart if item["name"] == product_name)
-
-
-def clean_phone(phone):
-    return phone.strip().replace(" ", "").replace("-", "").replace("+972", "0")
-
-
-def valid_phone(phone):
-    phone = clean_phone(phone)
-    return phone.isdigit() and phone.startswith("05") and len(phone) == 10
-
-
-def has_digit(text):
-    return any(ch.isdigit() for ch in text)
-
-
-def grouped_cart(cart):
-    grouped = {}
-
-    for item in cart:
-        name = item["name"]
-        if name not in grouped:
-            grouped[name] = {
-                "name": item["name"],
-                "price": float(item["price"]),
-                "qty": 0
-            }
-
-        grouped[name]["qty"] += int(item["qty"])
-
-    return list(grouped.values())
-
-
-def cart_text(cart, title="🛒 הסל שלך"):
-    if not cart:
-        return rtl("<b>🛒 הסל שלך</b> — הסל שלך ריק כרגע.")
-
-    items = grouped_cart(cart)
-
-    total_units = sum(int(item["qty"]) for item in items)
-    total_price = sum(float(item["price"]) * int(item["qty"]) for item in items)
-
-    text = f"<b>{title}</b>\n\n"
-
-    for index, item in enumerate(items, start=1):
-        item_total = float(item["price"]) * int(item["qty"])
-
-        text += (
-            f"<b>{index}. {h(item['name'])}</b>\n"
-            f"<b>כמות:</b> {int(item['qty'])}\n"
-            f"<b>סה״כ מוצר:</b> {money(item_total)}\n\n"
-        )
-
-    text += (
-        f"<b>📦 כמות מוצרים בסל:</b> {total_units}\n"
-        f"<b>💰 סה״כ לפני משלוח:</b> {money(total_price)}"
-    )
-
-    return rtl(text)
-
-
-def saved_profile_text(profile):
-    address = f"{profile['city']}, {profile['street']}, קומה {profile['floor']}, דירה {profile['apartment']}"
-
-    text = (
-        "<b>👤 האזור האישי</b>\n\n"
-        f"{field('שם', profile['customer_name'])}\n"
-        f"{field('טלפון', profile['phone'])}\n"
-        f"{field('כתובת', address)}\n\n"
-        f"{field('הזמנות קודמות', profile['total_orders'])}\n"
-        f"{field('סה״כ קניות', money(profile['total_spent']))}"
-    )
-
-    return rtl(text)
 
 
 async def send_product_card(message: Message, product):
@@ -4014,7 +3541,7 @@ async def shop(message: Message):
 
     await send_shop_home_screen(
         message,
-        "🛍️ <b>חנות</b> — בחר קטגוריה:",
+        "<b>🛍️ חנות</b> — בחרו קטגוריה:",
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
@@ -4073,7 +3600,7 @@ async def back_categories(message: Message):
 
     await send_shop_home_screen(
         message,
-        "🛍️ <b>חנות</b> — בחר קטגוריה:",
+        "<b>🛍️ חנות</b> — בחרו קטגוריה:",
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
@@ -4092,7 +3619,7 @@ async def add_more(message: Message):
 
     await send_shop_home_screen(
         message,
-        "🛍️ <b>חנות</b> — בחר קטגוריה:",
+        "<b>🛍️ חנות</b> — בחרו קטגוריה:",
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
