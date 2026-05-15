@@ -995,7 +995,9 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
 
     # ניקוי רק ברקע, בלי לעכב את פתיחת התפריט
     ids_to_delete = [mid for mid in old_ids if str(mid) not in {str(x) for x in new_ids}]
-    if ids_to_delete:
+    # אם זה /start ויש greeting_text — לא מעכבים ולא מריצים ניקוי ישן כבד.
+    # בשאר המעברים שומרים ניקוי רקע רגיל.
+    if ids_to_delete and not greeting_text:
         try:
             asyncio.create_task(_delete_messages_safely(message.bot, uid, ids_to_delete[-40:]))
         except Exception:
@@ -3553,6 +3555,12 @@ async def start(message: Message):
     greeting_text = f"<b>👋 שלום {h(customer_name)}</b>"
     menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
 
+    # START_FAST_OPEN_FIX
+    # לא מחכים לניקוי הודעות ישנות לפני פתיחת התפריט הראשי.
+    # קודם מציגים שלום + תפריט, ניקוי ישן יתבצע ברקע דרך helper.
+    users.setdefault(uid, {"cart": []})
+    users[uid]["temp_bot_messages"] = []
+
     sent = await send_main_menu_greeting_banner_caption(
         message,
         greeting_text=greeting_text,
@@ -3666,7 +3674,7 @@ async def shop(message: Message):
 
     await send_shop_home_screen(
         message,
-        "<b>🛒 החנות</b>\n\nבחר קטגוריה:",
+        "🛍️ <b>חנות</b> — בחר קטגוריה:",
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
@@ -3725,7 +3733,7 @@ async def back_categories(message: Message):
 
     await send_shop_home_screen(
         message,
-        "<b>🛒 החנות</b>\n\nבחר קטגוריה:",
+        "🛍️ <b>חנות</b> — בחר קטגוריה:",
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
