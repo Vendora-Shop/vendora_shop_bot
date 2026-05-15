@@ -1035,7 +1035,7 @@ def widen_main_menu_caption_text(text):
     # גרסה קומפקטית לתפריט הראשי בלבד.
     # שומרת על רוחב/RTL אבל מצמצמת את הרווח מתחת לטקסט.
     text = str(text or "")
-    compact_wide_line = "\u00A0" * 65
+    compact_wide_line = "\u00A0" * 48
     if compact_wide_line in text:
         return text
     return text.rstrip() + "\n" + compact_wide_line
