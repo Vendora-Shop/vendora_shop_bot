@@ -1419,7 +1419,8 @@ def products_keyboard(category):
     return _inline(rows)
 
 def cart_keyboard():
-    # CART_NAVIGATION_FIX_FINAL
+    # CART_NAVIGATION_FIX_FINAL_ACTIVE
+    # חשוב: יש בקובץ כמה הגדרות כפולות, לכן כל ההגדרות הוחלפו לגרסה הזאת.
     # במסך סל עם מוצרים חייב להיות ניווט ברור:
     # המשך הזמנה / הוסף מוצר / חזרה לתפריט / ריקון סל / ביטול.
     return _inline([
@@ -2348,16 +2349,27 @@ def products_keyboard(category):
 
 
 def cart_keyboard():
-    return _inline(_wide_buttons([
-        _btn("✅ המשך להזמנה", "ui:nav:checkout"),
-        _btn("➕ הוסף עוד מוצר", "ui:nav:add_more"),
-        _btn("🧹 רוקן סל", "ui:nav:clear_cart"),
-        _btn("❌ בטל הזמנה", "ui:nav:cancel"),
-    ]))
+    # CART_NAVIGATION_FIX_FINAL_ACTIVE
+    # חשוב: יש בקובץ כמה הגדרות כפולות, לכן כל ההגדרות הוחלפו לגרסה הזאת.
+    # במסך סל עם מוצרים חייב להיות ניווט ברור:
+    # המשך הזמנה / הוסף מוצר / חזרה לתפריט / ריקון סל / ביטול.
+    return _inline([
+        [
+            _btn("✅ המשך להזמנה", "ui:nav:checkout"),
+            _btn("➕ הוסף עוד מוצר", "ui:nav:add_more"),
+        ],
+        [
+            _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
+            _btn("🧹 רוקן סל", "ui:nav:clear_cart"),
+        ],
+        [
+            _btn("❌ בטל הזמנה", "ui:nav:cancel"),
+        ],
+    ])
 
 
 def empty_cart_keyboard():
-    # EMPTY_CART_LOGIC_FIX_FINAL
+    # EMPTY_CART_LOGIC_FIX_FINAL_ACTIVE
     # בסל ריק מציגים רק פעולות הגיוניות.
     return _inline([
         [_btn("🛍️ עבור לחנות", "ui:main:shop")],
@@ -3869,7 +3881,7 @@ async def add_more(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
 
-    # CART_PRESERVE_ADD_MORE_FIX_FINAL
+    # CART_PRESERVE_ADD_MORE_FIX_FINAL_ACTIVE
     # לא מאפסים סל. רק חוזרים למסך החנות/קטגוריות.
     data = users.setdefault(uid, {"cart": [], "step": None})
     data.setdefault("cart", [])
@@ -3889,7 +3901,7 @@ async def show_cart(message: Message):
     uid = message.from_user.id
     data = users.setdefault(uid, {"cart": []})
 
-    # CART_VIEW_PRESERVE_FIX_FINAL
+    # CART_VIEW_PRESERVE_FIX_FINAL_ACTIVE
     # פתיחת הסל לא מאפסת את הסל.
     await cleanup_customer_order_screens(message.bot, uid)
 
