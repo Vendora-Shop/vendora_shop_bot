@@ -426,6 +426,70 @@ def remember_customer_main_menu_message(uid, message_id):
     save_customer_menu_store(store)
 
 
+
+BANNER_FILE_ID_CACHE_FILE = "customer_banner_file_ids.json"
+
+
+def load_banner_file_ids():
+    try:
+        if os.path.exists(BANNER_FILE_ID_CACHE_FILE):
+            with open(BANNER_FILE_ID_CACHE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"BANNER_FILE_ID_CACHE_LOAD_ERROR: {type(e).__name__}: {e}")
+    return {}
+
+
+def save_banner_file_ids(data):
+    try:
+        with open(BANNER_FILE_ID_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"BANNER_FILE_ID_CACHE_SAVE_ERROR: {type(e).__name__}: {e}")
+
+
+async def answer_cached_banner_photo(message: Message, banner_key, caption=None, reply_markup=None, parse_mode="HTML"):
+    """
+    FAST_BANNER_FILE_ID_CACHE
+    שולח באנרים דרך file_id של Telegram אחרי ההעלאה הראשונה.
+    זה מונע תקיעות ארוכות ב-/start ובחנות בגלל upload חוזר של אותה תמונה.
+    """
+    cache = load_banner_file_ids()
+    file_id = cache.get(str(banner_key))
+
+    if file_id:
+        try:
+            return await message.answer_photo(
+                photo=file_id,
+                caption=caption,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode
+            )
+        except Exception as e:
+            print(f"BANNER_FILE_ID_SEND_FAILED_{banner_key}: {type(e).__name__}: {e}")
+            cache.pop(str(banner_key), None)
+            save_banner_file_ids(cache)
+
+    banner_path = UI_BANNERS.get(banner_key)
+    if banner_path and os.path.exists(banner_path):
+        sent = await message.answer_photo(
+            photo=FSInputFile(banner_path),
+            caption=caption,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode
+        )
+        try:
+            if sent.photo:
+                cache[str(banner_key)] = sent.photo[-1].file_id
+                save_banner_file_ids(cache)
+        except Exception:
+            pass
+        return sent
+
+    return None
+
+
+
 RTL = "\u200F"
 # שורת רווחים בלתי נראית שמרחיבה את בועת ההודעה בטלגרם כאשר יש Inline Keyboard.
 # לא משנה טקסטים קיימים ולא מוצגת כטקסט רגיל ללקוח.
@@ -944,44 +1008,35 @@ async def send_main_menu_with_banner(message: Message, text, banner_key=None, re
 
 async def send_main_menu_greeting_banner_caption(message: Message, greeting_text=None, caption_text="", banner_key=None, reply_markup=None, parse_mode="HTML"):
     """
-    MAIN_MENU_FAST_FINAL
-    תפריט ראשי מהיר:
-    - שולח greeting רק אם ביקשו (/start).
-    - שולח באנר + caption + כפתורים באותה הודעה כדי לשמור רוחב אחיד.
-    - לא מחכה למחיקות לפני הצגת התפריט.
+    MAIN_MENU_FAST_FILE_ID_FINAL
+    פותח את התפריט מהר:
+    - משתמש ב-file_id cache לבאנר.
+    - לא מחכה למחיקות לפני הצגה.
+    - greeting מופיע רק אם שולחים greeting_text.
     """
     uid = message.from_user.id
-
     users.setdefault(uid, {"cart": []})
     data = users.setdefault(uid, {"cart": []})
+
     old_ids = list(data.get("temp_bot_messages", []) or [])
     new_ids = []
 
-    sent_greeting = None
     if greeting_text:
-        sent_greeting = await message.answer(
-            greeting_text,
-            parse_mode=parse_mode
-        )
+        sent_greeting = await message.answer(greeting_text, parse_mode=parse_mode)
         new_ids.append(sent_greeting.message_id)
 
-    banner_path = None
-    try:
-        banner_path = UI_BANNERS.get(banner_key) if banner_key else None
-    except Exception:
-        banner_path = None
-
     sent_menu = None
-    if banner_path and os.path.exists(banner_path):
+    if banner_key:
         try:
-            sent_menu = await message.answer_photo(
-                photo=FSInputFile(banner_path),
+            sent_menu = await answer_cached_banner_photo(
+                message,
+                banner_key,
                 caption=caption_text,
                 reply_markup=reply_markup,
                 parse_mode=parse_mode
             )
         except Exception as e:
-            print(f"MAIN_MENU_FAST_BANNER_ERROR: {type(e).__name__}: {e}")
+            print(f"MAIN_MENU_CACHED_BANNER_ERROR: {type(e).__name__}: {e}")
 
     if sent_menu is None:
         sent_menu = await message.answer(
@@ -993,13 +1048,11 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
     new_ids.append(sent_menu.message_id)
     data["temp_bot_messages"] = new_ids
 
-    # ניקוי רק ברקע, בלי לעכב את פתיחת התפריט
+    # ניקוי הודעות ישנות ברקע בלבד, לא לפני ולא בזמן פתיחת התפריט.
     ids_to_delete = [mid for mid in old_ids if str(mid) not in {str(x) for x in new_ids}]
-    # אם זה /start ויש greeting_text — לא מעכבים ולא מריצים ניקוי ישן כבד.
-    # בשאר המעברים שומרים ניקוי רקע רגיל.
     if ids_to_delete and not greeting_text:
         try:
-            asyncio.create_task(_delete_messages_safely(message.bot, uid, ids_to_delete[-40:]))
+            asyncio.create_task(_delete_messages_safely(message.bot, uid, ids_to_delete[-25:]))
         except Exception:
             pass
 
@@ -1216,11 +1269,9 @@ UI_BANNERS = {
 
 async def send_shop_home_screen(message: Message, text, reply_markup=None, parse_mode="HTML"):
     """
-    SHOP_HOME_SCREEN_FINAL
-    מסך חנות יציב:
-    - מנקה הודעות קודמות ברקע.
-    - שולח באנר החנות + טקסט + כפתורי קטגוריות באותה הודעה.
-    - לכן הבאנר לא נמחק מיד אחרי פתיחה.
+    SHOP_HOME_SCREEN_FAST_FINAL
+    שולח באנר חנות + טקסט + כפתורים באותה הודעה.
+    משתמש ב-file_id cache ולכן לא אמור להיתקע.
     """
     uid = message.from_user.id
     users.setdefault(uid, {"cart": []})
@@ -1228,24 +1279,17 @@ async def send_shop_home_screen(message: Message, text, reply_markup=None, parse
 
     old_ids = list(data.get("temp_bot_messages", []) or [])
 
-    try:
-        await cleanup_input_warnings(message.bot, uid)
-    except Exception:
-        pass
-
-    banner_path = UI_BANNERS.get("shop_home")
     sent = None
-
-    if banner_path and os.path.exists(banner_path):
-        try:
-            sent = await message.answer_photo(
-                photo=FSInputFile(banner_path),
-                caption=text,
-                reply_markup=reply_markup,
-                parse_mode=parse_mode
-            )
-        except Exception as e:
-            print(f"SHOP_HOME_SCREEN_BANNER_ERROR: {type(e).__name__}: {e}")
+    try:
+        sent = await answer_cached_banner_photo(
+            message,
+            "shop_home",
+            caption=text,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode
+        )
+    except Exception as e:
+        print(f"SHOP_HOME_SCREEN_FAST_ERROR: {type(e).__name__}: {e}")
 
     if sent is None:
         sent = await message.answer(
@@ -1259,7 +1303,7 @@ async def send_shop_home_screen(message: Message, text, reply_markup=None, parse
     ids_to_delete = [mid for mid in old_ids if str(mid) != str(sent.message_id)]
     if ids_to_delete:
         try:
-            asyncio.create_task(_delete_messages_safely(message.bot, uid, ids_to_delete[-40:]))
+            asyncio.create_task(_delete_messages_safely(message.bot, uid, ids_to_delete[-25:]))
         except Exception:
             pass
 
@@ -3214,6 +3258,87 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         await callback.answer()
         return
 
+    # CATEGORY_PRODUCT_DIRECT_CALLBACK_FIX
+    # קטגוריות ומוצרים לא עוברים יותר דרך טקסט מדומה / proxy.
+    # זה מונע מצב נדיר שבו לחיצה על קטגוריה כמו "טאבלטים" נופלת ל-flow לא נכון
+    # ומחזירה בטעות לתפריט הראשי.
+    if raw.startswith("ui:cat:"):
+        await answer_callback_safely(callback)
+
+        try:
+            idx = int(parts[-1])
+        except Exception:
+            await callback.answer("קטגוריה לא תקינה.", show_alert=True)
+            return
+
+        products = get_active_products()
+        cats = list(products.keys())
+
+        if not (0 <= idx < len(cats)):
+            await callback.answer("הקטגוריה לא זמינה כרגע.", show_alert=True)
+            return
+
+        category = cats[idx]
+        data["step"] = "product_select"
+        data["current_category"] = category
+        data["category"] = category
+
+        old_ids = list(data.get("temp_bot_messages", []) or [])
+
+        sent = await callback.message.answer(
+            widen_inline_screen_text(
+                rtl(f"<b>📂 {h(category)}</b>\n\nבחר מוצר:")
+            ),
+            reply_markup=products_keyboard(category),
+            parse_mode="HTML"
+        )
+
+        data["temp_bot_messages"] = [sent.message_id]
+
+        cleanup_ids = list(old_ids)
+        try:
+            cleanup_ids.append(callback.message.message_id)
+        except Exception:
+            pass
+
+        try:
+            asyncio.create_task(
+                _delete_messages_safely(
+                    callback.message.bot,
+                    uid,
+                    [mid for mid in cleanup_ids if str(mid) != str(sent.message_id)]
+                )
+            )
+        except Exception:
+            pass
+
+        return
+
+    if raw.startswith("ui:prod:"):
+        await answer_callback_safely(callback)
+
+        try:
+            idx = int(parts[-1])
+        except Exception:
+            await callback.answer("מוצר לא תקין.", show_alert=True)
+            return
+
+        category = data.get("current_category") or data.get("category")
+        products = get_active_products()
+        items = products.get(category, []) if category else []
+
+        if not category or not (0 <= idx < len(items)):
+            await callback.answer("המוצר לא זמין כרגע. חזור לקטגוריות ונסה שוב.", show_alert=True)
+            return
+
+        product_name = items[idx].get("name")
+        if not product_name:
+            await callback.answer("המוצר לא זמין כרגע.", show_alert=True)
+            return
+
+        proxy = CustomerCallbackMessage(callback, product_name)
+        return await handle_shop(proxy)
+
     # רשת ביטחון: כל מסך שממנו לוחצים Inline נחשב למסך פעיל למחיקה במעבר הבא.
     try:
         temp = data.setdefault("temp_bot_messages", [])
@@ -3360,22 +3485,6 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             if 0 <= idx < len(suggestions):
                 text = suggestions[idx]
 
-        elif raw.startswith("ui:cat:"):
-            products = get_active_products()
-            cats = list(products.keys())
-            idx = int(parts[-1])
-            if 0 <= idx < len(cats):
-                data["current_category"] = cats[idx]
-                data["category"] = cats[idx]
-                text = cats[idx]
-
-        elif raw.startswith("ui:prod:"):
-            category = data.get("current_category")
-            products = get_active_products()
-            items = products.get(category, []) if category else []
-            idx = int(parts[-1])
-            if 0 <= idx < len(items):
-                text = items[idx].get("name")
 
         elif raw.startswith("ui:reorder:"):
             # חשוב: לענות ל־callback מיד לפני פעולת שחזור/מחיקת הודעות.
@@ -3531,35 +3640,18 @@ async def start(message: Message):
         return
     START_LAST_RUN[uid] = now
 
-    # START_BLUE_BUTTON_FIX_V4
-    # במקרה של כפתור Start/Menu הכחול של Telegram, חייבים קודם לשלוח ReplyKeyboardRemove.
-    # InlineKeyboard לא סוגר את הכפתור הכחול. לכן קודם סוגרים את המקלדת, ורק מיד אחר כך שולחים את המסך החדש.
     old_data = users.get(uid) or {}
     old_temp_ids = list(old_data.get("temp_bot_messages", []) or [])
 
-    old_menu_id = None
-    try:
-        store = load_customer_menu_store()
-        old_menu_id = store.get(str(uid))
-    except Exception:
-        old_menu_id = None
-
     users[uid] = {
-        "cart": [],
+        "cart": old_data.get("cart", []),
         "step": "start",
         "temp_bot_messages": []
     }
 
     customer_name = message.from_user.first_name or "לקוח"
-
     greeting_text = f"<b>👋 שלום {h(customer_name)}</b>"
     menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
-
-    # START_FAST_OPEN_FIX
-    # לא מחכים לניקוי הודעות ישנות לפני פתיחת התפריט הראשי.
-    # קודם מציגים שלום + תפריט, ניקוי ישן יתבצע ברקע דרך helper.
-    users.setdefault(uid, {"cart": []})
-    users[uid]["temp_bot_messages"] = []
 
     sent = await send_main_menu_greeting_banner_caption(
         message,
@@ -3570,23 +3662,23 @@ async def start(message: Message):
         parse_mode="HTML"
     )
 
-    # helper already saved greeting + banner/menu message ids in temp_bot_messages
-
     try:
         remember_customer_main_menu_message(uid, sent.message_id)
     except Exception:
         pass
 
-    async def _cleanup_start_screen_after_response():
-        # ניקוי ברקע בלבד — לא חוסם את פתיחת המסך ללקוח.
+    async def _cleanup_start_after_send():
         try:
             await message.delete()
         except Exception:
             pass
 
+        # ניקוי ישן מוגבל בלבד וברקע, כדי שלא יהיו תקיעות.
         try:
-            if cleanup_msg:
-                await cleanup_msg.delete()
+            current_ids = set(str(x) for x in users.get(uid, {}).get("temp_bot_messages", []) or [])
+            ids_to_delete = [mid for mid in old_temp_ids[-25:] if str(mid) not in current_ids]
+            if ids_to_delete:
+                await _delete_messages_safely(message.bot, uid, ids_to_delete)
         except Exception:
             pass
 
@@ -3595,29 +3687,8 @@ async def start(message: Message):
         except Exception:
             pass
 
-        for mid in old_temp_ids[-40:]:
-            try:
-                if int(mid) != int(sent.message_id):
-                    await message.bot.delete_message(uid, int(mid))
-            except Exception:
-                pass
-
-        if old_menu_id:
-            try:
-                if int(old_menu_id) != int(sent.message_id):
-                    await message.bot.delete_message(uid, int(old_menu_id))
-            except Exception:
-                pass
-
-        try:
-            store = load_customer_menu_store()
-            store[str(uid)] = int(sent.message_id)
-            save_customer_menu_store(store)
-        except Exception:
-            pass
-
     try:
-        asyncio.create_task(_cleanup_start_screen_after_response())
+        asyncio.create_task(_cleanup_start_after_send())
     except Exception:
         pass
 
