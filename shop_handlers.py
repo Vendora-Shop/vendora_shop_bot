@@ -4141,19 +4141,21 @@ async def clear_cart(message: Message):
     # אחרי ריקון סל לא פותחים אוטומטית קטגוריות.
     # נשאר מסך נקי עם פעולה ברורה: חזרה לחנות או לתפריט.
     if not data or not data.get("cart"):
-        users[uid] = {"cart": [], "step": "main"}
-        await send_temp_message(
+        users[uid] = {"cart": [], "step": "cart"}
+        await send_ui_banner_message(
             message,
-            cart_text([], title="🛒 הסל שלך"),
+            text=cart_text([], title="🛒 הסל שלך"),
+            banner_key="cart_banner",
             reply_markup=empty_cart_keyboard(),
             parse_mode="HTML"
         )
         return
 
-    users[uid] = {"cart": [], "step": "main"}
-    await send_temp_message(
+    users[uid] = {"cart": [], "step": "cart"}
+    await send_ui_banner_message(
         message,
-        rtl("<b>🧹 הסל התרוקן בהצלחה.</b>"),
+        text=rtl("<b>🧹 הסל התרוקן בהצלחה.</b>\n\nהסל שלך ריק כרגע."),
+        banner_key="cart_banner",
         reply_markup=empty_cart_keyboard(),
         parse_mode="HTML"
     )
@@ -4235,12 +4237,14 @@ async def checkout(message: Message):
 
     if not data or not data.get("cart"):
         await delete_temp_bot_messages(message.bot, uid)
-        await send_temp_message(
+        await send_ui_banner_message(
             message,
-            rtl("<b>🛒 הסל שלך ריק.</b>\n\nקודם בחר מוצר."),
-            reply_markup=categories_keyboard(),
+            text=cart_text([], title="🛒 הסל שלך"),
+            banner_key="cart_banner",
+            reply_markup=empty_cart_keyboard(),
             parse_mode="HTML"
         )
+        users.setdefault(uid, {"cart": []})["step"] = "cart"
         return
 
     await delete_temp_bot_messages(message.bot, uid)
