@@ -1883,7 +1883,7 @@ def grouped_cart(cart):
 
 def cart_text(cart, title="🛒 הסל שלך"):
     if not cart:
-        return rtl(f"<b>{title}</b>\n\nהסל שלך ריק כרגע.")
+        return rtl("<b>🛒 הסל שלך</b> — הסל שלך ריק כרגע.")
 
     items = grouped_cart(cart)
 
