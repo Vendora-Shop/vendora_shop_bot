@@ -1012,6 +1012,76 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
     return sent_menu
 
 
+
+async def send_main_menu_split_banner_text(message: Message, greeting_text=None, menu_text=None, banner_key="main_menu", reply_markup=None, parse_mode="HTML"):
+    """
+    MAIN_MENU_SPLIT_BANNER_TEXT_V1
+    מבנה ראשי יציב לטלגרם:
+    1. הודעת שלום אופציונלית — רק ב-/start.
+    2. באנר נקי ללא caption.
+    3. הודעת טקסט רגילה עם הכפתורים — כך RTL עובד כמו שצריך.
+    """
+    uid = message.from_user.id
+
+    if uid not in users:
+        users[uid] = {"cart": []}
+
+    data = users.setdefault(uid, {"cart": []})
+    old_ids = list(data.get("temp_bot_messages", []) or [])
+
+    new_ids = []
+
+    if greeting_text:
+        sent_greeting = await message.answer(
+            greeting_text,
+            parse_mode=parse_mode
+        )
+        new_ids.append(sent_greeting.message_id)
+
+    banner_path = None
+    try:
+        banner_path = UI_BANNERS.get(banner_key) if banner_key else None
+    except Exception:
+        banner_path = None
+
+    if banner_path and os.path.exists(banner_path):
+        try:
+            sent_banner = await message.answer_photo(
+                photo=FSInputFile(banner_path)
+            )
+            new_ids.append(sent_banner.message_id)
+        except Exception as e:
+            print(f"MAIN_MENU_SPLIT_BANNER_SEND_ERROR: {type(e).__name__}: {e}")
+
+    if not menu_text:
+        menu_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
+
+    sent_menu = await message.answer(
+        menu_text,
+        reply_markup=reply_markup,
+        parse_mode=parse_mode
+    )
+    new_ids.append(sent_menu.message_id)
+
+    data["temp_bot_messages"] = new_ids
+
+    async def _cleanup_after_main_menu_send():
+        await _delete_messages_safely(
+            message.bot,
+            uid,
+            [mid for mid in old_ids if str(mid) not in {str(x) for x in new_ids}]
+        )
+
+    try:
+        asyncio.create_task(_cleanup_after_main_menu_send())
+    except Exception:
+        pass
+
+    return sent_menu
+
+
+
+
 async def reset_customer_to_main_menu(message, text=None):
     uid = message.from_user.id
     await cleanup_customer_order_screens(message.bot, uid)
@@ -1020,18 +1090,19 @@ async def reset_customer_to_main_menu(message, text=None):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:\u00A0\u00A0\u00A0\u00A0\u00A0"
+    menu_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
 
-    sent = await send_main_menu_greeting_banner_caption(
+    sent = await send_main_menu_split_banner_text(
         message,
         greeting_text=None,
-        caption_text=menu_caption_text,
+        menu_text=menu_text,
         banner_key="main_menu",
         reply_markup=main_keyboard(uid),
         parse_mode="HTML"
     )
 
     return sent
+
 
 
 
@@ -1043,18 +1114,19 @@ async def reset_callback_customer_to_main_menu(callback, text=None):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:\u00A0\u00A0\u00A0\u00A0\u00A0"
+    menu_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
 
-    sent = await send_main_menu_greeting_banner_caption(
+    sent = await send_main_menu_split_banner_text(
         callback.message,
         greeting_text=None,
-        caption_text=menu_caption_text,
+        menu_text=menu_text,
         banner_key="main_menu",
         reply_markup=main_keyboard(uid),
         parse_mode="HTML"
     )
 
     return sent
+
 
 
 
@@ -3503,18 +3575,18 @@ async def start(message: Message):
     customer_name = message.from_user.first_name or "לקוח"
 
     greeting_text = f"<b>👋 שלום {h(customer_name)}</b>"
-    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:\u00A0\u00A0\u00A0\u00A0\u00A0"
+    menu_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
 
-    sent = await send_main_menu_greeting_banner_caption(
+    sent = await send_main_menu_split_banner_text(
         message,
         greeting_text=greeting_text,
-        caption_text=menu_caption_text,
+        menu_text=menu_text,
         banner_key="main_menu",
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
 
-    # helper already saved greeting + banner/menu message ids in temp_bot_messages
+    # helper already saved greeting + banner + menu message ids in temp_bot_messages
 
     try:
         remember_customer_main_menu_message(uid, sent.message_id)
@@ -4537,12 +4609,12 @@ async def back_to_main_menu(message: Message):
 
     users[uid]["step"] = "main"
 
-    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:\u00A0\u00A0\u00A0\u00A0\u00A0"
+    menu_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
 
-    await send_main_menu_greeting_banner_caption(
+    await send_main_menu_split_banner_text(
         message,
         greeting_text=None,
-        caption_text=menu_caption_text,
+        menu_text=menu_text,
         banner_key="main_menu",
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
