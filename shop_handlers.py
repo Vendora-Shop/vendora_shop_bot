@@ -429,7 +429,7 @@ def remember_customer_main_menu_message(uid, message_id):
 RTL = "\u200F"
 # שורת רווחים בלתי נראית שמרחיבה את בועת ההודעה בטלגרם כאשר יש Inline Keyboard.
 # לא משנה טקסטים קיימים ולא מוצגת כטקסט רגיל ללקוח.
-UI_WIDE_LINE = "\u00A0" * 120
+UI_WIDE_LINE = "\u00A0" * 85
 
 
 def widen_inline_screen_text(text):
@@ -1061,8 +1061,11 @@ async def send_main_menu_split_banner_text(message: Message, greeting_text=None,
     if not menu_text:
         menu_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
 
+    # MAIN_MENU_WIDTH_TO_MARKED_LINE_FIX
+    menu_text_to_send = str(menu_text) + "\n\n" + ("\u00A0" * 155)
+
     sent_menu = await message.answer(
-        menu_text,
+        menu_text_to_send,
         reply_markup=reply_markup,
         parse_mode=parse_mode
     )
