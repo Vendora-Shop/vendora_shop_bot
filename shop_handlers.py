@@ -1221,18 +1221,29 @@ UI_BANNERS = {
 
 async def send_shop_home_banner(message: Message):
     """
-    SHOP_HOME_BANNER_V1
-    שולח באנר למסך החנות בלבד.
+    SHOP_HOME_BANNER_V2
+    שולח באנר למסך החנות ושומר אותו ברשימת temp_bot_messages,
+    כדי שלא יימחק מיד אחרי שליחת טקסט הקטגוריות.
     """
+    uid = message.from_user.id
+    users.setdefault(uid, {"cart": []})
+    data = users.setdefault(uid, {"cart": []})
+
     try:
         banner_path = UI_BANNERS.get("shop_home")
 
         if banner_path and os.path.exists(banner_path):
-            await message.answer_photo(
+            sent_banner = await message.answer_photo(
                 photo=FSInputFile(banner_path)
             )
+            data.setdefault("temp_bot_messages", []).append(sent_banner.message_id)
+            return sent_banner
+        else:
+            print(f"SHOP_HOME_BANNER_NOT_FOUND: {banner_path}")
     except Exception as e:
         print(f"SHOP_HOME_BANNER_ERROR: {type(e).__name__}: {e}")
+
+    return None
 
 
 def h(text):
@@ -3625,7 +3636,13 @@ async def shop(message: Message):
     if uid not in users:
         users[uid] = {"cart": []}
 
+    # SHOP_HOME_BANNER_DELETE_ORDER_FIX
+    # קודם מנקים מסכים קודמים, ורק אחרי זה שולחים באנר + טקסט.
+    # אחרת send_temp_message מוחק את הבאנר כי הוא נחשב להודעה הקודמת.
+    await cleanup_customer_order_screens(message.bot, uid)
+
     users[uid]["step"] = "browse_products"
+    users[uid]["temp_bot_messages"] = []
 
     await send_shop_home_banner(message)
 
@@ -3645,7 +3662,8 @@ async def shop(message: Message):
         message,
         "<b>🛒 החנות</b>\n\nבחר קטגוריה:",
         reply_markup=categories_keyboard(),
-        parse_mode="HTML"
+        parse_mode="HTML",
+        clear_previous=False
     )
 
 
