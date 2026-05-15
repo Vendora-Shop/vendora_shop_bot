@@ -2301,10 +2301,7 @@ def _wide_buttons(buttons):
 
 
 def main_keyboard(user_id=None):
-    # GLASS_COMPACT_V2_MAIN_MENU
-    # CART_ACCESS_LOGIC_FIX
-    # הסל חייב להיות נגיש גם מהתפריט הראשי.
-    # אחרת לקוח שהוסיף מוצר וחזר לתפריט לא יכול לבדוק מה יש בסל.
+    # MAIN_MENU_INFO_LEGAL_UPDATE
     rows = [
         [
             _btn("🛍️ חנות", "ui:main:shop"),
@@ -2317,6 +2314,10 @@ def main_keyboard(user_id=None):
         [
             _btn("📍 הכתובות שלי", "ui:main:addresses"),
             _btn("💬 שירות לקוחות", "ui:main:support"),
+        ],
+        [
+            _btn("🏢 אודות Vendora", "ui:info:about"),
+            _btn("⚖️ מידע משפטי", "ui:legal:menu"),
         ],
     ]
 
@@ -2367,6 +2368,17 @@ def cart_keyboard():
         ],
     ])
 
+
+
+
+def legal_menu_keyboard():
+    return _inline([
+        [_btn("🔒 מדיניות פרטיות", "ui:legal:privacy")],
+        [_btn("📜 תנאי שימוש", "ui:legal:terms")],
+        [_btn("📋 תקנון", "ui:legal:rules")],
+        [_btn("♿ הצהרת נגישות", "ui:legal:accessibility")],
+        [_btn("⬅️ חזרה לתפריט", "ui:nav:main")],
+    ])
 
 def empty_cart_keyboard():
     # EMPTY_CART_LOGIC_FIX_FINAL_ACTIVE
@@ -4625,6 +4637,119 @@ async def quantity_inline_action(callback: CallbackQuery):
         return
 
     await callback.answer("פעולה לא תקינה.", show_alert=True)
+
+
+
+@router.callback_query(F.data == "ui:info:about")
+async def about_vendora(callback: CallbackQuery):
+    await answer_callback_safely(callback)
+
+    text = rtl("""
+<b>🏢 אודות Vendora</b>
+
+Vendora היא פלטפורמת קניות חכמה ומתקדמת,
+המאפשרת לבצע הזמנות אונליין בצורה מהירה,
+נוחה ומאובטחת — הכל במקום אחד.
+
+המערכת פותחה כדי לספק חוויית קנייה מודרנית,
+עם מגוון רחב של מוצרים, ממשק ידידותי,
+שירות מקצועי ותהליך הזמנה פשוט ויעיל.
+
+ב־Vendora אנו שמים דגש על:
+• חוויית משתמש מתקדמת
+• שירות אמין ומהיר
+• אבטחת מידע ופרטיות
+• ממשק חדשני ונוח לשימוש
+
+תודה שבחרתם ב־Vendora 💚
+""")
+
+    await cleanup_customer_order_screens(callback.message.bot, callback.from_user.id)
+
+    sent = await callback.message.answer(
+        text,
+        reply_markup=_inline([
+            [_btn("⚖️ מידע משפטי", "ui:legal:menu")],
+            [_btn("⬅️ חזרה לתפריט", "ui:nav:main")],
+        ]),
+        parse_mode="HTML"
+    )
+
+    users.setdefault(callback.from_user.id, {}).setdefault(
+        "temp_bot_messages", []
+    ).append(sent.message_id)
+
+
+@router.callback_query(F.data == "ui:legal:menu")
+async def legal_menu(callback: CallbackQuery):
+    await answer_callback_safely(callback)
+
+    text = rtl("""
+<b>⚖️ מידע משפטי</b>
+
+באזור זה ניתן לצפות במסמכים המשפטיים של Vendora.
+""")
+
+    await cleanup_customer_order_screens(callback.message.bot, callback.from_user.id)
+
+    sent = await callback.message.answer(
+        text,
+        reply_markup=legal_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+    users.setdefault(callback.from_user.id, {}).setdefault(
+        "temp_bot_messages", []
+    ).append(sent.message_id)
+
+
+@router.callback_query(F.data.in_([
+    "ui:legal:privacy",
+    "ui:legal:terms",
+    "ui:legal:rules",
+    "ui:legal:accessibility"
+]))
+async def legal_pages(callback: CallbackQuery):
+    await answer_callback_safely(callback)
+
+    pages = {
+        "ui:legal:privacy": (
+            "🔒 מדיניות פרטיות",
+            "מסמך מדיניות הפרטיות של Vendora יתווסף כאן."
+        ),
+        "ui:legal:terms": (
+            "📜 תנאי שימוש",
+            "מסמך תנאי השימוש של Vendora יתווסף כאן."
+        ),
+        "ui:legal:rules": (
+            "📋 תקנון",
+            "מסמך התקנון של Vendora יתווסף כאן."
+        ),
+        "ui:legal:accessibility": (
+            "♿ הצהרת נגישות",
+            "הצהרת הנגישות של Vendora תתווסף כאן."
+        ),
+    }
+
+    title, body = pages[callback.data]
+
+    text = rtl(f"<b>{title}</b>\n\n{body}")
+
+    await cleanup_customer_order_screens(callback.message.bot, callback.from_user.id)
+
+    sent = await callback.message.answer(
+        text,
+        reply_markup=_inline([
+            [_btn("⬅️ חזרה למידע משפטי", "ui:legal:menu")],
+            [_btn("⬅️ חזרה לתפריט", "ui:nav:main")],
+        ]),
+        parse_mode="HTML"
+    )
+
+    users.setdefault(callback.from_user.id, {}).setdefault(
+        "temp_bot_messages", []
+    ).append(sent.message_id)
+
 
 @router.message(F.text == "📞 שירות לקוחות")
 async def support(message: Message):
