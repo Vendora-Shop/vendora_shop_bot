@@ -944,22 +944,20 @@ async def send_main_menu_with_banner(message: Message, text, banner_key=None, re
 
 async def send_main_menu_greeting_banner_caption(message: Message, greeting_text=None, caption_text="", banner_key=None, reply_markup=None, parse_mode="HTML"):
     """
-    MAIN_MENU_SINGLE_WIDTH_LAYOUT_FINAL
-    מבנה תקין לתפריט הראשי:
-    1. greeting_text אופציונלי — נשלח רק ב-/start.
-    2. הבאנר, הטקסט "תפריט ראשי — בחרו פעולה" והכפתורים נשלחים יחד:
-       answer_photo(photo, caption, reply_markup)
-    כך הבאנר, הטקסט והכפתורים מקבלים אותו רוחב בדיוק בטלגרם.
+    MAIN_MENU_FAST_FINAL
+    תפריט ראשי מהיר:
+    - שולח greeting רק אם ביקשו (/start).
+    - שולח באנר + caption + כפתורים באותה הודעה כדי לשמור רוחב אחיד.
+    - לא מחכה למחיקות לפני הצגת התפריט.
     """
     uid = message.from_user.id
 
-    if uid not in users:
-        users[uid] = {"cart": []}
-
+    users.setdefault(uid, {"cart": []})
     data = users.setdefault(uid, {"cart": []})
     old_ids = list(data.get("temp_bot_messages", []) or [])
     new_ids = []
 
+    sent_greeting = None
     if greeting_text:
         sent_greeting = await message.answer(
             greeting_text,
@@ -974,7 +972,6 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
         banner_path = None
 
     sent_menu = None
-
     if banner_path and os.path.exists(banner_path):
         try:
             sent_menu = await message.answer_photo(
@@ -984,7 +981,7 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
                 parse_mode=parse_mode
             )
         except Exception as e:
-            print(f"MAIN_MENU_BANNER_CAPTION_SEND_ERROR: {type(e).__name__}: {e}")
+            print(f"MAIN_MENU_FAST_BANNER_ERROR: {type(e).__name__}: {e}")
 
     if sent_menu is None:
         sent_menu = await message.answer(
@@ -996,17 +993,13 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
     new_ids.append(sent_menu.message_id)
     data["temp_bot_messages"] = new_ids
 
-    async def _cleanup_after_main_menu_send():
-        await _delete_messages_safely(
-            message.bot,
-            uid,
-            [mid for mid in old_ids if str(mid) not in {str(x) for x in new_ids}]
-        )
-
-    try:
-        asyncio.create_task(_cleanup_after_main_menu_send())
-    except Exception:
-        pass
+    # ניקוי רק ברקע, בלי לעכב את פתיחת התפריט
+    ids_to_delete = [mid for mid in old_ids if str(mid) not in {str(x) for x in new_ids}]
+    if ids_to_delete:
+        try:
+            asyncio.create_task(_delete_messages_safely(message.bot, uid, ids_to_delete[-40:]))
+        except Exception:
+            pass
 
     return sent_menu
 
@@ -1219,31 +1212,56 @@ UI_BANNERS = {
 
 
 
-async def send_shop_home_banner(message: Message):
+async def send_shop_home_screen(message: Message, text, reply_markup=None, parse_mode="HTML"):
     """
-    SHOP_HOME_BANNER_V2
-    שולח באנר למסך החנות ושומר אותו ברשימת temp_bot_messages,
-    כדי שלא יימחק מיד אחרי שליחת טקסט הקטגוריות.
+    SHOP_HOME_SCREEN_FINAL
+    מסך חנות יציב:
+    - מנקה הודעות קודמות ברקע.
+    - שולח באנר החנות + טקסט + כפתורי קטגוריות באותה הודעה.
+    - לכן הבאנר לא נמחק מיד אחרי פתיחה.
     """
     uid = message.from_user.id
     users.setdefault(uid, {"cart": []})
     data = users.setdefault(uid, {"cart": []})
 
+    old_ids = list(data.get("temp_bot_messages", []) or [])
+
     try:
-        banner_path = UI_BANNERS.get("shop_home")
+        await cleanup_input_warnings(message.bot, uid)
+    except Exception:
+        pass
 
-        if banner_path and os.path.exists(banner_path):
-            sent_banner = await message.answer_photo(
-                photo=FSInputFile(banner_path)
+    banner_path = UI_BANNERS.get("shop_home")
+    sent = None
+
+    if banner_path and os.path.exists(banner_path):
+        try:
+            sent = await message.answer_photo(
+                photo=FSInputFile(banner_path),
+                caption=text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode
             )
-            data.setdefault("temp_bot_messages", []).append(sent_banner.message_id)
-            return sent_banner
-        else:
-            print(f"SHOP_HOME_BANNER_NOT_FOUND: {banner_path}")
-    except Exception as e:
-        print(f"SHOP_HOME_BANNER_ERROR: {type(e).__name__}: {e}")
+        except Exception as e:
+            print(f"SHOP_HOME_SCREEN_BANNER_ERROR: {type(e).__name__}: {e}")
 
-    return None
+    if sent is None:
+        sent = await message.answer(
+            text,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode
+        )
+
+    data["temp_bot_messages"] = [sent.message_id]
+
+    ids_to_delete = [mid for mid in old_ids if str(mid) != str(sent.message_id)]
+    if ids_to_delete:
+        try:
+            asyncio.create_task(_delete_messages_safely(message.bot, uid, ids_to_delete[-40:]))
+        except Exception:
+            pass
+
+    return sent
 
 
 def h(text):
@@ -3633,37 +3651,24 @@ async def shop(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
 
-    if uid not in users:
-        users[uid] = {"cart": []}
-
-    # SHOP_HOME_BANNER_DELETE_ORDER_FIX
-    # קודם מנקים מסכים קודמים, ורק אחרי זה שולחים באנר + טקסט.
-    # אחרת send_temp_message מוחק את הבאנר כי הוא נחשב להודעה הקודמת.
-    await cleanup_customer_order_screens(message.bot, uid)
-
+    users.setdefault(uid, {"cart": []})
     users[uid]["step"] = "browse_products"
-    users[uid]["temp_bot_messages"] = []
-
-    await send_shop_home_banner(message)
-
-    uid = message.from_user.id
-    users.setdefault(uid, {"cart": [], "step": None})
 
     products = get_active_products()
 
     if not products:
-        await message.answer(
+        await send_temp_message(
+            message,
             rtl("<b>🛒 החנות</b>\n\nכרגע אין מוצרים זמינים בחנות."),
             parse_mode="HTML"
         )
         return
 
-    await send_temp_message(
+    await send_shop_home_screen(
         message,
         "<b>🛒 החנות</b>\n\nבחר קטגוריה:",
         reply_markup=categories_keyboard(),
-        parse_mode="HTML",
-        clear_previous=False
+        parse_mode="HTML"
     )
 
 
@@ -3717,9 +3722,10 @@ async def back_categories(message: Message):
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
     users[uid]["step"] = "browse_products"
-    await send_temp_message(
+
+    await send_shop_home_screen(
         message,
-        "<b>📂 קטגוריות</b>\n\nבחר קטגוריה:",
+        "<b>🛒 החנות</b>\n\nבחר קטגוריה:",
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
