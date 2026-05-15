@@ -1001,12 +1001,40 @@ async def cleanup_customer_order_screens(bot, uid):
             pass
 
 
+RLE = "\u202B"
+PDF = "\u202C"
+RLM = "\u200F"
+CAPTION_RIGHT_PAD = "\u00A0" * 18
+
+
+def rtl_caption(text):
+    """
+    FORCE_RTL_CAPTION
+    ייעודי ל-caption של תמונות בטלגרם.
+    לא מוסיף UI_WIDE_LINE ולא משתמש ב-widen_inline_screen_text.
+    """
+    clean = str(text or "").strip()
+    return f"{RLE}{clean}{PDF}{RLM}"
+
+
+def rtl_caption_right(text):
+    """
+    FORCE_RIGHT_VISUAL_CAPTION
+    דחיפה ויזואלית לימין בתוך caption של תמונה.
+    Telegram iOS לפעמים מציג caption RTL בצד שמאל גם כשהכיווניות תקינה.
+    לכן מוסיפים padding בלתי נראה בתחילת כל שורה.
+    """
+    clean = str(text or "").strip()
+    lines = clean.split("\n")
+    padded = "\n".join((CAPTION_RIGHT_PAD + line) if line.strip() else line for line in lines)
+    return rtl_caption(padded)
+
+
 def main_menu_caption_text():
-    # MAIN_MENU_MATCH_SUPPORT_STYLE
-    # בדיוק כמו שירות לקוחות:
-    # שורה ראשונה = כותרת בלבד
-    # שורה שנייה = טקסט פעולה בלבד
-    return rtl("<b>💎 תפריט ראשי</b>\n\nבחרו פעולה:")
+    # MAIN_MENU_FORCE_RIGHT_LIKE_SUPPORT_FINAL
+    # caption ייעודי לתפריט הראשי.
+    # לא משתמשים ב-widen_inline_screen_text ולא ב-UI_WIDE_LINE.
+    return rtl_caption_right("<b>💎 תפריט ראשי</b>\n\nבחרו פעולה:")
 
 
 
@@ -1029,10 +1057,11 @@ async def send_main_menu_with_banner(message: Message, text, banner_key=None, re
 
 async def send_main_menu_greeting_banner_caption(message: Message, greeting_text=None, caption_text="", banner_key=None, reply_markup=None, parse_mode="HTML"):
     """
-    MAIN_MENU_SUPPORT_CLONE_FIX
-    אותו flow של שירות לקוחות.
+    MAIN_MENU_STRICT_SUPPORT_CLONE_FINAL
+    שליחה כמו שירות לקוחות:
+    answer_cached_banner_photo + caption + keyboard.
+    בלי widen_inline_screen_text ובלי wrapper אחר.
     """
-
     uid = message.from_user.id
     users.setdefault(uid, {"cart": []})
     data = users.setdefault(uid, {"cart": []})
@@ -1041,15 +1070,12 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
 
     if greeting_text:
         try:
-            greeting_msg = await message.answer(
-                greeting_text,
-                parse_mode=parse_mode
-            )
+            greeting_msg = await message.answer(greeting_text, parse_mode=parse_mode)
             old_ids.append(greeting_msg.message_id)
         except Exception:
             pass
 
-    caption_text = caption_text or rtl("<b>💎 תפריט ראשי</b>\\n\\nבחרו פעולה:")
+    caption_text = caption_text or main_menu_caption_text()
 
     sent = await answer_cached_banner_photo(
         message,
@@ -1059,21 +1085,21 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
         parse_mode=parse_mode
     )
 
+    if sent is None:
+        sent = await message.answer(
+            caption_text,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode
+        )
+
     data["temp_bot_messages"] = [sent.message_id]
 
-    try:
-        delete_ids = [x for x in old_ids if x != sent.message_id]
-
-        if delete_ids:
-            asyncio.create_task(
-                _delete_messages_safely(
-                    message.bot,
-                    uid,
-                    delete_ids[-25:]
-                )
-            )
-    except Exception:
-        pass
+    delete_ids = [mid for mid in old_ids if str(mid) != str(sent.message_id)]
+    if delete_ids:
+        try:
+            asyncio.create_task(_delete_messages_safely(message.bot, uid, delete_ids[-25:]))
+        except Exception:
+            pass
 
     return sent
 
