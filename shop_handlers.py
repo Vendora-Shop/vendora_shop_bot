@@ -1029,54 +1029,53 @@ async def send_main_menu_with_banner(message: Message, text, banner_key=None, re
 
 async def send_main_menu_greeting_banner_caption(message: Message, greeting_text=None, caption_text="", banner_key=None, reply_markup=None, parse_mode="HTML"):
     """
-    MAIN_MENU_SAME_AS_SUPPORT_RTL_FIX
-    התפריט הראשי נשלח כמו שירות לקוחות:
-    באנר + caption + כפתורים באותה הודעה.
+    MAIN_MENU_SUPPORT_CLONE_FIX
+    אותו flow של שירות לקוחות.
     """
+
     uid = message.from_user.id
     users.setdefault(uid, {"cart": []})
     data = users.setdefault(uid, {"cart": []})
 
     old_ids = list(data.get("temp_bot_messages", []) or [])
-    new_ids = []
 
     if greeting_text:
-        sent_greeting = await message.answer(greeting_text, parse_mode=parse_mode)
-        new_ids.append(sent_greeting.message_id)
-
-    caption_text = caption_text or main_menu_caption_text()
-
-    sent_menu = None
-    if banner_key:
         try:
-            sent_menu = await answer_cached_banner_photo(
-                message,
-                banner_key,
-                caption=caption_text,
-                reply_markup=reply_markup,
+            greeting_msg = await message.answer(
+                greeting_text,
                 parse_mode=parse_mode
             )
-        except Exception as e:
-            print(f"MAIN_MENU_CACHED_BANNER_ERROR: {type(e).__name__}: {e}")
-
-    if sent_menu is None:
-        sent_menu = await message.answer(
-            caption_text,
-            reply_markup=reply_markup,
-            parse_mode=parse_mode
-        )
-
-    new_ids.append(sent_menu.message_id)
-    data["temp_bot_messages"] = new_ids
-
-    ids_to_delete = [mid for mid in old_ids if str(mid) not in {str(x) for x in new_ids}]
-    if ids_to_delete and not greeting_text:
-        try:
-            asyncio.create_task(_delete_messages_safely(message.bot, uid, ids_to_delete[-25:]))
+            old_ids.append(greeting_msg.message_id)
         except Exception:
             pass
 
-    return sent_menu
+    caption_text = caption_text or rtl("<b>💎 תפריט ראשי</b>\\n\\nבחרו פעולה:")
+
+    sent = await answer_cached_banner_photo(
+        message,
+        banner_key or "main_menu",
+        caption=caption_text,
+        reply_markup=reply_markup,
+        parse_mode=parse_mode
+    )
+
+    data["temp_bot_messages"] = [sent.message_id]
+
+    try:
+        delete_ids = [x for x in old_ids if x != sent.message_id]
+
+        if delete_ids:
+            asyncio.create_task(
+                _delete_messages_safely(
+                    message.bot,
+                    uid,
+                    delete_ids[-25:]
+                )
+            )
+    except Exception:
+        pass
+
+    return sent
 
 
 async def reset_customer_to_main_menu(message, text=None):
