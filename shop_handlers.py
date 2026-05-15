@@ -1001,81 +1001,34 @@ async def cleanup_customer_order_screens(bot, uid):
             pass
 
 
+def main_menu_caption_text():
+    # MAIN_MENU_RTL_CAPTION_FIX
+    # אותו מנגנון כמו שירות לקוחות: caption קצר דרך rtl(...)
+    # כדי שהטקסט יישב נכון בצד ימין.
+    return rtl("<b>💎 תפריט ראשי</b> — בחרו פעולה:")
+
+
 async def send_main_menu_with_banner(message: Message, text, banner_key=None, reply_markup=None, parse_mode="HTML"):
     """
-    MAIN_MENU_BANNER_SEPARATE_TEXT_FIX
-    Telegram iOS לא מאפשר יישור ימין אמין בתוך caption של תמונה.
-    לכן במסך הראשי בלבד:
-    1. שולחים באנר כתמונה ללא caption.
-    2. שולחים הודעת טקסט רגילה עם הכפתורים.
-    כך "בחר פעולה:" נשאר בצד ימין בצורה יציבה.
+    MAIN_MENU_LEGACY_WRAPPER_RTL_FIX
+    תאימות לאזורים ישנים בקוד — שולח כמו שירות לקוחות:
+    באנר + caption + כפתורים באותה הודעה.
     """
-    uid = message.from_user.id
-
-    if uid not in users:
-        users[uid] = {"cart": []}
-
-    data = users.setdefault(uid, {"cart": []})
-    old_ids = list(data.get("temp_bot_messages", []) or [])
-
-    banner_path = None
-    try:
-        banner_path = UI_BANNERS.get(banner_key) if banner_key else None
-    except Exception:
-        banner_path = None
-
-    sent_banner = None
-
-    if banner_path and os.path.exists(banner_path):
-        try:
-            sent_banner = await message.answer_photo(
-                photo=FSInputFile(banner_path),
-                parse_mode=parse_mode
-            )
-        except Exception as e:
-            print(f"MAIN_MENU_BANNER_SEND_ERROR: {type(e).__name__}: {e}")
-
-    try:
-        menu_text = widen_inline_screen_text(text)
-    except Exception:
-        menu_text = text
-
-    sent_menu = await message.answer(
-        menu_text,
+    return await send_main_menu_greeting_banner_caption(
+        message,
+        greeting_text=None,
+        caption_text=rtl(text),
+        banner_key=banner_key,
         reply_markup=reply_markup,
         parse_mode=parse_mode
     )
 
-    new_ids = []
-    if sent_banner:
-        new_ids.append(sent_banner.message_id)
-    new_ids.append(sent_menu.message_id)
-
-    data["temp_bot_messages"] = new_ids
-
-    async def _cleanup_after_main_menu_send():
-        await _delete_messages_safely(
-            message.bot,
-            uid,
-            [mid for mid in old_ids if str(mid) not in {str(x) for x in new_ids}]
-        )
-
-    try:
-        asyncio.create_task(_cleanup_after_main_menu_send())
-    except Exception:
-        pass
-
-    return sent_menu
-
-
 
 async def send_main_menu_greeting_banner_caption(message: Message, greeting_text=None, caption_text="", banner_key=None, reply_markup=None, parse_mode="HTML"):
     """
-    MAIN_MENU_FAST_FILE_ID_FINAL
-    פותח את התפריט מהר:
-    - משתמש ב-file_id cache לבאנר.
-    - לא מחכה למחיקות לפני הצגה.
-    - greeting מופיע רק אם שולחים greeting_text.
+    MAIN_MENU_SAME_AS_SUPPORT_RTL_FIX
+    התפריט הראשי נשלח כמו שירות לקוחות:
+    באנר + caption + כפתורים באותה הודעה.
     """
     uid = message.from_user.id
     users.setdefault(uid, {"cart": []})
@@ -1087,6 +1040,8 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
     if greeting_text:
         sent_greeting = await message.answer(greeting_text, parse_mode=parse_mode)
         new_ids.append(sent_greeting.message_id)
+
+    caption_text = caption_text or main_menu_caption_text()
 
     sent_menu = None
     if banner_key:
@@ -1111,11 +1066,10 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
     new_ids.append(sent_menu.message_id)
     data["temp_bot_messages"] = new_ids
 
-    # ניקוי הודעות ישנות ברקע בלבד, לא לפני ולא בזמן פתיחת התפריט.
     ids_to_delete = [mid for mid in old_ids if str(mid) not in {str(x) for x in new_ids}]
     if ids_to_delete and not greeting_text:
         try:
-            asyncio.create_task(_delete_messages_safely(message.bot, uid, ids_to_delete[-15:]))
+            asyncio.create_task(_delete_messages_safely(message.bot, uid, ids_to_delete[-25:]))
         except Exception:
             pass
 
@@ -1130,7 +1084,7 @@ async def reset_customer_to_main_menu(message, text=None):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
+    menu_caption_text = main_menu_caption_text()
 
     sent = await send_main_menu_greeting_banner_caption(
         message,
@@ -1154,7 +1108,7 @@ async def reset_callback_customer_to_main_menu(callback, text=None):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
+    menu_caption_text = main_menu_caption_text()
 
     sent = await send_main_menu_greeting_banner_caption(
         callback.message,
@@ -3927,7 +3881,7 @@ async def start(message: Message):
 
     customer_name = message.from_user.first_name or "לקוח"
     greeting_text = f"<b>👋 שלום {h(customer_name)}</b>"
-    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
+    menu_caption_text = main_menu_caption_text()
 
     # START_FAST_CRITICAL_PATH_FIX
     # לא קוראים/שומרים קבצי JSON ולא מוחקים הודעות לפני שליחת התפריט.
@@ -4953,7 +4907,7 @@ async def back_to_main_menu(message: Message):
 
     users[uid]["step"] = "main"
 
-    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
+    menu_caption_text = main_menu_caption_text()
 
     await send_main_menu_greeting_banner_caption(
         message,
