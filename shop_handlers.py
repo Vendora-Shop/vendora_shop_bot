@@ -3,7 +3,7 @@ import os
 import re
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from html import escape
 import asyncio
 import time
@@ -795,6 +795,46 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
     return sent
 
 
+
+
+async def send_ui_banner_message(message: Message, text, banner_key=None, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None, clean_input_warnings=True):
+    """
+    UI_BANNER_ENGINE_V1
+    שולח מסך עם באנר בצורה יציבה, בלי הודעות ריקות ובלי לשבור Inline buttons.
+    אם הבאנר לא נמצא או הקובץ חסר — חוזר אוטומטית למסך טקסט רגיל.
+    """
+    banner_path = None
+
+    try:
+        banner_path = UI_BANNERS.get(banner_key) if banner_key else None
+    except Exception:
+        banner_path = None
+
+    if banner_path and os.path.exists(banner_path):
+        try:
+            return await send_temp_photo(
+                message,
+                photo=FSInputFile(banner_path),
+                caption=text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+                clear_previous=clear_previous,
+                clean_input_warnings=clean_input_warnings
+            )
+        except Exception as e:
+            print(f"UI_BANNER_SEND_ERROR: {type(e).__name__}: {e}")
+
+    return await send_temp_message(
+        message,
+        text,
+        reply_markup=reply_markup,
+        parse_mode=parse_mode,
+        clear_previous=clear_previous,
+        disable_web_page_preview=disable_web_page_preview,
+        clean_input_warnings=clean_input_warnings
+    )
+
+
 async def cleanup_customer_order_screens(bot, uid):
     """
     STABLE_UI_V4 — ניקוי מלא ולא חוסם למסכי הזמנה/מוצר/תמונות.
@@ -841,9 +881,10 @@ async def reset_customer_to_main_menu(message, text):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    sent = await send_temp_message(
+    sent = await send_ui_banner_message(
         message,
         text,
+        banner_key="main_menu",
         reply_markup=main_keyboard(uid),
         parse_mode="HTML"
     )
@@ -859,9 +900,10 @@ async def reset_callback_customer_to_main_menu(callback, text):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    sent = await send_temp_message(
+    sent = await send_ui_banner_message(
         callback.message,
         text,
+        banner_key="main_menu",
         reply_markup=main_keyboard(uid),
         parse_mode="HTML"
     )
@@ -1016,6 +1058,14 @@ PICKUP_BASE_CITY = "איסוף עצמי"
 STORE_CONTACT_PHONE = "054-7937503"
 STORE_CONTACT_TELEGRAM = "@Vendora"
 
+
+# ================== UI BANNERS ==================
+# כל התמונות של הבוט במקום אחד.
+# שמים את הקבצים בפרויקט תחת: assets/banners/
+# כרגע מחברים רק את התפריט הראשי כדי לבדוק יציבות לפני הרחבה לכל המסכים.
+UI_BANNERS = {
+    "main_menu": "assets/banners/main_menu.jpg",
+}
 
 
 
@@ -3312,8 +3362,10 @@ async def start(message: Message):
         "בחר פעולה:"
     )
 
-    sent = await message.answer(
-        widen_inline_screen_text(start_text),
+    sent = await send_ui_banner_message(
+        message,
+        start_text,
+        banner_key="main_menu",
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
