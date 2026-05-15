@@ -7,7 +7,7 @@ from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyb
 from html import escape
 import asyncio
 import time
- 
+
 from config import ADMIN_ID
 from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard, support_subject_keyboard
 from database import (
@@ -3353,12 +3353,10 @@ async def start(message: Message):
         "temp_bot_messages": []
     }
 
-    customer_name = message.from_user.first_name or "לקוח יקר"
+    customer_name = message.from_user.first_name or "לקוח"
 
     start_text = rtl(
-        f"<b>👋 ברוך הבא {h(customer_name)}</b>\n\n"
-        "<b>🛍️ Vendora Shop</b>\n"
-        "חנות דיגיטלית חכמה להזמנות, משלוחים ואיסוף עצמי.\n\n"
+        f"<b>👋 שלום {h(customer_name)}</b>\n\n"
         "בחר פעולה:"
     )
 
