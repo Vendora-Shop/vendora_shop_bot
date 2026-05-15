@@ -1030,11 +1030,19 @@ def rtl_caption_right(text):
     return rtl_caption(padded)
 
 
+def widen_main_menu_caption_text(text):
+    # MAIN_MENU_COMPACT_CAPTION_FIX
+    # גרסה קומפקטית לתפריט הראשי בלבד.
+    # שומרת על רוחב/RTL אבל מצמצמת את הרווח מתחת לטקסט.
+    text = str(text or "")
+    compact_wide_line = "\u00A0" * 65
+    if compact_wide_line in text:
+        return text
+    return text.rstrip() + "\n" + compact_wide_line
+
+
 def main_menu_caption_text():
-    # MAIN_MENU_ONE_LINE_RTL_FINAL
-    # אחרי שמצאנו את ה-flow שעובד:
-    # rtl(...) + widen_inline_screen_text(...) + answer_cached_banner_photo(...)
-    # אפשר להחזיר לשורה אחת ועדיין לשמור ימין.
+    # MAIN_MENU_ONE_LINE_RTL_COMPACT_FINAL
     return rtl("<b>💎 תפריט ראשי</b> — בחרו פעולה:")
 
 
@@ -1080,14 +1088,14 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
     sent = await answer_cached_banner_photo(
         message,
         banner_key or "main_menu",
-        caption=widen_inline_screen_text(caption_text),
+        caption=widen_main_menu_caption_text(caption_text),
         reply_markup=reply_markup,
         parse_mode=parse_mode
     )
 
     if sent is None:
         sent = await message.answer(
-            widen_inline_screen_text(caption_text),
+            widen_main_menu_caption_text(caption_text),
             reply_markup=reply_markup,
             parse_mode=parse_mode
         )
