@@ -1067,20 +1067,22 @@ async def send_main_menu_with_banner(message: Message, text, banner_key=None, re
 
 async def send_main_menu_greeting_banner_caption(message: Message, greeting_text=None, caption_text="", banner_key=None, reply_markup=None, parse_mode="HTML"):
     """
-    MAIN_MENU_EXACT_SUPPORT_SEND_FIX
-    Clone נקי של שירות לקוחות:
-    answer_cached_banner_photo + caption=widen_inline_screen_text(rtl(...)) + keyboard.
+    MAIN_MENU_GREETING_KEEP_FIX
+    שולח שלום + תפריט ראשי.
+    חשוב: הודעת שלום היא הודעה חדשה, לא old_id למחיקה.
+    לכן היא נשמרת ב-temp_bot_messages יחד עם התפריט ולא נמחקת מיד.
     """
     uid = message.from_user.id
     users.setdefault(uid, {"cart": []})
     data = users.setdefault(uid, {"cart": []})
 
     old_ids = list(data.get("temp_bot_messages", []) or [])
+    new_ids = []
 
     if greeting_text:
         try:
             greeting_msg = await message.answer(greeting_text, parse_mode=parse_mode)
-            old_ids.append(greeting_msg.message_id)
+            new_ids.append(greeting_msg.message_id)
         except Exception:
             pass
 
@@ -1101,9 +1103,10 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
             parse_mode=parse_mode
         )
 
-    data["temp_bot_messages"] = [sent.message_id]
+    new_ids.append(sent.message_id)
+    data["temp_bot_messages"] = new_ids
 
-    delete_ids = [mid for mid in old_ids if str(mid) != str(sent.message_id)]
+    delete_ids = [mid for mid in old_ids if str(mid) not in {str(x) for x in new_ids}]
     if delete_ids:
         try:
             asyncio.create_task(_delete_messages_safely(message.bot, uid, delete_ids[-25:]))
