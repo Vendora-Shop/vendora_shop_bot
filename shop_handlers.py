@@ -1031,11 +1031,11 @@ def rtl_caption_right(text):
 
 
 def main_menu_caption_text():
-    # MAIN_MENU_EXACT_SUPPORT_FORMAT_FIX
-    # אותו פורמט כמו שירות לקוחות:
-    # rtl(...) ואז widen_inline_screen_text(...) בזמן השליחה.
-    # בלי padding מיוחד, בלי RLI/PDI, בלי ניסיונות דחיפה ידנית.
-    return rtl("<b>💎 תפריט ראשי</b>\n\nבחרו פעולה:")
+    # MAIN_MENU_ONE_LINE_RTL_FINAL
+    # אחרי שמצאנו את ה-flow שעובד:
+    # rtl(...) + widen_inline_screen_text(...) + answer_cached_banner_photo(...)
+    # אפשר להחזיר לשורה אחת ועדיין לשמור ימין.
+    return rtl("<b>💎 תפריט ראשי</b> — בחרו פעולה:")
 
 
 
