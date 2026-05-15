@@ -3490,7 +3490,7 @@ async def start(message: Message):
     customer_name = message.from_user.first_name or "לקוח"
 
     greeting_text = f"<b>👋 שלום {h(customer_name)}</b>"
-    menu_caption_text = f"{RTL}<b>בחר פעולה:</b>"
+    menu_caption_text = "‎‏              <b>בחר פעולה:</b>"
 
     sent = await send_main_menu_greeting_banner_caption(
         message,
