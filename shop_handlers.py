@@ -86,7 +86,7 @@ async def customer_cancel_payment_button(message: Message):
 
     await message.answer(
         rtl("<b>ℹ️ אין תשלום פעיל לביטול.</b>"),
-        reply_markup=main_keyboard(message.from_user.id),
+        reply_markup=main_keyboard_fixed_width(message.from_user.id),
         parse_mode="HTML"
     )
 
@@ -319,7 +319,7 @@ async def close_customer_open_support_ticket(message: Message, data=None):
                     "חזרת לתפריט הראשי."
                 )
             ),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=main_keyboard_fixed_width(message.from_user.id),
             parse_mode="HTML"
         )
         return True
@@ -352,7 +352,7 @@ async def close_customer_open_support_ticket(message: Message, data=None):
                     "תודה שפנית אלינו."
                 )
             ),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=main_keyboard_fixed_width(message.from_user.id),
             parse_mode="HTML"
         )
         return True
@@ -367,7 +367,7 @@ async def close_customer_open_support_ticket(message: Message, data=None):
                 "חזרת לתפריט הראשי."
             )
         ),
-        reply_markup=main_keyboard(message.from_user.id),
+        reply_markup=main_keyboard_fixed_width(message.from_user.id),
         parse_mode="HTML"
     )
     return True
@@ -916,7 +916,7 @@ async def send_main_menu_with_banner(message: Message, text, banner_key=None, re
     # MAIN_MENU_WIDTH_MATCH_BANNER_FIX
     # רוחב הודעת התפריט קובע גם את רוחב הכפתורים שמתחתיה.
     # הערך הזה מכוון כדי להתקרב לרוחב הבאנר מעליו בלי להתרחב מדי.
-    menu_text_to_send = str(menu_text) + "\n" + ("\u00A0" * 52)
+    menu_text_to_send = str(menu_text)
 
     sent_menu = await message.answer(
         menu_text_to_send,
@@ -1018,6 +1018,23 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
 
 
 
+def main_keyboard_fixed_width(uid):
+    """
+    MAIN_MENU_KEYBOARD_FIXED_WIDTH_V1
+    משתמש במקלדת הראשית הקיימת בלי לשנות כפתורים או לוגיקה.
+    רק מבטל resize_keyboard אם זו ReplyKeyboardMarkup, כדי שהתפריט לא יהיה קטן/קופץ.
+    אם זו InlineKeyboardMarkup — מחזיר כמו שהוא.
+    """
+    kb = main_keyboard(uid)
+    try:
+        if hasattr(kb, "resize_keyboard"):
+            kb.resize_keyboard = False
+    except Exception:
+        pass
+    return kb
+
+
+
 async def send_main_menu_split_banner_text(message: Message, greeting_text=None, menu_text=None, banner_key="main_menu", reply_markup=None, parse_mode="HTML"):
     """
     MAIN_MENU_SPLIT_BANNER_TEXT_V1
@@ -1105,7 +1122,7 @@ async def reset_customer_to_main_menu(message, text=None):
         greeting_text=None,
         menu_text=menu_text,
         banner_key="main_menu",
-        reply_markup=main_keyboard(uid),
+        reply_markup=main_keyboard_fixed_width(uid),
         parse_mode="HTML"
     )
 
@@ -1129,7 +1146,7 @@ async def reset_callback_customer_to_main_menu(callback, text=None):
         greeting_text=None,
         menu_text=menu_text,
         banner_key="main_menu",
-        reply_markup=main_keyboard(uid),
+        reply_markup=main_keyboard_fixed_width(uid),
         parse_mode="HTML"
     )
 
@@ -2931,7 +2948,7 @@ async def show_reorder_choose_inline(callback: CallbackQuery):
                 "<b>⚠️ אין הזמנות קודמות לשחזור.</b>\n\n"
                 "אפשר להיכנס לחנות ולבצע הזמנה חדשה."
             )),
-            reply_markup=main_keyboard(callback.from_user.id),
+            reply_markup=main_keyboard_fixed_width(callback.from_user.id),
             parse_mode="HTML"
         )
         data.setdefault("temp_bot_messages", []).append(sent.message_id)
@@ -3590,7 +3607,7 @@ async def start(message: Message):
         greeting_text=greeting_text,
         menu_text=menu_text,
         banner_key="main_menu",
-        reply_markup=main_keyboard(message.from_user.id),
+        reply_markup=main_keyboard_fixed_width(message.from_user.id),
         parse_mode="HTML"
     )
 
@@ -3748,7 +3765,7 @@ async def back_main(message: Message):
     await send_temp_message(
         message,
         widen_inline_screen_text(rtl("<b>↩️ חזרת לתפריט הראשי</b>")),
-        reply_markup=main_keyboard(message.from_user.id),
+        reply_markup=main_keyboard_fixed_width(message.from_user.id),
         parse_mode="HTML"
     )
 
@@ -3883,7 +3900,7 @@ async def edit_details(message: Message):
         await send_temp_message(
             message,
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=main_keyboard_fixed_width(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -3949,7 +3966,7 @@ async def submit_paid_order(message: Message, data):
                 "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
                 "ההזמנה כבר נקלטה במערכת ונמצאת בטיפול."
             ),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=main_keyboard_fixed_width(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -4097,7 +4114,7 @@ async def submit_paid_order(message: Message, data):
     sent_menu = await send_temp_message(
         message,
         rtl(customer_success_text),
-        reply_markup=main_keyboard(message.from_user.id),
+        reply_markup=main_keyboard_fixed_width(message.from_user.id),
         parse_mode="HTML"
     )
     if sent_menu:
@@ -4113,7 +4130,7 @@ async def back_to_fulfillment_choice(message: Message):
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=main_keyboard_fixed_width(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -4157,7 +4174,7 @@ async def back_from_order_summary_to_previous_step(message: Message):
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=main_keyboard_fixed_width(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -4220,7 +4237,7 @@ async def confirm_order(message: Message):
     if not data or not data.get("cart"):
         await message.answer(
             rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=main_keyboard_fixed_width(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -4240,7 +4257,7 @@ async def confirm_order(message: Message):
                 "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
                 "ההזמנה כבר נקלטה במערכת ונמצאת בטיפול."
             ),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=main_keyboard_fixed_width(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -4593,7 +4610,7 @@ async def reorder_choose_order(message: Message):
                 "<b>⚠️ אין הזמנות קודמות לשחזור.</b>\n\n"
                 "אפשר להיכנס לחנות ולבצע הזמנה חדשה."
             ),
-            reply_markup=main_keyboard(message.from_user.id),
+            reply_markup=main_keyboard_fixed_width(message.from_user.id),
             parse_mode="HTML"
         )
         return
@@ -4624,7 +4641,7 @@ async def back_to_main_menu(message: Message):
         greeting_text=None,
         menu_text=menu_text,
         banner_key="main_menu",
-        reply_markup=main_keyboard(message.from_user.id),
+        reply_markup=main_keyboard_fixed_width(message.from_user.id),
         parse_mode="HTML"
     )
 
