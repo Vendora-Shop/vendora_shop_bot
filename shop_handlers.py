@@ -1002,10 +1002,10 @@ async def cleanup_customer_order_screens(bot, uid):
 
 
 def main_menu_caption_text():
-    # MAIN_MENU_RTL_CAPTION_FIX_V2
-    # כמו במסך שירות לקוחות: קודם הטקסט בעברית ואז האייקון.
-    # בטלגרם זה מצמיד את האייקון והטקסט לצד ימין בצורה יציבה יותר.
-    return rtl("<b>תפריט ראשי</b> 💎 — בחרו פעולה:")
+    # MAIN_MENU_RTL_CAPTION_FIX_V3
+    # כמו שירות לקוחות: טקסט עברי בתחילת השורה + אייקון אחרי הכותרת.
+    # RLI/PDI/RLM מאלצים את Telegram להציג את ה-caption כ־RTL.
+    return "⁧<b>תפריט ראשי</b> 💎 — בחרו פעולה:⁩‏"
 
 
 
