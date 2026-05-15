@@ -1332,6 +1332,7 @@ UI_BANNERS = {
     "main_menu": "assets/banners/main_menu.jpg",
     "shop_home": "assets/banners/shop_home.jpg",
     "cart_banner": "assets/banners/cart_banner.jpg",
+    "support": "assets/banners/support_banner.jpg",
 }
 
 
@@ -3607,7 +3608,11 @@ Vendora תמשיך לפעול לשיפור הנגישות והחוויה עבו�
             await show_my_orders_inline(callback)
             return
         elif raw == "ui:main:addresses": text = "🏠 הכתובות שלי"
-        elif raw == "ui:main:support": text = "📞 שירות לקוחות"
+        elif raw == "ui:main:support":
+            await answer_callback_safely(callback)
+            proxy = CustomerCallbackMessage(callback, "📞 שירות לקוחות")
+            await support(proxy)
+            return
         elif raw == "ui:main:admin": text = "🔐 פאנל ניהול"
 
         elif raw == "ui:nav:main": text = "⬅️ חזרה לתפריט"
@@ -4815,67 +4820,57 @@ async def quantity_inline_action(callback: CallbackQuery):
 @router.message(F.text == "📞 שירות לקוחות")
 async def support(message: Message):
     uid = message.from_user.id
-    # SUPPORT_CLEAR_TEMP_FIX
+
     try:
         await delete_temp_bot_messages(message.bot, uid)
     except Exception:
         pass
 
-
-    # חשוב: לא מאפסים את users[uid] לפני ניקוי המסכים הקודמים.
-    # אחרת נאבד את temp_bot_messages והתפריט הראשי נשאר פתוח מתחת למסך שירות לקוחות.
     previous_state = users.get(uid, {})
-    previous_temp_messages = list(previous_state.get("temp_bot_messages", []))
-
-    try:
-        await delete_temp_bot_messages(message.bot, uid)
-    except Exception:
-        pass
+    previous_cart = previous_state.get("cart", [])
 
     existing_ticket = get_open_support_ticket_by_user(uid)
 
     if existing_ticket:
         users[uid] = {
-            "cart": previous_state.get("cart", []),
+            "cart": previous_cart,
             "step": "support_chat",
             "support_ticket_number": existing_ticket["ticket_number"],
-            "support_phone": existing_ticket["phone"],
-            "support_subject": existing_ticket.get("subject") or "",
-            "temp_bot_messages": previous_temp_messages
+            "temp_bot_messages": []
         }
 
-        await send_temp_message(
+        await send_ui_banner_message(
             message,
-            widen_inline_screen_text(
-                rtl(
-                    "<b>📞 שירות לקוחות</b>\n\n"
-                    f"{field('מספר פנייה', existing_ticket['ticket_number'])}\n"
-                    f"{field('נושא הפנייה', existing_ticket.get('subject') or 'ללא נושא')}\n\n"
-                    "יש לך פנייה פתוחה. כתוב את ההודעה שלך כאן והיא תועבר לנציג."
-                )
+            rtl(
+                "<b>💬 שירות לקוחות</b>\n\n"
+                f"{field('מספר פנייה פעילה', existing_ticket['ticket_number'])}\n"
+                "יש לך פנייה פתוחה. ניתן להמשיך את השיחה עם שירות הלקוחות."
             ),
-            reply_markup=support_open_ticket_keyboard(message.from_user.id),
+            banner_key="support",
+            reply_markup=support_customer_keyboard(uid),
             parse_mode="HTML"
         )
         return
 
     users[uid] = {
-        "cart": previous_state.get("cart", []),
+        "cart": previous_cart,
         "step": "support_subject",
-        "temp_bot_messages": previous_temp_messages
+        "temp_bot_messages": []
     }
 
-    await send_temp_message(
+    await send_ui_banner_message(
         message,
-        widen_inline_screen_text(
-            rtl(
-                "<b>📞 שירות לקוחות</b>\n\n"
-                "בחר את נושא הפנייה:"
-            )
+        rtl(
+            "<b>💬 שירות לקוחות</b>\n\n"
+            "ברוכים הבאים למרכז השירות של Vendora.\n"
+            "בחרו את נושא הפנייה הרצוי:"
         ),
+        banner_key="support",
         reply_markup=support_subject_keyboard(),
         parse_mode="HTML"
     )
+
+
 
 @router.message(F.text == "📦 ההזמנות שלי")
 async def my_orders(message: Message):
