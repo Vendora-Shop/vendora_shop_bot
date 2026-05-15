@@ -429,7 +429,7 @@ def remember_customer_main_menu_message(uid, message_id):
 RTL = "\u200F"
 # שורת רווחים בלתי נראית שמרחיבה את בועת ההודעה בטלגרם כאשר יש Inline Keyboard.
 # לא משנה טקסטים קיימים ולא מוצגת כטקסט רגיל ללקוח.
-UI_WIDE_LINE = "\u00A0" * 85
+UI_WIDE_LINE = "\u00A0" * 120
 
 
 def widen_inline_screen_text(text):
