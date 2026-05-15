@@ -78,14 +78,10 @@ async def customer_cancel_payment_button(message: Message):
         pass
 
     if data.get("step") == "payment_simulation":
-        data["step"] = "confirm"
-
-        await message.answer(
-            build_order_summary(data),
-            reply_markup=order_summary_keyboard(data),
-            parse_mode="HTML",
-            disable_web_page_preview=True
-        )
+        # PAYMENT_CANCEL_FULL_ORDER_CANCEL_FIX
+        # ביטול תשלום מתוך מסך הסימולציה = ביטול מלא של ההזמנה,
+        # לא חזרה לסיכום ההזמנה ולא לחלון קודם.
+        await cancel_order(message)
         return
 
     await message.answer(
@@ -503,9 +499,9 @@ def clear_invalid_warning(data: dict, warn_key: str):
 
 async def cleanup_input_warnings(bot, user_id):
     """
-    מוחק אזהרות קלט ישנות, לדוגמה:
-    'מספר פלאפון לא תקין', 'שם מלא לא תקין', 'רשום כמות במספרים'.
-    מופעל כשעוברים מסך/חוזרים לתפריט/ממשיכים בתהליך.
+    STABLE_UI_V4 — ניקוי אזהרות לא חוסם:
+    מנקים את ה-state מיד, אבל מחיקות ההודעות רצות ברקע.
+    כך מעבר חלון לא נתקע בגלל delete_message של Telegram.
     """
     data = users.get(user_id)
     if not data:
@@ -519,22 +515,7 @@ async def cleanup_input_warnings(bot, user_id):
         if key.endswith("_message_id") and any(token in key for token in ["warn", "warning", "invalid"]):
             ids.append(value)
 
-    # הודעות לקוח שנמחקו כבר ייכשלו בשקט; זה בסדר.
     ids.extend(data.get("invalid_deleted_message_ids", []) or [])
-
-    seen = set()
-    for mid in ids:
-        try:
-            mid = int(mid)
-        except Exception:
-            continue
-        if mid in seen:
-            continue
-        seen.add(mid)
-        try:
-            await bot.delete_message(user_id, mid)
-        except Exception:
-            pass
 
     data.pop("input_warning_message_ids", None)
     data.pop("input_prompt_message_ids", None)
@@ -546,6 +527,14 @@ async def cleanup_input_warnings(bot, user_id):
             data.pop(key, None)
         if key.endswith("_message_id") and any(token in key for token in ["warn", "warning", "invalid"]):
             data.pop(key, None)
+
+    if not ids:
+        return
+
+    try:
+        asyncio.create_task(_delete_messages_safely(bot, user_id, ids))
+    except Exception:
+        pass
 
 
 def remember_input_prompt_message(data: dict, message_obj):
@@ -646,7 +635,10 @@ async def _delete_message_safely(bot, chat_id, message_id):
 
 
 async def _delete_messages_safely(bot, chat_id, message_ids):
+    """מחיקה מקבילית ושקטה — לא עוצרת את מעבר המסכים."""
+    clean_ids = []
     seen = set()
+
     for mid in message_ids or []:
         try:
             mid = int(mid)
@@ -655,7 +647,18 @@ async def _delete_messages_safely(bot, chat_id, message_ids):
         if mid in seen:
             continue
         seen.add(mid)
-        await _delete_message_safely(bot, chat_id, mid)
+        clean_ids.append(mid)
+
+    if not clean_ids:
+        return
+
+    try:
+        await asyncio.gather(
+            *[_delete_message_safely(bot, chat_id, mid) for mid in clean_ids],
+            return_exceptions=True
+        )
+    except Exception:
+        pass
 
 
 async def _send_reply_keyboard_remove_marker(message: Message):
@@ -794,8 +797,8 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
 
 async def cleanup_customer_order_screens(bot, uid):
     """
-    ניקוי מלא למסכי הזמנה/מוצר/תמונות לפני מעבר לתפריט או ביטול.
-    לא משנה עיצוב ולא משנה גדלים — רק מוחק הודעות זמניות שנשארו במסך.
+    STABLE_UI_V4 — ניקוי מלא ולא חוסם למסכי הזמנה/מוצר/תמונות.
+    לא מחכים ל-Telegram למחוק הודעות לפני שממשיכים למסך הבא.
     """
     try:
         await delete_temp_bot_messages(bot, uid)
@@ -804,7 +807,7 @@ async def cleanup_customer_order_screens(bot, uid):
 
     data = users.setdefault(uid, {"cart": []})
 
-    # מחיקת הודעות ידועות שלא תמיד נשמרות ברשימת temp_bot_messages.
+    ids = []
     for key in [
         "qty_manual_message_id",
         "qty_manual_warning_message_id",
@@ -819,12 +822,16 @@ async def cleanup_customer_order_screens(bot, uid):
     ]:
         msg_id = data.pop(key, None)
         if msg_id:
-            try:
-                await bot.delete_message(uid, msg_id)
-            except Exception:
-                pass
+            ids.append(msg_id)
 
     data["temp_bot_messages"] = []
+
+    if ids:
+        try:
+            asyncio.create_task(_delete_messages_safely(bot, uid, ids))
+        except Exception:
+            pass
+
 
 async def reset_customer_to_main_menu(message, text):
     uid = message.from_user.id
@@ -2664,8 +2671,7 @@ async def show_reorder_choose_inline(callback: CallbackQuery):
 
 async def send_inline_screen_replace(callback: CallbackQuery, text, reply_markup=None, parse_mode="HTML"):
     """
-    שולח מסך חדש ורק אחר כך מוחק מסכים ישנים.
-    מיועד למנוע מצב שבו המסך הישן נעלם והחדש לא נפתח.
+    STABLE_UI_V4 — שולח מסך חדש מיד; מחיקות רצות ברקע.
     """
     await force_close_callback_phone_keyboard(callback)
     uid = callback.from_user.id
@@ -2680,18 +2686,18 @@ async def send_inline_screen_replace(callback: CallbackQuery, text, reply_markup
 
     data["temp_bot_messages"] = [sent.message_id]
 
-    for mid in old_ids:
-        try:
-            if int(mid) != int(sent.message_id):
-                await callback.message.bot.delete_message(uid, int(mid))
-        except Exception:
-            pass
-
+    cleanup_ids = [mid for mid in old_ids if str(mid) != str(sent.message_id)]
     try:
         if callback.message and int(callback.message.message_id) != int(sent.message_id):
-            await callback.message.delete()
+            cleanup_ids.append(callback.message.message_id)
     except Exception:
         pass
+
+    if cleanup_ids:
+        try:
+            asyncio.create_task(_delete_messages_safely(callback.message.bot, uid, cleanup_ids))
+        except Exception:
+            pass
 
     return sent
 
@@ -2736,8 +2742,8 @@ async def support_inline_router(callback: CallbackQuery):
 
     async def _replace_screen(text, keyboard):
         """
-        שולח קודם את המסך החדש.
-        רק אחרי שליחה מוצלחת מנסה למחוק את המסך הישן.
+        STABLE_UI_V4 — שולח קודם את המסך החדש.
+        מחיקת המסך הישן ושאר ההודעות מתבצעת ברקע, בלי לעצור את המעבר.
         """
         sent = await callback.message.answer(
             widen_inline_screen_text(text),
@@ -2748,22 +2754,22 @@ async def support_inline_router(callback: CallbackQuery):
         old_ids = list(data.get("temp_bot_messages", []) or [])
         data["temp_bot_messages"] = [sent.message_id]
 
-        # מחיקת המסך שעליו לחצו — אחרי שהחדש כבר נשלח.
+        cleanup_ids = [mid for mid in old_ids if str(mid) != str(sent.message_id)]
+
         try:
             if callback.message and int(callback.message.message_id) != int(sent.message_id):
-                await callback.message.delete()
+                cleanup_ids.append(callback.message.message_id)
         except Exception:
             pass
 
-        # מחיקת מסכים ישנים נוספים
-        for mid in old_ids:
+        if cleanup_ids:
             try:
-                if int(mid) != int(sent.message_id):
-                    await callback.message.bot.delete_message(uid, int(mid))
+                asyncio.create_task(_delete_messages_safely(callback.message.bot, uid, cleanup_ids))
             except Exception:
                 pass
 
         return sent
+
 
     try:
         if raw.startswith("ui:support:subject:"):
@@ -4601,12 +4607,10 @@ async def handle_shop(message: Message):
             return
 
         if txt == "❌ ביטול תשלום":
-            data["step"] = "confirm"
-            await message.answer(
-                rtl("<b>❌ התשלום בוטל.</b>\n\nאפשר לחזור לסיכום ההזמנה או לבטל את ההזמנה."),
-                reply_markup=confirm_keyboard(),
-                parse_mode="HTML"
-            )
+            # PAYMENT_CANCEL_FULL_ORDER_CANCEL_FIX
+            # גם אם הלחיצה הגיעה דרך handle_shop ולא דרך ה־Inline dispatcher,
+            # ביטול תשלום מבטל את כל ההזמנה ומחזיר לתפריט הראשי.
+            await cancel_order(message)
             return
 
         await message.answer(
