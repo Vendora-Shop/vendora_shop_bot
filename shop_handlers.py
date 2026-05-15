@@ -1019,7 +1019,7 @@ async def reset_customer_to_main_menu(message, text=None):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    menu_caption_text = f"{RTL}\u200F<b>💎 תפריט ראשי</b> — בחרו פעולה:"
+    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
 
     sent = await send_main_menu_greeting_banner_caption(
         message,
@@ -1043,7 +1043,7 @@ async def reset_callback_customer_to_main_menu(callback, text=None):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    menu_caption_text = f"{RTL}\u200F<b>💎 תפריט ראשי</b> — בחרו פעולה:"
+    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
 
     sent = await send_main_menu_greeting_banner_caption(
         callback.message,
@@ -1213,8 +1213,26 @@ STORE_CONTACT_TELEGRAM = "@Vendora"
 # כרגע מחברים רק את התפריט הראשי כדי לבדוק יציבות לפני הרחבה לכל המסכים.
 UI_BANNERS = {
     "main_menu": "assets/banners/main_menu.jpg",
+    "shop_home": "assets/banners/shop_home.jpg",
 }
 
+
+
+
+async def send_shop_home_banner(message: Message):
+    """
+    SHOP_HOME_BANNER_V1
+    שולח באנר למסך החנות בלבד.
+    """
+    try:
+        banner_path = UI_BANNERS.get("shop_home")
+
+        if banner_path and os.path.exists(banner_path):
+            await message.answer_photo(
+                photo=FSInputFile(banner_path)
+            )
+    except Exception as e:
+        print(f"SHOP_HOME_BANNER_ERROR: {type(e).__name__}: {e}")
 
 
 def h(text):
@@ -3504,7 +3522,7 @@ async def start(message: Message):
     customer_name = message.from_user.first_name or "לקוח"
 
     greeting_text = f"<b>👋 שלום {h(customer_name)}</b>"
-    menu_caption_text = f"{RTL}\u200F<b>💎 תפריט ראשי</b> — בחרו פעולה:"
+    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
 
     sent = await send_main_menu_greeting_banner_caption(
         message,
@@ -4538,7 +4556,7 @@ async def back_to_main_menu(message: Message):
 
     users[uid]["step"] = "main"
 
-    menu_caption_text = f"{RTL}\u200F<b>💎 תפריט ראשי</b> — בחרו פעולה:"
+    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
 
     await send_main_menu_greeting_banner_caption(
         message,
