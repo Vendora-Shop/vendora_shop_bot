@@ -3357,7 +3357,7 @@ async def start(message: Message):
 
     start_text = (
         f"<b>👋 שלום {h(customer_name)}</b>\n\n"
-        "                         בחר פעולה:"
+        f"<b>‎‏בחר פעולה:</b>"
     )
 
     sent = await send_ui_banner_message(
