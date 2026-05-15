@@ -710,6 +710,19 @@ async def delete_temp_bot_messages(bot, user_id):
     except Exception:
         pass
 
+
+def delete_message_now_background(bot, chat_id, message_id):
+    """
+    FAST_VISUAL_TRANSITION_DELETE
+    מוחק את המסך הנוכחי מיד ברקע, בלי להמתין למחיקה לפני שליחת המסך הבא.
+    זה מקצר את הזמן שבו המסך הקודם נשאר תקוע מעל המסך החדש.
+    """
+    try:
+        asyncio.create_task(_delete_message_safely(bot, chat_id, message_id))
+    except Exception:
+        pass
+
+
 async def _delete_message_safely(bot, chat_id, message_id):
     try:
         await bot.delete_message(chat_id, int(message_id))
@@ -2171,6 +2184,9 @@ class CustomerCallbackMessage:
             except Exception:
                 old_ids = []
 
+            # מוחקים את המסך הנוכחי מיד ברקע כדי שלא יישאר תקוע 2-3 שניות.
+            delete_message_now_background(self.bot, self.from_user.id, self.message_id)
+
         sent = await self.message.answer(*args, **kwargs)
 
         try:
@@ -2224,6 +2240,9 @@ class CustomerCallbackMessage:
                 old_ids = list(users.setdefault(self.from_user.id, {"cart": []}).get("temp_bot_messages", []) or [])
             except Exception:
                 old_ids = []
+
+            # מוחקים את המסך הנוכחי מיד ברקע כדי שלא יישאר תקוע 2-3 שניות.
+            delete_message_now_background(self.bot, self.from_user.id, self.message_id)
 
         sent = await self.message.answer_photo(*args, **kwargs)
 
@@ -3283,6 +3302,7 @@ async def customer_inline_ui_router(callback: CallbackQuery):
     # ומחזירה בטעות לתפריט הראשי.
     if raw.startswith("ui:cat:"):
         await answer_callback_safely(callback)
+        delete_message_now_background(callback.message.bot, uid, callback.message.message_id)
 
         try:
             idx = int(parts[-1])
@@ -3335,6 +3355,7 @@ async def customer_inline_ui_router(callback: CallbackQuery):
 
     if raw.startswith("ui:prod:"):
         await answer_callback_safely(callback)
+        delete_message_now_background(callback.message.bot, uid, callback.message.message_id)
 
         try:
             idx = int(parts[-1])
@@ -4365,15 +4386,41 @@ async def quantity_inline_action(callback: CallbackQuery):
         data.pop("qty_manual_invalid_warned", None)
 
         await answer_callback_safely(callback)
-        await delete_temp_bot_messages(callback.message.bot, uid)
 
-        proxy = CustomerCallbackMessage(callback, "⬅️ חזרה למוצרים")
-        await send_temp_message(
-            proxy,
-            rtl(f"<b>📂 {h(category or 'מוצרים')}</b>\n\nבחר מוצר:"),
+        # QTY_BACK_PRODUCTS_FAST_TRANSITION
+        # לא מחכים למחיקת מסך המוצר לפני שליחת מסך המוצרים.
+        # מחיקה מיידית ברקע + שליחה מידית של המסך החדש.
+        delete_message_now_background(callback.message.bot, uid, callback.message.message_id)
+
+        old_ids = list(data.get("temp_bot_messages", []) or [])
+
+        sent = await callback.message.answer(
+            widen_inline_screen_text(
+                rtl(f"<b>📂 {h(category or 'מוצרים')}</b>\n\nבחר מוצר:")
+            ),
             reply_markup=products_keyboard(category),
             parse_mode="HTML"
         )
+
+        data["temp_bot_messages"] = [sent.message_id]
+
+        cleanup_ids = list(old_ids)
+        try:
+            cleanup_ids.append(callback.message.message_id)
+        except Exception:
+            pass
+
+        try:
+            asyncio.create_task(
+                _delete_messages_safely(
+                    callback.message.bot,
+                    uid,
+                    [mid for mid in cleanup_ids if str(mid) != str(sent.message_id)]
+                )
+            )
+        except Exception:
+            pass
+
         return
 
     product = data.get("selected_product") or data.get("current_product")
