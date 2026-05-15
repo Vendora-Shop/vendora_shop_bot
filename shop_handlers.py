@@ -1817,28 +1817,73 @@ class CustomerCallbackMessage:
             pass
 
     async def answer(self, *args, **kwargs):
-        # Inline UI: בכל מעבר מסך מוחקים את המסך הפעיל הקודם ושומרים את החדש.
-        # כש-send_temp_message נקרא עם clear_previous=False שומרים גם את ההודעה הקודמת
-        # למשל: תמונת מוצר + מסך בחירת כמות.
+        # INLINE_BLUE_MENU_FIX_V5
+        # הבעיה שהמשתמש ראה: מעבר מתפריט ראשי -> חנות דרך Inline משאיר למטה את הכפתור הכחול Start/Menu.
+        # הסיבה: InlineKeyboardMarkup לא סוגר ReplyKeyboard/כפתור תחתון קיים.
+        # לכן בכל מסך Inline חדש אנחנו סוגרים קודם את המקלדת התחתונה עם ReplyKeyboardRemove,
+        # שולחים מיד את המסך החדש, ורק אחרי זה מנקים הודעות ישנות ברקע.
         skip_delete = bool(getattr(self, "_skip_inline_auto_delete_once", False))
+        reply_markup = kwargs.get("reply_markup")
+        is_inline_screen = isinstance(reply_markup, InlineKeyboardMarkup)
 
         try:
-            reply_markup = kwargs.get("reply_markup")
-            if isinstance(reply_markup, InlineKeyboardMarkup) and args:
+            if is_inline_screen and args:
                 args = (widen_inline_screen_text(args[0]),) + tuple(args[1:])
         except Exception:
             pass
 
+        cleanup_msg = None
+        if is_inline_screen:
+            try:
+                cleanup_msg = await self.message.answer("⁣", reply_markup=ReplyKeyboardRemove())
+            except Exception:
+                cleanup_msg = None
+
+        old_ids = []
         if not skip_delete:
             try:
-                await delete_temp_bot_messages(self.bot, self.from_user.id)
+                old_ids = list(users.setdefault(self.from_user.id, {"cart": []}).get("temp_bot_messages", []) or [])
             except Exception:
-                pass
+                old_ids = []
 
         sent = await self.message.answer(*args, **kwargs)
 
         try:
-            users.setdefault(self.from_user.id, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+            data = users.setdefault(self.from_user.id, {"cart": []})
+            data["temp_bot_messages"] = [sent.message_id]
+        except Exception:
+            pass
+
+        async def _cleanup_after_send():
+            ids_to_delete = []
+            if cleanup_msg is not None:
+                try:
+                    ids_to_delete.append(cleanup_msg.message_id)
+                except Exception:
+                    pass
+            if not skip_delete:
+                ids_to_delete.extend(old_ids)
+                try:
+                    ids_to_delete.append(self.message_id)
+                except Exception:
+                    pass
+
+            seen = set()
+            for mid in ids_to_delete:
+                try:
+                    mid = int(mid)
+                except Exception:
+                    continue
+                if mid in seen or mid == int(sent.message_id):
+                    continue
+                seen.add(mid)
+                try:
+                    await self.bot.delete_message(self.from_user.id, mid)
+                except Exception:
+                    pass
+
+        try:
+            asyncio.create_task(_cleanup_after_send())
         except Exception:
             pass
 
@@ -3203,10 +3248,9 @@ async def start(message: Message):
         return
     START_LAST_RUN[uid] = now
 
-    # START_FAST_RESPONSE_FIX
-    # שולחים את המסך החדש מיד, ורק אחר כך מנקים הודעות ישנות ברקע.
-    # זה מונע מצב שבו כפתור Start/Menu הכחול של Telegram נשאר תקוע כמה שניות
-    # בזמן שהבוט מוחק הודעות, סוגר מקלדות ומנקה מסכים קודמים.
+    # START_BLUE_BUTTON_FIX_V4
+    # במקרה של כפתור Start/Menu הכחול של Telegram, חייבים קודם לשלוח ReplyKeyboardRemove.
+    # InlineKeyboard לא סוגר את הכפתור הכחול. לכן קודם סוגרים את המקלדת, ורק מיד אחר כך שולחים את המסך החדש.
     old_data = users.get(uid) or {}
     old_temp_ids = list(old_data.get("temp_bot_messages", []) or [])
 
@@ -3222,6 +3266,12 @@ async def start(message: Message):
         "step": "start",
         "temp_bot_messages": []
     }
+
+    cleanup_msg = None
+    try:
+        cleanup_msg = await message.answer("\u2063", reply_markup=ReplyKeyboardRemove())
+    except Exception:
+        cleanup_msg = None
 
     customer_name = message.from_user.first_name or "לקוח יקר"
 
@@ -3253,17 +3303,13 @@ async def start(message: Message):
             pass
 
         try:
-            await cleanup_input_warnings(message.bot, uid)
+            if cleanup_msg:
+                await cleanup_msg.delete()
         except Exception:
             pass
 
-        # סוגר ReplyKeyboard ישן אם נשאר, אבל לא לפני פתיחת המסך החדש.
         try:
-            cleanup_msg = await message.answer("\u2063", reply_markup=ReplyKeyboardRemove())
-            try:
-                await cleanup_msg.delete()
-            except Exception:
-                pass
+            await cleanup_input_warnings(message.bot, uid)
         except Exception:
             pass
 
