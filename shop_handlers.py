@@ -1325,6 +1325,7 @@ STORE_CONTACT_TELEGRAM = "@Vendora"
 UI_BANNERS = {
     "main_menu": "assets/banners/main_menu.jpg",
     "shop_home": "assets/banners/shop_home.jpg",
+    "support": "assets/banners/support_banner.jpg",
     "cart_banner": "assets/banners/cart_banner.jpg",}
 
 
@@ -3800,10 +3801,12 @@ Vendora תמשיך לפעול לשיפור הנגישות והחוויה עבו�
 
             await delete_temp_bot_messages(callback.message.bot, uid)
 
-            sent = await callback.message.answer(
-                widen_inline_screen_text(
+            sent = await answer_cached_banner_photo(
+                callback.message,
+                "support",
+                caption=widen_inline_screen_text(
                     rtl(
-                        "<b>📞 שירות לקוחות</b>\n\n"
+                        "<b>💬 שירות לקוחות</b>\n\n"
                         f"{field('נושא הפנייה', subject)}\n\n"
                         "בחר שאלה נפוצה או פתח פנייה לנציג שירות:"
                     )
@@ -3874,11 +3877,14 @@ Vendora תמשיך לפעול לשיפור הנגישות והחוויה עבו�
             await callback.answer()
             await delete_temp_bot_messages(callback.message.bot, uid)
 
-            sent = await callback.message.answer(
-                widen_inline_screen_text(
+            sent = await answer_cached_banner_photo(
+                callback.message,
+                "support",
+                caption=widen_inline_screen_text(
                     rtl(
-                        "<b>📞 שירות לקוחות</b>\n\n"
-                        "בחר את נושא הפנייה:"
+                        "<b>💬 שירות לקוחות</b>\n\n"
+                        "ברוכים הבאים למרכז השירות של Vendora.\n"
+                        "בחרו את נושא הפנייה הרצוי:"
                     )
                 ),
                 reply_markup=support_subject_keyboard(),
@@ -5890,11 +5896,11 @@ async def handle_shop(message: Message):
         data["support_subject"] = txt
         data["step"] = "support_faq"
 
-        await send_temp_message(
+        await send_support_banner_screen(
             message,
             widen_inline_screen_text(
                 rtl(
-                    "<b>📞 שירות לקוחות</b>\n\n"
+                    "<b>💬 שירות לקוחות</b>\n\n"
                     f"{field('נושא הפנייה', txt)}\n\n"
                     "בחר שאלה נפוצה או פתח פנייה לנציג שירות:"
                 )
@@ -5917,12 +5923,13 @@ async def handle_shop(message: Message):
 
             data["step"] = "support_subject"
 
-            await send_temp_message(
+            await send_support_banner_screen(
                 message,
                 widen_inline_screen_text(
                     rtl(
-                        "<b>📞 שירות לקוחות</b>\n\n"
-                        "בחר את נושא הפנייה:"
+                        "<b>💬 שירות לקוחות</b>\n\n"
+                        "ברוכים הבאים למרכז השירות של Vendora.\n"
+                        "בחרו את נושא הפנייה הרצוי:"
                     )
                 ),
                 reply_markup=support_subject_keyboard(),
