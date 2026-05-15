@@ -615,9 +615,9 @@ def remember_temp_bot_message(uid, message_obj):
 
 async def delete_temp_bot_messages(bot, user_id):
     """
-    ניקוי הודעות זמניות בצורה בטוחה:
-    לא עוצר את כל הבוט אם הודעה כבר נמחקה / לא קיימת.
-    מוחק עד 40 הודעות אחרונות כדי למנוע עומס על Telegram.
+    STABLE_UI_V2 — ניקוי לא חוסם:
+    לא מחכים למחיקות מטלגרם לפני הצגת המסך הבא.
+    זה מונע תקיעה/בועות לבנות בזמן מעבר בין חלונות.
     """
     data = users.get(user_id)
 
@@ -625,23 +625,19 @@ async def delete_temp_bot_messages(bot, user_id):
         return
 
     message_ids = list(data.get("temp_bot_messages", []) or [])
+    data["temp_bot_messages"] = []
 
     if not message_ids:
-        data["temp_bot_messages"] = []
         return
 
-    async def _delete_one(message_id):
-        try:
-            await bot.delete_message(user_id, int(message_id))
-        except Exception:
-            pass
+    async def _cleanup():
+        await _delete_messages_safely(bot, user_id, message_ids[-40:])
 
     try:
-        await asyncio.gather(*[_delete_one(mid) for mid in message_ids[-40:]], return_exceptions=True)
+        asyncio.create_task(_cleanup())
     except Exception:
         pass
 
-    data["temp_bot_messages"] = []
 async def _delete_message_safely(bot, chat_id, message_id):
     try:
         await bot.delete_message(chat_id, int(message_id))
@@ -664,15 +660,12 @@ async def _delete_messages_safely(bot, chat_id, message_ids):
 
 async def _send_reply_keyboard_remove_marker(message: Message):
     """
-    UI_ENGINE_V1
-    Telegram סוגר ReplyKeyboard רק כשנשלחת הודעה עם ReplyKeyboardRemove.
-    לא מוחקים את הודעת הניקוי לפני שהמסך החדש נשלח, כדי שבאייפון/אנדרואיד
-    הפס הכחול לא יישאר תקוע בזמן מעבר למסך הבא.
+    STABLE_UI_V2
+    לא שולחים יותר הודעות ריקות כדי לסגור ReplyKeyboard.
+    באייפון/אנדרואיד ההודעות הריקות יוצרות בועה לבנה ותקיעה ויזואלית.
+    במקום זה כל מסך חדש נשלח מיד, והניקוי מתבצע ברקע בלבד.
     """
-    try:
-        return await message.answer("\u2063", reply_markup=ReplyKeyboardRemove())
-    except Exception:
-        return None
+    return None
 
 
 async def force_close_phone_keyboard(message: Message):
@@ -694,10 +687,9 @@ async def force_close_callback_phone_keyboard(callback: CallbackQuery):
 
 async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None, clean_input_warnings=True):
     """
-    שליחת מסך זמני יציבה לכל מכשיר:
-    1. מנקה אזהרות קלט ישנות.
-    2. קודם שולחת את המסך החדש.
-    3. רק אחרי שליחה מוצלחת מוחקת מסכים ישנים.
+    STABLE_UI_V2 — מעבר מסכים חלק:
+    שולחים קודם את המסך החדש, לא שולחים הודעת ניקוי ריקה,
+    ורק אחרי שהמסך החדש כבר מופיע מוחקים הודעות ישנות ברקע.
     """
     uid = message.from_user.id
 
@@ -714,16 +706,11 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
 
     old_ids = list(data.get("temp_bot_messages", []) or [])
 
-    close_marker = None
-    is_inline_screen = False
-
     try:
-        is_inline_screen = isinstance(reply_markup, InlineKeyboardMarkup)
-        if is_inline_screen:
+        if isinstance(reply_markup, InlineKeyboardMarkup):
             text = widen_inline_screen_text(text)
-            close_marker = await _send_reply_keyboard_remove_marker(message)
     except Exception:
-        close_marker = None
+        pass
 
     kwargs = {
         "reply_markup": reply_markup,
@@ -733,39 +720,32 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
     if disable_web_page_preview is not None:
         kwargs["disable_web_page_preview"] = disable_web_page_preview
 
-    sent = await message.answer(
-        text,
-        **kwargs
-    )
-
-    cleanup_ids = list(old_ids)
-    if close_marker:
-        cleanup_ids.append(close_marker.message_id)
+    sent = await message.answer(text, **kwargs)
 
     if clear_previous:
         data["temp_bot_messages"] = [sent.message_id]
 
-        for message_id in cleanup_ids:
-            try:
-                if int(message_id) != int(sent.message_id):
-                    await message.bot.delete_message(uid, int(message_id))
-            except Exception:
-                pass
+        async def _cleanup_after_send():
+            await _delete_messages_safely(
+                message.bot,
+                uid,
+                [mid for mid in old_ids if str(mid) != str(sent.message_id)]
+            )
+
+        try:
+            asyncio.create_task(_cleanup_after_send())
+        except Exception:
+            pass
     else:
         data.setdefault("temp_bot_messages", []).append(sent.message_id)
-        if close_marker:
-            try:
-                await message.bot.delete_message(uid, int(close_marker.message_id))
-            except Exception:
-                pass
 
     return sent
 
 
 async def send_temp_photo(message: Message, photo, caption=None, reply_markup=None, parse_mode="HTML", clear_previous=True, clean_input_warnings=True):
     """
-    שליחת תמונת מוצר יציבה:
-    קודם מנקה אזהרות קלט, שולחת תמונה חדשה, אחר כך מנקה הודעות ישנות.
+    STABLE_UI_V2 לתמונות/באנרים:
+    קודם שולחים תמונה חדשה, בלי הודעת ניקוי ריקה, ואז מוחקים ישנות ברקע.
     """
     uid = message.from_user.id
 
@@ -781,13 +761,6 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
             pass
 
     old_ids = list(data.get("temp_bot_messages", []) or [])
-
-    close_marker = None
-    try:
-        if isinstance(reply_markup, InlineKeyboardMarkup):
-            close_marker = await _send_reply_keyboard_remove_marker(message)
-    except Exception:
-        close_marker = None
 
     sent = await message.answer_photo(
         photo=photo,
@@ -799,26 +772,22 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
     remember_temp_bot_message(uid, sent)
     data["product_photo_message_id"] = sent.message_id
 
-    cleanup_ids = list(old_ids)
-    if close_marker:
-        cleanup_ids.append(close_marker.message_id)
-
     if clear_previous:
         data["temp_bot_messages"] = [sent.message_id]
 
-        for message_id in cleanup_ids:
-            try:
-                if int(message_id) != int(sent.message_id):
-                    await message.bot.delete_message(uid, int(message_id))
-            except Exception:
-                pass
+        async def _cleanup_after_send():
+            await _delete_messages_safely(
+                message.bot,
+                uid,
+                [mid for mid in old_ids if str(mid) != str(sent.message_id)]
+            )
+
+        try:
+            asyncio.create_task(_cleanup_after_send())
+        except Exception:
+            pass
     else:
         data.setdefault("temp_bot_messages", []).append(sent.message_id)
-        if close_marker:
-            try:
-                await message.bot.delete_message(uid, int(close_marker.message_id))
-            except Exception:
-                pass
 
     return sent
 
@@ -861,15 +830,6 @@ async def reset_customer_to_main_menu(message, text):
     uid = message.from_user.id
     await cleanup_customer_order_screens(message.bot, uid)
 
-    try:
-        sent_cleanup = await message.answer("\u2063", reply_markup=ReplyKeyboardRemove())
-        try:
-            await sent_cleanup.delete()
-        except Exception:
-            pass
-    except Exception:
-        pass
-
     users.setdefault(uid, {"cart": []})
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
@@ -887,15 +847,6 @@ async def reset_customer_to_main_menu(message, text):
 async def reset_callback_customer_to_main_menu(callback, text):
     uid = callback.from_user.id
     await cleanup_customer_order_screens(callback.message.bot, uid)
-
-    try:
-        sent_cleanup = await callback.message.answer("\u2063", reply_markup=ReplyKeyboardRemove())
-        try:
-            await sent_cleanup.delete()
-        except Exception:
-            pass
-    except Exception:
-        pass
 
     users.setdefault(uid, {"cart": []})
     users[uid]["step"] = "main"
@@ -1893,12 +1844,8 @@ class CustomerCallbackMessage:
         except Exception:
             pass
 
+        # STABLE_UI_V2: לא שולחים הודעת ניקוי ריקה — היא יוצרת בועה לבנה ותקיעה.
         cleanup_msg = None
-        if is_inline_screen:
-            try:
-                cleanup_msg = await self.message.answer("⁣", reply_markup=ReplyKeyboardRemove())
-            except Exception:
-                cleanup_msg = None
 
         old_ids = []
         if not skip_delete:
@@ -1954,16 +1901,35 @@ class CustomerCallbackMessage:
         # אותו עיקרון גם לתמונות מוצר/באנרים.
         skip_delete = bool(getattr(self, "_skip_inline_auto_delete_once", False))
 
+        old_ids = []
         if not skip_delete:
             try:
-                await delete_temp_bot_messages(self.bot, self.from_user.id)
+                old_ids = list(users.setdefault(self.from_user.id, {"cart": []}).get("temp_bot_messages", []) or [])
             except Exception:
-                pass
+                old_ids = []
 
         sent = await self.message.answer_photo(*args, **kwargs)
 
         try:
-            users.setdefault(self.from_user.id, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+            data = users.setdefault(self.from_user.id, {"cart": []})
+            data["temp_bot_messages"] = [sent.message_id]
+        except Exception:
+            pass
+
+        async def _cleanup_after_send():
+            ids_to_delete = list(old_ids)
+            try:
+                ids_to_delete.append(self.message_id)
+            except Exception:
+                pass
+            await _delete_messages_safely(
+                self.bot,
+                self.from_user.id,
+                [mid for mid in ids_to_delete if str(mid) != str(sent.message_id)]
+            )
+
+        try:
+            asyncio.create_task(_cleanup_after_send())
         except Exception:
             pass
 
@@ -3330,12 +3296,6 @@ async def start(message: Message):
         "step": "start",
         "temp_bot_messages": []
     }
-
-    cleanup_msg = None
-    try:
-        cleanup_msg = await message.answer("\u2063", reply_markup=ReplyKeyboardRemove())
-    except Exception:
-        cleanup_msg = None
 
     customer_name = message.from_user.first_name or "לקוח יקר"
 
@@ -5517,15 +5477,6 @@ async def handle_shop(message: Message):
         data["step"] = "support_chat"
         data.pop("support_chat_warned", None)
         data.pop("support_message_warning_sent", None)
-
-        try:
-            cleanup_msg = await message.answer("\u2063", reply_markup=ReplyKeyboardRemove())
-            try:
-                await cleanup_msg.delete()
-            except Exception:
-                pass
-        except Exception:
-            pass
 
         await send_temp_message(
             message,
