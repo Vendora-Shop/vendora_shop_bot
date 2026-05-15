@@ -1042,10 +1042,8 @@ def widen_main_menu_caption_text(text):
 
 
 def main_menu_caption_text():
-    # MAIN_MENU_FINAL_RTL_BLOCK
     return rtl(
-        "<b>💎 תפריט ראשי</b>\n"
-        "בחרו פעולה:"
+        "<b>💎 תפריט ראשי</b> — בחרו פעולה:"
     )
 
 
