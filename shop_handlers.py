@@ -3197,49 +3197,25 @@ async def start(message: Message):
     last_run = START_LAST_RUN.get(uid, 0)
     if now - last_run < START_DEBOUNCE_SECONDS:
         try:
-            await message.delete()
+            asyncio.create_task(message.delete())
         except Exception:
             pass
         return
     START_LAST_RUN[uid] = now
 
+    # START_FAST_RESPONSE_FIX
+    # שולחים את המסך החדש מיד, ורק אחר כך מנקים הודעות ישנות ברקע.
+    # זה מונע מצב שבו כפתור Start/Menu הכחול של Telegram נשאר תקוע כמה שניות
+    # בזמן שהבוט מוחק הודעות, סוגר מקלדות ומנקה מסכים קודמים.
+    old_data = users.get(uid) or {}
+    old_temp_ids = list(old_data.get("temp_bot_messages", []) or [])
 
-    # מוחק את הודעת /start של הלקוח כדי שלא יצטברו הרבה /start בצ'אט.
-    try:
-        await message.delete()
-    except Exception:
-        pass
-
-    # מנקה אזהרות קלט ישנות, אם היו.
-    try:
-        await cleanup_input_warnings(message.bot, uid)
-    except Exception:
-        pass
-
-    # סוגר מקלדת Reply אם נשארה פתוחה ממסך קודם.
-    await force_close_phone_keyboard(message)
-
-    # מנקה מסכים זמניים קודמים.
-    old_data = users.get(uid)
-    if old_data:
-        try:
-            await delete_temp_bot_messages(message.bot, uid)
-        except Exception:
-            pass
-
-    # מוחק תפריט ראשי קודם שנשמר בקובץ/זיכרון.
+    old_menu_id = None
     try:
         store = load_customer_menu_store()
         old_menu_id = store.get(str(uid))
-        if old_menu_id:
-            try:
-                await message.bot.delete_message(uid, int(old_menu_id))
-            except Exception:
-                pass
-            store.pop(str(uid), None)
-            save_customer_menu_store(store)
     except Exception:
-        pass
+        old_menu_id = None
 
     users[uid] = {
         "cart": [],
@@ -3269,11 +3245,58 @@ async def start(message: Message):
     except Exception:
         pass
 
+    async def _cleanup_start_screen_after_response():
+        # ניקוי ברקע בלבד — לא חוסם את פתיחת המסך ללקוח.
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        try:
+            await cleanup_input_warnings(message.bot, uid)
+        except Exception:
+            pass
+
+        # סוגר ReplyKeyboard ישן אם נשאר, אבל לא לפני פתיחת המסך החדש.
+        try:
+            cleanup_msg = await message.answer("\u2063", reply_markup=ReplyKeyboardRemove())
+            try:
+                await cleanup_msg.delete()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        for mid in old_temp_ids[-40:]:
+            try:
+                if int(mid) != int(sent.message_id):
+                    await message.bot.delete_message(uid, int(mid))
+            except Exception:
+                pass
+
+        if old_menu_id:
+            try:
+                if int(old_menu_id) != int(sent.message_id):
+                    await message.bot.delete_message(uid, int(old_menu_id))
+            except Exception:
+                pass
+
+        try:
+            store = load_customer_menu_store()
+            store[str(uid)] = int(sent.message_id)
+            save_customer_menu_store(store)
+        except Exception:
+            pass
+
+    try:
+        asyncio.create_task(_cleanup_start_screen_after_response())
+    except Exception:
+        pass
+
 
 @router.message(Command("menu"))
 async def menu_command(message: Message):
     await start(message)
-
 
 @router.message(F.text == "👤 הפרטים שלי")
 async def my_details(message: Message):
