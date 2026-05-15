@@ -913,8 +913,13 @@ async def send_main_menu_with_banner(message: Message, text, banner_key=None, re
     except Exception:
         menu_text = text
 
+    try:
+        menu_text_to_send = widen_inline_screen_text(menu_text)
+    except Exception:
+        menu_text_to_send = menu_text
+
     sent_menu = await message.answer(
-        menu_text,
+        menu_text_to_send,
         reply_markup=reply_markup,
         parse_mode=parse_mode
     )
