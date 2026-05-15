@@ -942,7 +942,7 @@ async def send_main_menu_with_banner(message: Message, text, banner_key=None, re
 
 
 
-async def send_main_menu_greeting_banner_caption(message: Message, greeting_text, caption_text, banner_key=None, reply_markup=None, parse_mode="HTML"):
+async def send_main_menu_greeting_banner_caption(message: Message, greeting_text=None, caption_text="", banner_key=None, reply_markup=None, parse_mode="HTML"):
     """
     MAIN_MENU_GREETING_THEN_BANNER_CAPTION_FIX
     זרימה לתפריט ראשי:
@@ -958,10 +958,12 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
     data = users.setdefault(uid, {"cart": []})
     old_ids = list(data.get("temp_bot_messages", []) or [])
 
-    sent_greeting = await message.answer(
-        greeting_text,
-        parse_mode=parse_mode
-    )
+    sent_greeting = None
+    if greeting_text:
+        sent_greeting = await message.answer(
+            greeting_text,
+            parse_mode=parse_mode
+        )
 
     banner_path = None
     try:
@@ -989,7 +991,10 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
             parse_mode=parse_mode
         )
 
-    new_ids = [sent_greeting.message_id, sent_menu.message_id]
+    new_ids = []
+    if sent_greeting:
+        new_ids.append(sent_greeting.message_id)
+    new_ids.append(sent_menu.message_id)
     data["temp_bot_messages"] = new_ids
 
     async def _cleanup_after_main_menu_send():
@@ -1007,7 +1012,7 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
     return sent_menu
 
 
-async def reset_customer_to_main_menu(message, text):
+async def reset_customer_to_main_menu(message, text=None):
     uid = message.from_user.id
     await cleanup_customer_order_screens(message.bot, uid)
 
@@ -1015,9 +1020,12 @@ async def reset_customer_to_main_menu(message, text):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    sent = await send_ui_banner_message(
+    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:\u00A0\u00A0\u00A0\u00A0\u00A0"
+
+    sent = await send_main_menu_greeting_banner_caption(
         message,
-        text,
+        greeting_text=None,
+        caption_text=menu_caption_text,
         banner_key="main_menu",
         reply_markup=main_keyboard(uid),
         parse_mode="HTML"
@@ -1026,7 +1034,8 @@ async def reset_customer_to_main_menu(message, text):
     return sent
 
 
-async def reset_callback_customer_to_main_menu(callback, text):
+
+async def reset_callback_customer_to_main_menu(callback, text=None):
     uid = callback.from_user.id
     await cleanup_customer_order_screens(callback.message.bot, uid)
 
@@ -1034,15 +1043,19 @@ async def reset_callback_customer_to_main_menu(callback, text):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    sent = await send_ui_banner_message(
+    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:\u00A0\u00A0\u00A0\u00A0\u00A0"
+
+    sent = await send_main_menu_greeting_banner_caption(
         callback.message,
-        text,
+        greeting_text=None,
+        caption_text=menu_caption_text,
         banner_key="main_menu",
         reply_markup=main_keyboard(uid),
         parse_mode="HTML"
     )
 
     return sent
+
 
 
 def is_button_only_step_for_customer(step):
@@ -3501,7 +3514,7 @@ async def start(message: Message):
         parse_mode="HTML"
     )
 
-    users[uid]["temp_bot_messages"] = [sent.message_id]
+    # helper already saved greeting + banner/menu message ids in temp_bot_messages
 
     try:
         remember_customer_main_menu_message(uid, sent.message_id)
@@ -4524,9 +4537,13 @@ async def back_to_main_menu(message: Message):
 
     users[uid]["step"] = "main"
 
-    await send_temp_message(
+    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:\u00A0\u00A0\u00A0\u00A0\u00A0"
+
+    await send_main_menu_greeting_banner_caption(
         message,
-        widen_inline_screen_text(widen_inline_screen_text(widen_inline_screen_text(widen_inline_screen_text(rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה:"))))),
+        greeting_text=None,
+        caption_text=menu_caption_text,
+        banner_key="main_menu",
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
