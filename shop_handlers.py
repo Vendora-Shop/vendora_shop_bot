@@ -1419,8 +1419,9 @@ def products_keyboard(category):
     return _inline(rows)
 
 def cart_keyboard():
-    # CART_NAVIGATION_FIX
-    # גם אחרי הוספת מוצר חייבת להיות דרך לחזור לתפריט הראשי בלי לאבד את הסל.
+    # CART_NAVIGATION_FIX_FINAL
+    # במסך סל עם מוצרים חייב להיות ניווט ברור:
+    # המשך הזמנה / הוסף מוצר / חזרה לתפריט / ריקון סל / ביטול.
     return _inline([
         [
             _btn("✅ המשך להזמנה", "ui:nav:checkout"),
@@ -1478,61 +1479,45 @@ def quantity_inline_keyboard(selected_qty):
 
 
 def confirm_keyboard():
-    # ORDER_SUMMARY_NAVIGATION_FIX
+    # GLASS_COMPACT_V2_CONFIRM
     return _inline([
         [_btn("✅ אשר הזמנה", "ui:order:confirm")],
         [
-            _btn("↩️ חזרה לשלב קודם", "ui:order:back_prev"),
-            _btn("⬅️ חזרה לסל", "ui:fulfillment:back_cart"),
-        ],
-        [
-            _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
+            _btn("↩️ חזרה", "ui:order:back_prev"),
             _btn("✖️ ביטול", "ui:nav:cancel"),
         ],
     ])
 
 
 def payment_keyboard():
-    # PAYMENT_NAVIGATION_FIX
+    # GLASS_COMPACT_V2_PAYMENT
     return _inline([
         [_btn("✅ אישור תשלום", "ui:payment:ok")],
         [
-            _btn("↩️ חזרה לסיכום", "ui:payment:back_summary"),
-            _btn("⬅️ חזרה לסל", "ui:fulfillment:back_cart"),
-        ],
-        [
-            _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
+            _btn("↩️ סיכום", "ui:payment:back_summary"),
             _btn("✖️ ביטול", "ui:payment:cancel"),
         ],
     ])
 
 
 def use_saved_details_keyboard():
-    # SAVED_DETAILS_NAVIGATION_FIX
+    # GLASS_COMPACT_V2_SAVED
     return _inline([
         [_btn("✅ פרטים שמורים", "ui:saved:continue")],
         [_btn("📝 פרטים חדשים", "ui:saved:new")],
         [
             _btn("↩️ משלוח/איסוף", "ui:fulfillment:back"),
-            _btn("⬅️ חזרה לסל", "ui:fulfillment:back_cart"),
-        ],
-        [
-            _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
             _btn("✖️ ביטול", "ui:nav:cancel"),
         ],
     ])
 
 
 def manual_details_keyboard():
-    # MANUAL_DETAILS_NAVIGATION_FIX
+    # GLASS_COMPACT_V2_MANUAL
     return _inline([
         [_btn("✅ פרטים שמורים", "ui:saved:continue")],
         [
             _btn("↩️ משלוח/איסוף", "ui:fulfillment:back"),
-            _btn("⬅️ חזרה לסל", "ui:fulfillment:back_cart"),
-        ],
-        [
-            _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
             _btn("✖️ ביטול", "ui:nav:cancel"),
         ],
     ])
@@ -1834,17 +1819,14 @@ def support_customer_keyboard(user_id=None):
     return support_open_ticket_keyboard(user_id)
 
 def fulfillment_keyboard():
-    # FULFILLMENT_NAVIGATION_FIX
+    # GLASS_COMPACT_V2_FULFILLMENT
     return _inline([
         [
             _btn("🚚 משלוח", "ui:fulfillment:delivery"),
             _btn("🏬 איסוף", "ui:fulfillment:pickup"),
         ],
         [
-            _btn("⬅️ חזרה לסל", "ui:fulfillment:back_cart"),
-            _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
-        ],
-        [
+            _btn("↩️ סל", "ui:fulfillment:back_cart"),
             _btn("✖️ ביטול", "ui:nav:cancel"),
         ],
     ])
@@ -2375,10 +2357,11 @@ def cart_keyboard():
 
 
 def empty_cart_keyboard():
-    # GLASS_COMPACT_V2_EMPTY_CART
+    # EMPTY_CART_LOGIC_FIX_FINAL
+    # בסל ריק מציגים רק פעולות הגיוניות.
     return _inline([
-        [_btn("🛍️ חנות", "ui:main:shop")],
-        [_btn("↩️ תפריט", "ui:nav:main")],
+        [_btn("🛍️ עבור לחנות", "ui:main:shop")],
+        [_btn("⬅️ חזרה לתפריט", "ui:nav:main")],
     ])
 
 
@@ -3886,8 +3869,8 @@ async def add_more(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
 
-    # CART_PRESERVE_ADD_MORE_FIX
-    # לא מאפסים את המשתמש ולא את הסל. רק מחזירים לבחירת קטגוריה.
+    # CART_PRESERVE_ADD_MORE_FIX_FINAL
+    # לא מאפסים סל. רק חוזרים למסך החנות/קטגוריות.
     data = users.setdefault(uid, {"cart": [], "step": None})
     data.setdefault("cart", [])
     data["step"] = "browse_products"
@@ -3906,13 +3889,12 @@ async def show_cart(message: Message):
     uid = message.from_user.id
     data = users.setdefault(uid, {"cart": []})
 
-    # CART_VIEW_PRESERVE_FIX
-    # פתיחת הסל לא מאפסת את הסל. רק מנקה מסכים ישנים ומציגה את מצב הסל.
+    # CART_VIEW_PRESERVE_FIX_FINAL
+    # פתיחת הסל לא מאפסת את הסל.
     await cleanup_customer_order_screens(message.bot, uid)
 
     cart = data.setdefault("cart", [])
     text = cart_text(cart)
-
     keyboard = empty_cart_keyboard() if not cart else cart_keyboard()
 
     await send_ui_banner_message(
