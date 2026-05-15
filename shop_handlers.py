@@ -653,6 +653,7 @@ async def force_close_phone_keyboard(message: Message):
             reply_markup=ReplyKeyboardRemove()
         )
         try:
+            await asyncio.sleep(0.15)
             await sent.delete()
         except Exception:
             pass
@@ -2898,12 +2899,12 @@ async def customer_inline_ui_router(callback: CallbackQuery):
     try:
         if raw == "ui:main:shop": text = "🛒 חנות"
         elif raw == "ui:main:details":
+            await answer_callback_safely(callback)
             await show_my_details_inline(callback)
-            await callback.answer()
             return
         elif raw == "ui:main:orders":
+            await answer_callback_safely(callback)
             await show_my_orders_inline(callback)
-            await callback.answer()
             return
         elif raw == "ui:main:addresses": text = "🏠 הכתובות שלי"
         elif raw == "ui:main:support": text = "📞 שירות לקוחות"
@@ -3176,8 +3177,8 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             await callback.answer("פעולה לא זמינה כרגע.", show_alert=True)
             return
 
+        await answer_callback_safely(callback)
         await _dispatch_customer_inline(callback, text)
-        await callback.answer()
 
     except Exception as e:
         print(f"CUSTOMER_INLINE_UI_ERROR: {type(e).__name__}: {e}")
@@ -3922,6 +3923,7 @@ async def quantity_inline_action(callback: CallbackQuery):
         data.pop("qty_manual_lock", None)
         data.pop("qty_manual_invalid_warned", None)
 
+        await answer_callback_safely(callback)
         await delete_temp_bot_messages(callback.message.bot, uid)
 
         proxy = CustomerCallbackMessage(callback, "⬅️ חזרה למוצרים")
@@ -3931,7 +3933,6 @@ async def quantity_inline_action(callback: CallbackQuery):
             reply_markup=products_keyboard(category),
             parse_mode="HTML"
         )
-        await callback.answer()
         return
 
     product = data.get("selected_product") or data.get("current_product")
@@ -4093,6 +4094,7 @@ async def quantity_inline_action(callback: CallbackQuery):
         data.pop("qty_manual_lock", None)
         data.pop("qty_manual_invalid_warned", None)
 
+        await answer_callback_safely(callback, "המוצר נוסף לסל.")
         await delete_temp_bot_messages(callback.message.bot, uid)
 
         sent = await callback.message.answer(
@@ -4102,7 +4104,6 @@ async def quantity_inline_action(callback: CallbackQuery):
         )
         users.setdefault(uid, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
 
-        await callback.answer("המוצר נוסף לסל.")
         return
 
     await callback.answer("פעולה לא תקינה.", show_alert=True)
