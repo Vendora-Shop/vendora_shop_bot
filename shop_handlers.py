@@ -3556,7 +3556,7 @@ async def start(message: Message):
     customer_name = message.from_user.first_name or "לקוח"
 
     greeting_text = f"<b>👋 שלום {h(customer_name)}</b>"
-    action_text = f"{RTL}<b>בחר פעולה:</b>"
+    action_text = ("\u00A0" * 34) + "בחר פעולה:"
 
     sent = await send_main_menu_banner_then_action_buttons(
         message,
