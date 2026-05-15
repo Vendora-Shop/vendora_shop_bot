@@ -428,24 +428,43 @@ def remember_customer_main_menu_message(uid, message_id):
 
 
 BANNER_FILE_ID_CACHE_FILE = "customer_banner_file_ids.json"
+BANNER_FILE_ID_MEMORY_CACHE = None
 
 
 def load_banner_file_ids():
+    global BANNER_FILE_ID_MEMORY_CACHE
+
+    if BANNER_FILE_ID_MEMORY_CACHE is not None:
+        return BANNER_FILE_ID_MEMORY_CACHE
+
     try:
         if os.path.exists(BANNER_FILE_ID_CACHE_FILE):
             with open(BANNER_FILE_ID_CACHE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                BANNER_FILE_ID_MEMORY_CACHE = json.load(f)
+                return BANNER_FILE_ID_MEMORY_CACHE
     except Exception as e:
         print(f"BANNER_FILE_ID_CACHE_LOAD_ERROR: {type(e).__name__}: {e}")
-    return {}
+
+    BANNER_FILE_ID_MEMORY_CACHE = {}
+    return BANNER_FILE_ID_MEMORY_CACHE
 
 
 def save_banner_file_ids(data):
+    global BANNER_FILE_ID_MEMORY_CACHE
+    BANNER_FILE_ID_MEMORY_CACHE = dict(data or {})
+
+    # שמירה לדיסק מתבצעת ברקע כדי לא לעכב פתיחת מסכים.
+    async def _save_async(snapshot):
+        try:
+            with open(BANNER_FILE_ID_CACHE_FILE, "w", encoding="utf-8") as f:
+                json.dump(snapshot, f, ensure_ascii=False)
+        except Exception as e:
+            print(f"BANNER_FILE_ID_CACHE_SAVE_ERROR: {type(e).__name__}: {e}")
+
     try:
-        with open(BANNER_FILE_ID_CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False)
-    except Exception as e:
-        print(f"BANNER_FILE_ID_CACHE_SAVE_ERROR: {type(e).__name__}: {e}")
+        asyncio.create_task(_save_async(dict(BANNER_FILE_ID_MEMORY_CACHE)))
+    except Exception:
+        pass
 
 
 async def answer_cached_banner_photo(message: Message, banner_key, caption=None, reply_markup=None, parse_mode="HTML"):
@@ -1052,7 +1071,7 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
     ids_to_delete = [mid for mid in old_ids if str(mid) not in {str(x) for x in new_ids}]
     if ids_to_delete and not greeting_text:
         try:
-            asyncio.create_task(_delete_messages_safely(message.bot, uid, ids_to_delete[-25:]))
+            asyncio.create_task(_delete_messages_safely(message.bot, uid, ids_to_delete[-15:]))
         except Exception:
             pass
 
@@ -3653,6 +3672,9 @@ async def start(message: Message):
     greeting_text = f"<b>👋 שלום {h(customer_name)}</b>"
     menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
 
+    # START_FAST_CRITICAL_PATH_FIX
+    # לא קוראים/שומרים קבצי JSON ולא מוחקים הודעות לפני שליחת התפריט.
+    # כל ניקוי נעשה אחרי שהלקוח כבר רואה את התפריט.
     sent = await send_main_menu_greeting_banner_caption(
         message,
         greeting_text=greeting_text,
@@ -3662,21 +3684,20 @@ async def start(message: Message):
         parse_mode="HTML"
     )
 
-    try:
-        remember_customer_main_menu_message(uid, sent.message_id)
-    except Exception:
-        pass
-
     async def _cleanup_start_after_send():
         try:
             await message.delete()
         except Exception:
             pass
 
-        # ניקוי ישן מוגבל בלבד וברקע, כדי שלא יהיו תקיעות.
+        try:
+            remember_customer_main_menu_message(uid, sent.message_id)
+        except Exception:
+            pass
+
         try:
             current_ids = set(str(x) for x in users.get(uid, {}).get("temp_bot_messages", []) or [])
-            ids_to_delete = [mid for mid in old_temp_ids[-25:] if str(mid) not in current_ids]
+            ids_to_delete = [mid for mid in old_temp_ids[-15:] if str(mid) not in current_ids]
             if ids_to_delete:
                 await _delete_messages_safely(message.bot, uid, ids_to_delete)
         except Exception:
