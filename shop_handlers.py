@@ -2296,9 +2296,14 @@ def _wide_buttons(buttons):
 
 def main_keyboard(user_id=None):
     # GLASS_COMPACT_V2_MAIN_MENU
-    # עיצוב בלבד: תפריט קצר וקומפקטי יותר, דומה יותר למראה "זכוכית".
+    # CART_ACCESS_LOGIC_FIX
+    # הסל חייב להיות נגיש גם מהתפריט הראשי.
+    # אחרת לקוח שהוסיף מוצר וחזר לתפריט לא יכול לבדוק מה יש בסל.
     rows = [
-        [_btn("🛍️ חנות", "ui:main:shop")],
+        [
+            _btn("🛍️ חנות", "ui:main:shop"),
+            _btn("🛒 הסל שלי", "ui:nav:cart"),
+        ],
         [
             _btn("👤 הפרופיל שלי", "ui:main:details"),
             _btn("📋 ההזמנות שלי", "ui:main:orders"),
@@ -3857,14 +3862,20 @@ async def back_categories(message: Message):
 async def add_more(message: Message):
     await consume_customer_click(message)
     uid = message.from_user.id
-    users.setdefault(uid, {"cart": [], "step": None})
-    users[uid]["step"] = "browse_products"
-    await send_temp_message(
+
+    # CART_PRESERVE_ADD_MORE_FIX
+    # לא מאפסים את המשתמש ולא את הסל. רק מחזירים לבחירת קטגוריה.
+    data = users.setdefault(uid, {"cart": [], "step": None})
+    data.setdefault("cart", [])
+    data["step"] = "browse_products"
+
+    await send_shop_home_screen(
         message,
-        "<b>➕ הוספת מוצר</b>\n\nבחר קטגוריה:",
+        "🛍️ <b>חנות</b> — בחר קטגוריה:",
         reply_markup=categories_keyboard(),
         parse_mode="HTML"
     )
+
 
 
 @router.message(F.text == "🛒 הסל שלי")
@@ -3872,14 +3883,13 @@ async def show_cart(message: Message):
     uid = message.from_user.id
     data = users.setdefault(uid, {"cart": []})
 
+    # CART_VIEW_PRESERVE_FIX
+    # פתיחת הסל לא מאפסת את הסל. רק מנקה מסכים ישנים ומציגה את מצב הסל.
     await cleanup_customer_order_screens(message.bot, uid)
 
     cart = data.setdefault("cart", [])
     text = cart_text(cart)
 
-    # EMPTY_CART_LOGIC_FIX
-    # אם הסל ריק — מציגים רק הוסף מוצר / חזרה לתפריט.
-    # אם יש מוצרים — מציגים המשך הזמנה / הוסף מוצר / ריקון / ביטול.
     keyboard = empty_cart_keyboard() if not cart else cart_keyboard()
 
     await send_ui_banner_message(
