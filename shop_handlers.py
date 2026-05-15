@@ -1019,7 +1019,7 @@ async def reset_customer_to_main_menu(message, text=None):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    menu_caption_text = f"{RTL}\u200F<b>💎 תפריט ראשי</b> — בחרו פעולה:"
+    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
 
     sent = await send_main_menu_greeting_banner_caption(
         message,
@@ -1043,7 +1043,7 @@ async def reset_callback_customer_to_main_menu(callback, text=None):
     users[uid]["step"] = "main"
     users[uid].setdefault("temp_bot_messages", [])
 
-    menu_caption_text = f"{RTL}\u200F<b>💎 תפריט ראשי</b> — בחרו פעולה:"
+    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
 
     sent = await send_main_menu_greeting_banner_caption(
         callback.message,
@@ -3504,7 +3504,7 @@ async def start(message: Message):
     customer_name = message.from_user.first_name or "לקוח"
 
     greeting_text = f"<b>👋 שלום {h(customer_name)}</b>"
-    menu_caption_text = f"{RTL}\u200F<b>💎 תפריט ראשי</b> — בחרו פעולה:"
+    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
 
     sent = await send_main_menu_greeting_banner_caption(
         message,
@@ -4538,7 +4538,7 @@ async def back_to_main_menu(message: Message):
 
     users[uid]["step"] = "main"
 
-    menu_caption_text = f"{RTL}\u200F<b>💎 תפריט ראשי</b> — בחרו פעולה:"
+    menu_caption_text = f"{RTL}<b>💎 תפריט ראשי</b> — בחרו פעולה:"
 
     await send_main_menu_greeting_banner_caption(
         message,
