@@ -3442,11 +3442,12 @@ async def customer_inline_ui_router(callback: CallbackQuery):
 
     if raw == "ui:personal:addresses":
         await answer_callback_safely(callback)
-        await cleanup_customer_order_screens(callback.message.bot, uid)
 
-        # משתמשים בזרימה הקיימת של הכתובות דרך טקסט מדומה, כדי לא לשבור לוגיקה קיימת.
+        # ADDRESS_PERSONAL_ROUTE_FIX
+        # לא שולחים ל-handle_shop, כי שם אין טיפול ישיר ב-"🏠 הכתובות שלי".
+        # מפעילים את פונקציית הכתובות המקורית בדיוק כמו בכפתור רגיל.
         proxy = CustomerCallbackMessage(callback, "🏠 הכתובות שלי")
-        await handle_shop(proxy)
+        await my_addresses(proxy)
         return
 
     # INFO_LEGAL_DIRECT_CALLBACK_FIX
