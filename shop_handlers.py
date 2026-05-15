@@ -3627,6 +3627,8 @@ async def shop(message: Message):
 
     users[uid]["step"] = "browse_products"
 
+    await send_shop_home_banner(message)
+
     uid = message.from_user.id
     users.setdefault(uid, {"cart": [], "step": None})
 
