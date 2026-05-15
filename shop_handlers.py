@@ -2754,14 +2754,12 @@ async def show_support_subjects_screen(message: Message, uid):
 
     await send_support_banner_screen(
         message,
-        rtl(
-            "<b>💬 שירות לקוחות</b>\n\n"
-            "ברוכים הבאים למרכז השירות של Vendora.\n"
-            "בחרו את נושא הפנייה הרצוי:"
-        ),
+        rtl("<b>💬 שירות לקוחות</b> — בחרו את נושא הפנייה:"),
         reply_markup=support_subject_keyboard(),
         parse_mode="HTML"
     )
+
+
 
 
 def support_subject_keyboard():
@@ -3210,10 +3208,7 @@ async def support_inline_router(callback: CallbackQuery):
             await _answer_ok()
 
             await _replace_screen(
-                rtl(
-                    "<b>📞 שירות לקוחות</b>\n\n"
-                    "בחר את נושא הפנייה:"
-                ),
+                rtl("<b>💬 שירות לקוחות</b> — בחרו את נושא הפנייה:"),
                 InlineKeyboardMarkup(inline_keyboard=rows)
             )
             return
@@ -3881,11 +3876,7 @@ Vendora תמשיך לפעול לשיפור הנגישות והחוויה עבו�
                 callback.message,
                 "support",
                 caption=widen_inline_screen_text(
-                    rtl(
-                        "<b>💬 שירות לקוחות</b>\n\n"
-                        "ברוכים הבאים למרכז השירות של Vendora.\n"
-                        "בחרו את נושא הפנייה הרצוי:"
-                    )
+                    rtl("<b>💬 שירות לקוחות</b> — בחרו את נושא הפנייה:")
                 ),
                 reply_markup=support_subject_keyboard(),
                 parse_mode="HTML"
@@ -5926,11 +5917,7 @@ async def handle_shop(message: Message):
             await send_support_banner_screen(
                 message,
                 widen_inline_screen_text(
-                    rtl(
-                        "<b>💬 שירות לקוחות</b>\n\n"
-                        "ברוכים הבאים למרכז השירות של Vendora.\n"
-                        "בחרו את נושא הפנייה הרצוי:"
-                    )
+                    rtl("<b>💬 שירות לקוחות</b> — בחרו את נושא הפנייה:")
                 ),
                 reply_markup=support_subject_keyboard(),
                 parse_mode="HTML"
