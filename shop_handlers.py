@@ -1031,10 +1031,13 @@ def rtl_caption_right(text):
 
 
 def main_menu_caption_text():
-    # MAIN_MENU_FORCE_RIGHT_LIKE_SUPPORT_FINAL
-    # caption ייעודי לתפריט הראשי.
-    # לא משתמשים ב-widen_inline_screen_text ולא ב-UI_WIDE_LINE.
-    return rtl_caption_right("<b>💎 תפריט ראשי</b>\n\nבחרו פעולה:")
+    # MAIN_MENU_RTL_EACH_LINE_FIX
+    # Telegram iOS מפרש כל שורת caption בנפרד.
+    # לכן מוסיפים RLM בתחילת כל שורה, כדי שגם "בחרו פעולה:" ייצמד לימין.
+    return (
+        "\u200f<b>💎 תפריט ראשי</b>\n\n"
+        "\u200fבחרו פעולה:"
+    )
 
 
 
