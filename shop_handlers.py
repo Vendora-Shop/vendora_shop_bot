@@ -916,7 +916,7 @@ async def send_main_menu_with_banner(message: Message, text, banner_key=None, re
     # MAIN_MENU_WIDTH_MATCH_BANNER_FIX
     # רוחב הודעת התפריט קובע גם את רוחב הכפתורים שמתחתיה.
     # הערך הזה מכוון כדי להתקרב לרוחב הבאנר מעליו בלי להתרחב מדי.
-    menu_text_to_send = str(menu_text) + "\n" + ("\u00A0" * 74)
+    menu_text_to_send = str(menu_text) + "\n" + ("\u00A0" * 52)
 
     sent_menu = await message.answer(
         menu_text_to_send,
