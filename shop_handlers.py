@@ -2301,18 +2301,15 @@ def _wide_buttons(buttons):
 
 
 def main_keyboard(user_id=None):
-    # MAIN_MENU_INFO_LEGAL_UPDATE_FINAL
+    # MAIN_MENU_PERSONAL_AREA_UPDATE
+    # האזור האישי מרכז פרטים/הזמנות/כתובות בכפתור אחד.
     rows = [
         [
             _btn("🛍️ חנות", "ui:main:shop"),
             _btn("🛒 הסל שלי", "ui:nav:cart"),
         ],
         [
-            _btn("👤 הפרופיל שלי", "ui:main:details"),
-            _btn("📋 ההזמנות שלי", "ui:main:orders"),
-        ],
-        [
-            _btn("📍 הכתובות שלי", "ui:main:addresses"),
+            _btn("👤 האזור האישי", "ui:personal:menu"),
             _btn("💬 שירות לקוחות", "ui:main:support"),
         ],
         [
@@ -2321,6 +2318,7 @@ def main_keyboard(user_id=None):
         ],
     ]
 
+    # פאנל ניהול מוצג רק לאדמין.
     if user_id == ADMIN_ID:
         rows.append([_btn("🛡️ פאנל ניהול", "ui:main:admin")])
 
@@ -2370,6 +2368,16 @@ def cart_keyboard():
 
 
 
+
+
+
+def personal_area_keyboard():
+    return _inline([
+        [_btn("👤 הפרטים שלי", "ui:personal:details")],
+        [_btn("📋 ההזמנות שלי", "ui:personal:orders")],
+        [_btn("📍 הכתובות שלי", "ui:personal:addresses")],
+        [_btn("⬅️ חזרה לתפריט", "ui:nav:main")],
+    ])
 
 def legal_menu_keyboard():
     return _inline([
@@ -3423,6 +3431,50 @@ async def customer_inline_ui_router(callback: CallbackQuery):
             temp.append(callback.message.message_id)
     except Exception:
         pass
+
+    # PERSONAL_AREA_DIRECT_CALLBACK_FIX
+    # מרכז פרופיל/הזמנות/כתובות תחת כפתור אחד.
+    # לקוח בלי נתונים לא נחסם — מקבל הודעה מתאימה בכל מסך.
+    if raw == "ui:personal:menu":
+        await answer_callback_safely(callback)
+        await cleanup_customer_order_screens(callback.message.bot, uid)
+
+        body = rtl("""
+<b>👤 האזור האישי</b>
+
+כאן ניתן לצפות בפרטים השמורים שלך,
+בהזמנות שביצעת ובכתובות השמורות בחשבון.
+
+בחר פעולה:
+""")
+
+        sent = await callback.message.answer(
+            widen_inline_screen_text(body),
+            reply_markup=personal_area_keyboard(),
+            parse_mode="HTML"
+        )
+
+        users.setdefault(uid, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+        return
+
+    if raw == "ui:personal:details":
+        await answer_callback_safely(callback)
+        await show_my_details_inline(callback)
+        return
+
+    if raw == "ui:personal:orders":
+        await answer_callback_safely(callback)
+        await show_my_orders_inline(callback)
+        return
+
+    if raw == "ui:personal:addresses":
+        await answer_callback_safely(callback)
+        await cleanup_customer_order_screens(callback.message.bot, uid)
+
+        # משתמשים בזרימה הקיימת של הכתובות דרך טקסט מדומה, כדי לא לשבור לוגיקה קיימת.
+        proxy = CustomerCallbackMessage(callback, "🏠 הכתובות שלי")
+        await handle_shop(proxy)
+        return
 
     # INFO_LEGAL_DIRECT_CALLBACK_FIX
     # הכפתורים של אודות/מידע משפטי חייבים טיפול ישיר ולא דרך טקסט מדומה,
