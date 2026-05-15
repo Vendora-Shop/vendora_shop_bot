@@ -1002,10 +1002,11 @@ async def cleanup_customer_order_screens(bot, uid):
 
 
 def main_menu_caption_text():
-    # MAIN_MENU_RTL_CAPTION_FIX_V4
-    # מפרידים לשתי שורות כדי למנוע ערבוב RTL עם אימוג׳י/מקף.
-    # זה בנוי כמו caption נקי: כותרת לבד + פעולה לבד.
-    return rtl("<b>💎 תפריט ראשי</b>\nבחרו פעולה:")
+    # MAIN_MENU_MATCH_SUPPORT_STYLE
+    # בדיוק כמו שירות לקוחות:
+    # שורה ראשונה = כותרת בלבד
+    # שורה שנייה = טקסט פעולה בלבד
+    return rtl("<b>💎 תפריט ראשי</b>\n\nבחרו פעולה:")
 
 
 
