@@ -3461,7 +3461,6 @@ Vendora היא פלטפורמת קניות חכמה ומתקדמת,
         sent = await callback.message.answer(
             widen_inline_screen_text(body),
             reply_markup=_inline([
-                [_btn("⚖️ מידע משפטי", "ui:legal:menu")],
                 [_btn("⬅️ חזרה לתפריט", "ui:nav:main")],
             ]),
             parse_mode="HTML"
