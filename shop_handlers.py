@@ -3874,13 +3874,19 @@ async def show_cart(message: Message):
 
     await cleanup_customer_order_screens(message.bot, uid)
 
-    text = cart_text(data["cart"])
+    cart = data.setdefault("cart", [])
+    text = cart_text(cart)
+
+    # EMPTY_CART_LOGIC_FIX
+    # אם הסל ריק — מציגים רק הוסף מוצר / חזרה לתפריט.
+    # אם יש מוצרים — מציגים המשך הזמנה / הוסף מוצר / ריקון / ביטול.
+    keyboard = empty_cart_keyboard() if not cart else cart_keyboard()
 
     await send_ui_banner_message(
         message,
         text=text,
         banner_key="cart_banner",
-        reply_markup=cart_keyboard(),
+        reply_markup=keyboard,
         parse_mode="HTML"
     )
 
