@@ -4201,3 +4201,60 @@ async def admin_flow(message: Message):
         text = f"<b>🗑️ המוצר נמחק</b>\n\n{field('מוצר', txt)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
         await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
         return
+
+
+@router.message(F.text == "🧹 איפוס מערכת הזמנות")
+async def reset_orders_system_handler(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "confirm_reset_orders"}
+
+    await message.answer(
+        rtl(
+            "<b>⚠️ איפוס מערכת הזמנות</b>\n\n"
+            "פעולה זו תמחק את כל ההזמנות מהמערכת.\n"
+            "האם אתה בטוח שברצונך להמשיך?"
+        ),
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="✅ אשר איפוס")],
+                [KeyboardButton(text="❌ בטל איפוס")],
+            ],
+            resize_keyboard=True
+        ),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "✅ אשר איפוס")
+async def confirm_reset_orders_handler(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    try:
+        clear_all_orders_for_testing()
+    except Exception:
+        pass
+
+    admin_states[message.from_user.id] = {"step": "admin"}
+
+    await message.answer(
+        rtl("<b>✅ מערכת ההזמנות אופסה בהצלחה.</b>"),
+        reply_markup=admin_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "❌ בטל איפוס")
+async def cancel_reset_orders_handler(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "admin"}
+
+    await message.answer(
+        rtl("<b>❌ איפוס ההזמנות בוטל.</b>"),
+        reply_markup=admin_keyboard(),
+        parse_mode="HTML"
+    )
