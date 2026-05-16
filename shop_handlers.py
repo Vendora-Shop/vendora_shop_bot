@@ -9,6 +9,7 @@ import asyncio
 import time
 
 from config import ADMIN_ID
+from rate_limiter import is_rate_limited, rate_limit_message
 from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard, support_subject_keyboard
 from database import (
     get_active_products,
@@ -889,6 +890,35 @@ async def force_close_callback_phone_keyboard(callback: CallbackQuery):
     except Exception:
         pass
     return None
+
+
+
+async def check_customer_rate_limit(message: Message, action: str):
+    # CUSTOMER_RATE_LIMIT_CONNECT_V1
+    uid = message.from_user.id
+
+    if is_rate_limited(uid, action):
+        try:
+            await message.answer(rtl(rate_limit_message(action)), parse_mode="HTML")
+        except Exception:
+            pass
+        return True
+
+    return False
+
+
+async def check_customer_callback_rate_limit(callback: CallbackQuery, action: str = "callback"):
+    # CUSTOMER_RATE_LIMIT_CONNECT_V1
+    uid = callback.from_user.id
+
+    if is_rate_limited(uid, action):
+        try:
+            await callback.answer(rate_limit_message(action), show_alert=True)
+        except Exception:
+            pass
+        return True
+
+    return False
 
 
 async def send_temp_message(message: Message, text, reply_markup=None, parse_mode="HTML", clear_previous=True, disable_web_page_preview=None, clean_input_warnings=True):
@@ -3459,6 +3489,9 @@ async def support_inline_router(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("ui:"))
 async def customer_inline_ui_router(callback: CallbackQuery):
+    if await check_customer_callback_rate_limit(callback, "callback"):
+        return
+
     await force_close_callback_phone_keyboard(callback)
     uid = callback.from_user.id
     data = users.setdefault(uid, {"cart": [], "step": None})
@@ -4257,6 +4290,9 @@ async def start(message: Message):
 
 @router.message(Command("menu"))
 async def menu_command(message: Message):
+    if await check_customer_rate_limit(message, "start"):
+        return
+
     await start(message)
 
 @router.message(F.text == "👤 הפרטים שלי")
@@ -4546,6 +4582,9 @@ async def checkout(message: Message):
     # CHECKOUT_ANTI_DOUBLE_CLICK_FIX
     # מונע פתיחת שני מסכי checkout מלחיצה כפולה.
     await consume_customer_click(message)
+
+    if await check_customer_rate_limit(message, "checkout"):
+        return
 
     uid = message.from_user.id
     data = users.setdefault(uid, {"cart": []})
@@ -5416,6 +5455,9 @@ async def handle_shop(message: Message):
     uid = message.from_user.id
     txt = (message.text or "").strip()
     data = users.setdefault(uid, {"cart": []})
+
+    if await check_customer_rate_limit(message, "text"):
+        return
 
     # CUSTOMER_QTY_FREE_TEXT_MERGE_FIX
     # היה catch-all כפול בהמשך הקובץ. כדי שלא תהיה כפילות router.message(),
@@ -6544,6 +6586,9 @@ async def handle_shop(message: Message):
         await delete_temp_bot_messages(message.bot, uid)
 
         if not ticket_number:
+            if await check_customer_rate_limit(message, "support_ticket"):
+                return
+
             ticket_number = create_support_ticket(
                 telegram_id=uid,
                 telegram_name=message.from_user.full_name,
