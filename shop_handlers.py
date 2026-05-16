@@ -395,6 +395,44 @@ users = {}
 START_DEBOUNCE_SECONDS = 1.2
 START_LAST_RUN = {}
 
+CUSTOMER_ACTION_LAST_RUN = {}
+CUSTOMER_ACTION_LOCK_SECONDS = 1.0
+
+
+def is_duplicate_customer_action(uid, action_key, seconds=CUSTOMER_ACTION_LOCK_SECONDS):
+    """
+    GLOBAL_CUSTOMER_DOUBLE_CLICK_GUARD
+    מונע לחיצה כפולה מהירה על אותו כפתור/אותו callback.
+    לא משנה לוגיקה עסקית — רק מתעלם מפעולה זהה שחוזרת תוך זמן קצר.
+    """
+    try:
+        uid = int(uid)
+    except Exception:
+        return False
+
+    key = (uid, str(action_key or ""))
+    now = time.monotonic()
+    last = CUSTOMER_ACTION_LAST_RUN.get(key, 0)
+
+    if now - last < float(seconds):
+        return True
+
+    CUSTOMER_ACTION_LAST_RUN[key] = now
+
+    # ניקוי קטן כדי שלא יצטברו מפתחות ישנים.
+    try:
+        if len(CUSTOMER_ACTION_LAST_RUN) > 1000:
+            cutoff = now - 10
+            for old_key, old_time in list(CUSTOMER_ACTION_LAST_RUN.items()):
+                if old_time < cutoff:
+                    CUSTOMER_ACTION_LAST_RUN.pop(old_key, None)
+    except Exception:
+        pass
+
+    return False
+
+
+
 
 # ================== CUSTOMER MAIN MENU MESSAGE STORE ==================
 # שיתוף message_id של התפריט בין shop_handlers לבין admin_handlers.
@@ -676,11 +714,16 @@ def remember_customer_input_message(data: dict, message_obj):
 
 
 async def consume_customer_click(message: Message):
-    # CUSTOMER_INPUT_DELETE_FIX
-    # שומר ומוחק גם הודעות טקסט חופשי של לקוחות, למשל שם כתובת/עיר/רחוב.
+    # CUSTOMER_INPUT_DELETE_FIX + GLOBAL_CUSTOMER_DOUBLE_CLICK_GUARD
+    # שומר ומוחק הודעות לקוח ומסמן לחיצה כפולה כדי לא לפתוח שני חלונות.
     try:
         uid = message.from_user.id
         data = users.setdefault(uid, {"cart": []})
+
+        action_key = f"text:{str(getattr(message, 'text', '') or '').strip()}"
+        if is_duplicate_customer_action(uid, action_key):
+            data["_suppress_next_screen_send"] = True
+
         msg_id = getattr(message, "message_id", None)
         if msg_id:
             data.setdefault("customer_input_message_ids", []).append(msg_id)
@@ -837,6 +880,9 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
 
     data = users.setdefault(uid, {"cart": []})
 
+    if data.pop("_suppress_next_screen_send", False):
+        return None
+
     if clean_input_warnings:
         try:
             await cleanup_input_warnings(message.bot, uid)
@@ -892,6 +938,9 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
         users[uid] = {"cart": []}
 
     data = users.setdefault(uid, {"cart": []})
+
+    if data.pop("_suppress_next_screen_send", False):
+        return None
 
     if clean_input_warnings:
         try:
@@ -3089,6 +3138,10 @@ async def send_inline_screen_replace(callback: CallbackQuery, text, reply_markup
     await force_close_callback_phone_keyboard(callback)
     uid = callback.from_user.id
     data = users.setdefault(uid, {"cart": []})
+
+    if data.pop("_suppress_next_screen_send", False):
+        return None
+
     old_ids = list(data.get("temp_bot_messages", []) or [])
 
     try:
@@ -3136,6 +3189,10 @@ async def support_inline_router(callback: CallbackQuery):
     uid = callback.from_user.id
     data = users.setdefault(uid, {"cart": [], "step": None})
     raw = callback.data or ""
+
+    if is_duplicate_customer_action(uid, f"callback:{raw}"):
+        data["_suppress_next_screen_send"] = True
+        return
 
     subjects = [
         "📦 שאלה על הזמנה קיימת",
@@ -3313,6 +3370,10 @@ async def customer_inline_ui_router(callback: CallbackQuery):
     data = users.setdefault(uid, {"cart": [], "step": None})
     raw = callback.data or ""
     parts = raw.split(":")
+
+    if is_duplicate_customer_action(uid, f"callback:{raw}"):
+        data["_suppress_next_screen_send"] = True
+        return
 
     if raw.startswith("ui:support:"):
         return
@@ -4302,36 +4363,59 @@ async def edit_details(message: Message):
 
 @router.message(F.text == "✅ המשך להזמנה")
 async def checkout(message: Message):
+    # CHECKOUT_ANTI_DOUBLE_CLICK_FIX
+    # מונע פתיחת שני מסכי checkout מלחיצה כפולה.
     await consume_customer_click(message)
-    uid = message.from_user.id
-    data = users.get(uid)
 
-    if not data or not data.get("cart"):
-        await delete_temp_bot_messages(message.bot, uid)
-        await send_ui_banner_message(
-            message,
-            text=cart_text([], title="🛒 הסל שלך"),
-            banner_key="cart_banner",
-            reply_markup=empty_cart_keyboard(),
-            parse_mode="HTML"
-        )
-        users.setdefault(uid, {"cart": []})["step"] = "cart"
+    uid = message.from_user.id
+    data = users.setdefault(uid, {"cart": []})
+
+    if data.get("_suppress_next_screen_send"):
+        data.pop("_suppress_next_screen_send", None)
         return
 
-    await delete_temp_bot_messages(message.bot, uid)
+    if data.get("checkout_in_progress"):
+        return
 
-    data["step"] = "fulfillment_choice"
-    data["saved_profile"] = get_customer_profile(uid)
+    data["checkout_in_progress"] = True
 
-    await send_temp_message(
-        message,
-        rtl(
-            "<b>📦 איך תרצה לקבל את ההזמנה?</b>\n\n"
-            "בחר אחת מהאפשרויות:"
-        ),
-        reply_markup=fulfillment_keyboard(),
-        parse_mode="HTML"
-    )
+    try:
+        if not data or not data.get("cart"):
+            await delete_temp_bot_messages(message.bot, uid)
+            await send_ui_banner_message(
+                message,
+                text=cart_text([], title="🛒 הסל שלך"),
+                banner_key="cart_banner",
+                reply_markup=empty_cart_keyboard(),
+                parse_mode="HTML"
+            )
+            users.setdefault(uid, {"cart": []})["step"] = "cart"
+            return
+
+        await delete_temp_bot_messages(message.bot, uid)
+
+        data["step"] = "fulfillment_choice"
+        data["saved_profile"] = get_customer_profile(uid)
+
+        await send_temp_message(
+            message,
+            rtl(
+                "<b>📦 איך תרצה לקבל את ההזמנה?</b>\n\n"
+                "בחר אחת מהאפשרויות:"
+            ),
+            reply_markup=fulfillment_keyboard(),
+            parse_mode="HTML"
+        )
+
+    finally:
+        try:
+            current = users.get(uid)
+            if current:
+                current.pop("checkout_in_progress", None)
+        except Exception:
+            pass
+
+
 
 async def submit_paid_order(message: Message, data):
     uid = message.from_user.id
