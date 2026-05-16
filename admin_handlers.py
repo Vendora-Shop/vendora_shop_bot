@@ -10,6 +10,7 @@ import re
 
 from config import ADMIN_ID
 from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard, customers_menu_keyboard, customer_actions_keyboard, customer_select_keyboard, support_tickets_menu_keyboard, support_ticket_actions_keyboard, closed_support_ticket_actions_keyboard, support_ticket_select_keyboard, admin_orders_menu_keyboard, admin_products_menu_keyboard, admin_stock_menu_keyboard, admin_customers_menu_root_keyboard, admin_coupons_root_keyboard, admin_marketing_menu_keyboard, admin_support_root_keyboard, admin_reports_menu_keyboard, admin_settings_menu_keyboard
+from backup_manager import create_db_backup, list_db_backups, format_backup_list
 from database import (
     add_product,
     get_all_products,
@@ -2046,6 +2047,78 @@ async def admin_settings_category(message: Message):
         parse_mode="HTML"
     )
 
+
+
+@router.message(F.text == "💾 צור גיבוי DB")
+async def admin_create_db_backup(message: Message):
+    # ADMIN_BACKUP_MANAGER_BUTTONS_FIX
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "settings_section"}
+
+    result = create_db_backup(reason="admin_manual")
+
+    if not result.get("ok"):
+        await message.answer(
+            rtl(
+                "<b>⚠️ יצירת הגיבוי נכשלה.</b>\n\n"
+                f"{field('שגיאה', result.get('error') or '-')}"
+            ),
+            reply_markup=admin_settings_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    backup_path = result.get("path")
+    size_mb = float(result.get("size_bytes") or 0) / 1024 / 1024
+
+    await message.answer(
+        rtl(
+            "<b>✅ גיבוי DB נוצר בהצלחה.</b>\n\n"
+            f"{field('קובץ', result.get('filename'))}\n"
+            f"{field('גודל', f'{size_mb:.2f}MB')}"
+        ),
+        reply_markup=admin_settings_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+    try:
+        await message.answer_document(
+            FSInputFile(backup_path),
+            caption=rtl("<b>💾 קובץ גיבוי DB</b>"),
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        await message.answer(
+            rtl(
+                "<b>⚠️ הגיבוי נוצר, אבל לא הצלחתי לשלוח את הקובץ בטלגרם.</b>\n\n"
+                f"{field('נתיב בשרת', backup_path)}\n"
+                f"{field('שגיאה', type(e).__name__)}"
+            ),
+            reply_markup=admin_settings_menu_keyboard(),
+            parse_mode="HTML"
+        )
+
+
+@router.message(F.text == "📋 רשימת גיבויים")
+async def admin_list_db_backups(message: Message):
+    # ADMIN_BACKUP_MANAGER_BUTTONS_FIX
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "settings_section"}
+
+    backups = list_db_backups(limit=20)
+
+    await message.answer(
+        rtl(
+            "<b>📋 רשימת גיבויי DB</b>\n\n"
+            f"{format_backup_list(backups)}"
+        ),
+        reply_markup=admin_settings_menu_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "⬅️ חזרה לניהול מוצרים")
