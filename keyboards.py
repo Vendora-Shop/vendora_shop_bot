@@ -50,6 +50,7 @@ def admin_keyboard():
             [KeyboardButton(text="📊 מצב העסק"), KeyboardButton(text="📅 סטטיסטיקה לפי תאריך")],
             [KeyboardButton(text="📢 שלח הודעה ללקוחות")],
             [KeyboardButton(text="👥 לקוחות")],
+            [KeyboardButton(text="🏷️ ניהול קופונים")],
             [KeyboardButton(text=support_tickets_button_text())],
             [KeyboardButton(text="🔄 עדכן סטטוס הזמנה")],
             [KeyboardButton(text="🧹 איפוס מערכת הזמנות")],
