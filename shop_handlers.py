@@ -29,6 +29,12 @@ from database import (
     get_support_ticket,
     close_support_ticket,
 )
+
+try:
+    from database import validate_coupon, mark_coupon_used
+except Exception:
+    validate_coupon = None
+    mark_coupon_used = None
 from delivery_regions import get_delivery_price, normalize_israel_location, suggest_israel_locations, validate_street_address
 from pdf_generator import create_invoice_pdf
 
@@ -1293,6 +1299,7 @@ def is_free_text_step_for_customer(step):
         "edit_address_street",
         "edit_address_floor",
         "edit_address_apartment",
+        "coupon_code",
     }
 
 
@@ -1884,6 +1891,57 @@ def product_qty_in_cart(cart, product_name):
     return sum(int(item["qty"]) for item in cart if item["name"] == product_name)
 
 
+# ================== COUPONS ==================
+def coupon_discount_base(data):
+    # בשלב ראשון הקופון חל על סכום המוצרים בלבד, לא על דמי משלוח.
+    try:
+        return float(cart_total(data.get("cart") or []))
+    except Exception:
+        return 0.0
+
+
+def get_coupon_discount(data):
+    try:
+        return float(data.get("coupon_discount") or 0)
+    except Exception:
+        return 0.0
+
+
+def get_coupon_code(data):
+    return str(data.get("coupon_code") or "").upper().strip()
+
+
+def order_products_total(data):
+    return float(cart_total(data.get("cart") or []))
+
+
+def order_delivery_price(data):
+    try:
+        return float(data.get("delivery_price") or 0)
+    except Exception:
+        return 0.0
+
+
+def order_final_total(data):
+    products_total = order_products_total(data)
+    delivery_price = order_delivery_price(data)
+    discount = get_coupon_discount(data)
+    return max(0, products_total + delivery_price - discount)
+
+
+def coupon_summary_block(data):
+    code = get_coupon_code(data)
+    discount = get_coupon_discount(data)
+
+    if not code or discount <= 0:
+        return ""
+
+    return (
+        f"{field('קופון', code)}\n"
+        f"{field('הנחה', '-' + money(discount))}\n"
+    )
+
+
 def clean_phone(phone):
     return phone.strip().replace(" ", "").replace("-", "").replace("+972", "0")
 
@@ -2040,15 +2098,17 @@ async def send_pickup_navigation_if_needed(message, data):
 
 
 def build_order_summary(data):
-    products_total = cart_total(data["cart"])
-    delivery_price = float(data["delivery_price"])
-    final_total = products_total + delivery_price
+    products_total = order_products_total(data)
+    delivery_price = order_delivery_price(data)
+    final_total = order_final_total(data)
+    coupon_block = coupon_summary_block(data)
 
     if is_pickup_order(data):
         delivery_block = (
             f"{pickup_text()}\n\n"
             f"{field('דמי משלוח', money(0))}\n"
-            f"{field('סה״כ לתשלום', money(products_total))}"
+            f"{coupon_block}"
+            f"{field('סה״כ לתשלום', money(final_total))}"
         )
     else:
         address = f"{data['city']}, {data['street']}, קומה {data['floor']}, דירה {data['apartment']}"
@@ -2057,6 +2117,7 @@ def build_order_summary(data):
             f"{field('כתובת', address)}\n"
             f"{field('אזור משלוח', data['base_city'])}\n\n"
             f"{field('דמי משלוח', money(delivery_price))}\n"
+            f"{coupon_block}"
             f"{field('סה״כ לתשלום', money(final_total))}"
         )
 
@@ -2070,6 +2131,8 @@ def build_order_summary(data):
     )
 
     return rtl(text)
+
+
 
 def fill_saved_profile_into_data(data, profile):
     data["name"] = profile["customer_name"]
@@ -2421,12 +2484,22 @@ def empty_cart_keyboard():
     ])
 
 
+def coupon_input_keyboard():
+    return _inline([
+        [_btn("⬅️ חזרה לסיכום הזמנה", "ui:coupon:back_summary")],
+        [_btn("❌ בטל הזמנה", "ui:nav:cancel")],
+    ])
+
+
 def confirm_keyboard():
     return _inline(_wide_buttons([
+        _btn("🏷️ הוסף קופון", "ui:coupon:add"),
         _btn("✅ אשר הזמנה", "ui:order:confirm"),
         _btn("⬅️ חזרה לשלב קודם", "ui:order:back_prev"),
         _btn("❌ בטל הזמנה", "ui:nav:cancel"),
     ]))
+
+
 
 
 def order_summary_keyboard(data):
@@ -2972,6 +3045,7 @@ async def _dispatch_customer_inline(callback: CallbackQuery, text: str):
         "⬅️ חזרה לבחירת משלוח / איסוף": back_to_fulfillment_choice,
         "⬅️ חזרה לשלב קודם": back_from_order_summary_to_previous_step,
         "✅ אשר הזמנה": confirm_order,
+        "🏷️ הוסף קופון": add_coupon_start,
         "📋 הצג כתובות": show_my_addresses,
         "➕ הוסף כתובת": add_address_start,
         "↩️ חזרה לכתובות": my_addresses,
@@ -3806,6 +3880,32 @@ Vendora תמשיך לפעול לשיפור הנגישות והחוויה עבו�
             )
             data.setdefault("temp_bot_messages", []).append(sent.message_id)
             return
+        elif raw == "ui:coupon:add":
+            await answer_callback_safely(callback)
+            data["step"] = "coupon_code"
+            await send_inline_screen_replace(
+                callback,
+                rtl(
+                    "<b>🎟️ קוד קופון</b>\n\n"
+                    "רשום את קוד הקופון שקיבלת.\n"
+                    "לדוגמה: VENDORA10"
+                ),
+                reply_markup=coupon_input_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        elif raw == "ui:coupon:back_summary":
+            await answer_callback_safely(callback)
+            data["step"] = "confirm"
+            await send_inline_screen_replace(
+                callback,
+                build_order_summary(data),
+                reply_markup=order_summary_keyboard(data),
+                parse_mode="HTML"
+            )
+            return
+
         elif raw == "ui:order:back_prev": text = "⬅️ חזרה לשלב קודם"
 
         elif raw == "ui:payment:ok": text = "✅ סימולציית תשלום הצליחה"
@@ -4361,6 +4461,36 @@ async def edit_details(message: Message):
     )
 
 
+@router.message(F.text == "🏷️ הוסף קופון")
+async def add_coupon_start(message: Message):
+    await consume_customer_click(message)
+    uid = message.from_user.id
+    data = users.setdefault(uid, {"cart": []})
+
+    if not data.get("cart"):
+        await send_ui_banner_message(
+            message,
+            text=cart_text([], title="🛒 הסל שלך"),
+            banner_key="cart_banner",
+            reply_markup=empty_cart_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    data["step"] = "coupon_code"
+
+    await send_temp_message(
+        message,
+        rtl(
+            "<b>🎟️ קוד קופון</b>\n\n"
+            "רשום את קוד הקופון שקיבלת.\n"
+            "לדוגמה: VENDORA10"
+        ),
+        reply_markup=coupon_input_keyboard(),
+        parse_mode="HTML"
+    )
+
+
 @router.message(F.text == "✅ המשך להזמנה")
 async def checkout(message: Message):
     # CHECKOUT_ANTI_DOUBLE_CLICK_FIX
@@ -4455,9 +4585,11 @@ async def submit_paid_order(message: Message, data):
         )
         return
 
-    products_total = cart_total(data["cart"])
-    delivery_price = float(data["delivery_price"])
-    final_total = products_total + delivery_price
+    products_total = order_products_total(data)
+    delivery_price = order_delivery_price(data)
+    final_total = order_final_total(data)
+    coupon_code = get_coupon_code(data)
+    coupon_discount = get_coupon_discount(data)
 
     order_number = create_order(
         telegram_id=uid,
@@ -4474,6 +4606,12 @@ async def submit_paid_order(message: Message, data):
         final_total=final_total,
         base_city=data["base_city"]
     )
+
+    if coupon_code and coupon_discount > 0 and mark_coupon_used is not None:
+        try:
+            mark_coupon_used(coupon_code, uid, order_number)
+        except Exception as e:
+            print(f"COUPON_MARK_USED_ERROR: {type(e).__name__}: {e}")
 
     profile_for_save = get_customer_profile(uid)
 
@@ -4525,6 +4663,7 @@ async def submit_paid_order(message: Message, data):
         f"{fulfillment_admin_text}\n"
         f"{cart_text(data['cart']).replace(RTL, '')}\n\n"
         f"{field('משלוח', money(delivery_price))}\n"
+        f"{coupon_summary_block(data)}"
         f"{field('סה״כ שולם', money(final_total))}\n\n"
         f"{field('Telegram ID', uid)}\n"
         f"{field('Telegram', message.from_user.full_name)}\n\n"
@@ -5238,6 +5377,60 @@ async def handle_shop(message: Message):
     data = users.get(uid)
 
     products = get_active_products()
+
+    if data and data.get("step") == "coupon_code":
+        code = txt.upper().strip()
+        await consume_customer_click(message)
+
+        if not code or len(code) < 3:
+            await send_temp_message(
+                message,
+                rtl("<b>⚠️ קוד קופון לא תקין.</b>\n\nרשום קוד קופון תקין."),
+                reply_markup=coupon_input_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        if validate_coupon is None:
+            data["step"] = "confirm"
+            await send_temp_message(
+                message,
+                rtl("<b>⚠️ מערכת הקופונים לא זמינה כרגע.</b>\n\nנסה שוב מאוחר יותר."),
+                reply_markup=order_summary_keyboard(data),
+                parse_mode="HTML"
+            )
+            return
+
+        base_total = coupon_discount_base(data)
+        ok, discount, msg = validate_coupon(code, uid, base_total)
+
+        if not ok:
+            data.pop("coupon_code", None)
+            data.pop("coupon_discount", None)
+            data["step"] = "confirm"
+
+            await send_temp_message(
+                message,
+                rtl(
+                    "<b>⚠️ הקופון לא הופעל.</b>\n\n"
+                    f"{h(msg)}"
+                ),
+                reply_markup=order_summary_keyboard(data),
+                parse_mode="HTML"
+            )
+            return
+
+        data["coupon_code"] = code
+        data["coupon_discount"] = float(discount or 0)
+        data["step"] = "confirm"
+
+        await send_temp_message(
+            message,
+            build_order_summary(data),
+            reply_markup=order_summary_keyboard(data),
+            parse_mode="HTML"
+        )
+        return
 
     if txt in {"✅ המשך עם הפרטים השמורים", "✅ חזור לפרטים השמורים"} and data and data.get("cart"):
         await use_saved_profile_flow(message, data)
