@@ -4613,65 +4613,91 @@ async def back_from_order_summary_to_previous_step(message: Message):
     lambda message: not is_admin_panel_active_for_shop_guard(message.from_user.id)
 )
 async def confirm_order(message: Message):
-    await consume_customer_click(message)
+    # CONFIRM_ORDER_ANTI_DOUBLE_CLICK_FINAL
+    # הגנה מפני לחיצה כפולה על "אשר הזמנה".
+    # לא משנה את לוגיקת ההזמנה — רק נועל את הפעולה בזמן העיבוד.
     uid = message.from_user.id
-    data = users.get(uid)
+    data = users.setdefault(uid, {"cart": []})
 
-    if not data or not data.get("cart"):
-        await message.answer(
-            rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard(message.from_user.id),
-            parse_mode="HTML"
-        )
+    if data.get("confirm_in_progress"):
+        try:
+            await message.answer(
+                rtl("<b>⏳ ההזמנה כבר בתהליך.</b>\n\nאנא המתן מספר שניות."),
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
         return
 
-    required = ["name", "phone", "city", "street", "floor", "apartment", "delivery_price", "base_city", "fulfillment_type"]
-    if any(key not in data for key in required):
-        data["step"] = "name"
-        await message.answer(
-            rtl("<b>⚠️ חסרים פרטים להזמנה.</b>\n\nנרשום מחדש את הפרטים.\nמה השם המלא שלך?"),
-            parse_mode="HTML"
-        )
-        return
+    data["confirm_in_progress"] = True
 
-    if data.get("order_submitting"):
-        await message.answer(
-            rtl(
-                "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
-                "ההזמנה כבר נקלטה במערכת ונמצאת בטיפול."
-            ),
-            reply_markup=main_keyboard(message.from_user.id),
-            parse_mode="HTML"
-        )
-        return
+    try:
+            await consume_customer_click(message)
+            uid = message.from_user.id
+            data = users.get(uid)
 
-    products_total = cart_total(data["cart"])
-    delivery_price = float(data["delivery_price"])
-    final_total = products_total + delivery_price
+            if not data or not data.get("cart"):
+                await message.answer(
+                    rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
+                    reply_markup=main_keyboard(message.from_user.id),
+                    parse_mode="HTML"
+                )
+                return
 
-    await delete_temp_bot_messages(message.bot, uid)
+            required = ["name", "phone", "city", "street", "floor", "apartment", "delivery_price", "base_city", "fulfillment_type"]
+            if any(key not in data for key in required):
+                data["step"] = "name"
+                await message.answer(
+                    rtl("<b>⚠️ חסרים פרטים להזמנה.</b>\n\nנרשום מחדש את הפרטים.\nמה השם המלא שלך?"),
+                    parse_mode="HTML"
+                )
+                return
 
-    data["step"] = "payment_simulation"
+            if data.get("order_submitting"):
+                await message.answer(
+                    rtl(
+                        "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
+                        "ההזמנה כבר נקלטה במערכת ונמצאת בטיפול."
+                    ),
+                    reply_markup=main_keyboard(message.from_user.id),
+                    parse_mode="HTML"
+                )
+                return
 
-    order_type_text = "🛍️ איסוף עצמי" if is_pickup_order(data) else "🚚 משלוח עד הבית"
+            products_total = cart_total(data["cart"])
+            delivery_price = float(data["delivery_price"])
+            final_total = products_total + delivery_price
 
-    await message.answer(
-        rtl(
-            "<b>💳 תשלום הזמנה</b>\n\n"
-            f"{field('סוג הזמנה', order_type_text)}\n"
-            f"{field('סה״כ לתשלום', money(final_total))}\n\n"
-            "<b>מצב בדיקות:</b>\n"
-            "לחץ על ✅ סימולציית תשלום הצליחה כדי להמשיך.\n\n"
-            "בעתיד הכפתור הזה יוחלף בסליקה אמיתית."
-        ),
-        reply_markup=payment_keyboard(),
-        parse_mode="HTML"
-    )
+            await delete_temp_bot_messages(message.bot, uid)
+
+            data["step"] = "payment_simulation"
+
+            order_type_text = "🛍️ איסוף עצמי" if is_pickup_order(data) else "🚚 משלוח עד הבית"
+
+            await message.answer(
+                rtl(
+                    "<b>💳 תשלום הזמנה</b>\n\n"
+                    f"{field('סוג הזמנה', order_type_text)}\n"
+                    f"{field('סה״כ לתשלום', money(final_total))}\n\n"
+                    "<b>מצב בדיקות:</b>\n"
+                    "לחץ על ✅ סימולציית תשלום הצליחה כדי להמשיך.\n\n"
+                    "בעתיד הכפתור הזה יוחלף בסליקה אמיתית."
+                ),
+                reply_markup=payment_keyboard(),
+                parse_mode="HTML"
+            )
 
 
 
 
 
+    finally:
+        try:
+            current_data = users.get(uid)
+            if current_data:
+                current_data.pop("confirm_in_progress", None)
+        except Exception:
+            pass
 
 @router.callback_query(F.data.startswith("qty_action:"))
 async def quantity_inline_action(callback: CallbackQuery):
