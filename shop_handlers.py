@@ -2419,11 +2419,14 @@ def fulfillment_keyboard():
 
 
 def my_orders_keyboard():
-    # PERSONAL_AREA_BACK_FIX_ORDERS
+    # MY_ORDERS_NAV_FIX
     return _inline([
         [_btn("🔁 הזמנה חוזרת", "ui:orders:reorder")],
         [_btn("⬅️ חזרה לאזור אישי", "ui:personal:menu")],
+        [_btn("⬅️ חזרה לתפריט", "ui:nav:main")],
     ])
+
+
 
 
 def translate_order_status_for_keyboard(status):
@@ -2454,9 +2457,13 @@ def reorder_select_keyboard(orders):
         total = int(float(order.get("final_total") or 0))
         status = translate_order_status_for_keyboard(order.get("status"))
         rows.append([_btn(f"🔁 {order_number} | {total}₪ | {status}", f"ui:reorder:{order_number}")])
+
     rows.append([_btn("⬅️ חזרה להזמנות שלי", "ui:orders:back_my_orders")])
     rows.append([_btn("⬅️ חזרה לאזור אישי", "ui:personal:menu")])
+    rows.append([_btn("⬅️ חזרה לתפריט", "ui:nav:main")])
     return _inline(rows)
+
+
 
 
 def addresses_menu_keyboard():
@@ -2968,17 +2975,18 @@ async def restore_reorder_from_inline(callback: CallbackQuery, order_number: str
         )
         data.setdefault("temp_bot_messages", []).append(warn.message_id)
 
-    sent = await callback.message.answer(
-        widen_inline_screen_text(rtl(
+    await send_ui_banner_message(
+        callback.message,
+        text=rtl(
             "<b>✅ ההזמנה שוחזרה לסל</b>\n\n"
             f"{field('שוחזר מהזמנה', order_number)}\n\n"
             "המוצרים הזמינים נוספו לסל הקניות שלך.\n"
             "לאחר אישור ההזמנה ייווצר מספר הזמנה חדש."
-        )),
+        ),
+        banner_key="cart_banner",
         reply_markup=cart_keyboard(),
         parse_mode="HTML"
     )
-    data.setdefault("temp_bot_messages", []).append(sent.message_id)
     # callback כבר קיבל answer בתחילת הלחיצה על הזמנה חוזרת.
 
 
@@ -3008,7 +3016,7 @@ async def show_my_details_inline(callback: CallbackQuery):
 
 
 async def show_my_orders_inline(callback: CallbackQuery):
-    """מסך הזמנות שלי ישירות מ־Inline — שומר לוגיקה ומונע נפילה ב־proxy."""
+    """מסך הזמנות שלי ישירות מ־Inline — החלפת מסך נקייה בלי כפילות."""
     uid = callback.from_user.id
     data = users.setdefault(uid, {"cart": []})
     orders = get_orders_by_customer_telegram_id(uid, 10)
@@ -3017,43 +3025,45 @@ async def show_my_orders_inline(callback: CallbackQuery):
         data["last_order_number"] = orders[0].get("order_number")
 
     data["step"] = "my_orders"
-    await delete_temp_bot_messages(callback.message.bot, uid)
 
-    sent = await callback.message.answer(
-        widen_inline_screen_text(customer_orders_text(orders)),
+    await send_inline_screen_replace(
+        callback,
+        customer_orders_text(orders),
         reply_markup=my_orders_keyboard(),
         parse_mode="HTML"
     )
-    data.setdefault("temp_bot_messages", []).append(sent.message_id)
+
+
 
 
 async def show_reorder_choose_inline(callback: CallbackQuery):
-    """פתיחת בחירת הזמנה חוזרת ישירות מכפתור Inline."""
+    """פתיחת בחירת הזמנה חוזרת ישירות מכפתור Inline — החלפת מסך נקייה."""
     uid = callback.from_user.id
     data = users.setdefault(uid, {"cart": []})
     orders = get_orders_by_customer_telegram_id(uid, 10)
-    await delete_temp_bot_messages(callback.message.bot, uid)
 
     if not orders:
         data["step"] = "my_orders"
-        sent = await callback.message.answer(
-            widen_inline_screen_text(rtl(
+        await send_inline_screen_replace(
+            callback,
+            rtl(
                 "<b>⚠️ אין הזמנות קודמות לשחזור.</b>\n\n"
                 "אפשר להיכנס לחנות ולבצע הזמנה חדשה."
-            )),
-            reply_markup=main_keyboard(callback.from_user.id),
+            ),
+            reply_markup=my_orders_keyboard(),
             parse_mode="HTML"
         )
-        data.setdefault("temp_bot_messages", []).append(sent.message_id)
         return
 
     data["step"] = "reorder_select"
-    sent = await callback.message.answer(
-        widen_inline_screen_text(reorder_orders_list_text(orders)),
+    await send_inline_screen_replace(
+        callback,
+        reorder_orders_list_text(orders),
         reply_markup=reorder_select_keyboard(orders),
         parse_mode="HTML"
     )
-    data.setdefault("temp_bot_messages", []).append(sent.message_id)
+
+
 
 
 async def send_inline_screen_replace(callback: CallbackQuery, text, reply_markup=None, parse_mode="HTML"):
