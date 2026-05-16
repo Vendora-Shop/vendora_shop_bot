@@ -2915,6 +2915,7 @@ async def _dispatch_customer_inline(callback: CallbackQuery, text: str):
         "⬅️ חזרה לקטגוריות": back_categories,
         "➕ הוסף עוד מוצר": add_more,
         "🛒 הסל שלי": show_cart,
+        "⬅️ חזרה לסל": show_cart,
         "🧹 רוקן סל": clear_cart,
         "❌ בטל הזמנה": cancel_order,
         "✏️ שנה פרטים": edit_details,
@@ -2932,7 +2933,7 @@ async def _dispatch_customer_inline(callback: CallbackQuery, text: str):
 
     handler = direct_handlers.get(text)
     if handler:
-        if text in {"❌ בטל הזמנה", "⬅️ חזרה לתפריט", "⬅️ חזרה", "⬅️ חזרה לשלב קודם", "⬅️ חזרה לבחירת משלוח / איסוף"}:
+        if text in {"❌ בטל הזמנה", "⬅️ חזרה לתפריט", "⬅️ חזרה", "⬅️ חזרה לסל", "⬅️ חזרה לשלב קודם", "⬅️ חזרה לבחירת משלוח / איסוף"}:
             try:
                 await cleanup_input_warnings(callback.message.bot, callback.from_user.id)
             except Exception:
@@ -3750,7 +3751,13 @@ Vendora תמשיך לפעול לשיפור הנגישות והחוויה עבו�
 
         elif raw == "ui:fulfillment:delivery": text = "🚚 משלוח עד הבית"
         elif raw == "ui:fulfillment:pickup": text = "🛍️ איסוף עצמי מהחנות"
-        elif raw == "ui:fulfillment:back_cart": text = "⬅️ חזרה לסל"
+        elif raw == "ui:fulfillment:back_cart":
+            # CHECKOUT_BACK_TO_CART_FIX
+            # לא שולחים לטקסט מדומה. פותחים ישירות את הסל כדי לא ליפול למסך Start/פתיחה.
+            await answer_callback_safely(callback)
+            proxy = CustomerCallbackMessage(callback, "🛒 הסל שלי")
+            await show_cart(proxy)
+            return
         elif raw == "ui:fulfillment:back": text = "⬅️ חזרה לבחירת משלוח / איסוף"
 
         elif raw == "ui:saved:continue": text = "✅ המשך עם הפרטים השמורים"
