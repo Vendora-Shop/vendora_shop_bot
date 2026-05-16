@@ -146,6 +146,14 @@ def create_tables():
     conn.commit()
     conn.close()
 
+    # DB_PERFORMANCE_INDEXES_CREATE_TABLES_HOOK
+    try:
+        create_customer_experience_tables()
+        create_customer_addresses_table()
+        create_performance_indexes()
+    except Exception as e:
+        print(f"DB_INDEX_INIT_ERROR: {type(e).__name__}: {e}")
+
 
 def add_product(category, name, price, description="", max_qty=100, stock=0, sku="", image_file_id="", active=1):
     conn = get_connection()
@@ -1360,6 +1368,12 @@ def create_customer_experience_tables():
     conn.commit()
     conn.close()
 
+    # DB_PERFORMANCE_INDEXES_AUTO_CREATE
+    try:
+        create_performance_indexes()
+    except Exception as e:
+        print(f"DB_INDEX_CREATE_ERROR: {type(e).__name__}: {e}")
+
 
 # ---------- Addresses ----------
 def add_customer_address(telegram_id, label, city, street, floor='', apartment='', is_default=0):
@@ -1625,6 +1639,42 @@ def clear_abandoned_cart(telegram_id):
     conn.commit(); conn.close(); return True
 
 # ================== SAVED ADDRESSES ==================
+
+def create_performance_indexes():
+    # DB_PERFORMANCE_INDEXES_FIX
+    # אינדקסים בסיסיים לשיפור מהירות חיפוש בהזמנות, לקוחות, מוצרים, קופונים ופניות שירות.
+    conn = get_connection()
+    cur = conn.cursor()
+
+    indexes = [
+        "CREATE INDEX IF NOT EXISTS idx_orders_telegram_id ON orders(telegram_id)",
+        "CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number)",
+        "CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)",
+        "CREATE INDEX IF NOT EXISTS idx_orders_phone ON orders(phone)",
+
+        "CREATE INDEX IF NOT EXISTS idx_customers_telegram_id ON customers(telegram_id)",
+
+        "CREATE INDEX IF NOT EXISTS idx_products_name ON products(name)",
+        "CREATE INDEX IF NOT EXISTS idx_products_active ON products(active)",
+
+        "CREATE INDEX IF NOT EXISTS idx_customer_addresses_telegram_id ON customer_addresses(telegram_id)",
+
+        "CREATE INDEX IF NOT EXISTS idx_coupons_code ON coupons(code)",
+        "CREATE INDEX IF NOT EXISTS idx_coupon_usages_code ON coupon_usages(code)",
+
+        "CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status)",
+        "CREATE INDEX IF NOT EXISTS idx_support_tickets_ticket_number ON support_tickets(ticket_number)",
+        "CREATE INDEX IF NOT EXISTS idx_support_messages_ticket_number ON support_messages(ticket_number)",
+    ]
+
+    for sql in indexes:
+        cur.execute(sql)
+
+    conn.commit()
+    conn.close()
+    return True
+
+
 def create_customer_addresses_table():
     conn = get_connection()
     cur = conn.cursor()
