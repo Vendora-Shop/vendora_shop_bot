@@ -2921,6 +2921,40 @@ async def admin_coupons_back(message: Message):
     await show_admin_coupons_menu(message)
 
 
+
+def coupon_selection_keyboard(coupons):
+    # COUPON_TOGGLE_LIST_SELECTION_FIX
+    rows = []
+
+    for coupon in coupons:
+        code = str(coupon.get("code") or "").upper().strip()
+        if not code:
+            continue
+
+        active = int(coupon.get("active") or 0)
+        status = "🟢" if active else "🔴"
+        uses = coupon.get("used_count", 0)
+        max_uses = coupon.get("max_uses", 0) or "ללא הגבלה"
+
+        rows.append([
+            KeyboardButton(text=f"{status} {code} | שימושים: {uses}/{max_uses}")
+        ])
+
+    rows.append([KeyboardButton(text="⬅️ חזרה לניהול קופונים")])
+    rows.append([KeyboardButton(text="⬅️ חזרה לניהול")])
+
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+def clean_coupon_code_from_selection(text):
+    # מקבל טקסט כפתור כמו: "🟢 VENDORA10 | שימושים: 0/5"
+    text = clean_admin_text(text)
+    text = text.replace("🟢", "").replace("🔴", "").strip()
+    if "|" in text:
+        text = text.split("|", 1)[0].strip()
+    return text.upper().strip()
+
+
 @router.message(F.text == "📋 רשימת קופונים")
 async def admin_coupons_list(message: Message):
     if not is_admin(message.from_user.id):
@@ -2971,10 +3005,23 @@ async def admin_coupon_disable_start(message: Message):
     if not is_admin(message.from_user.id):
         return
 
+    coupons = get_coupons()
+    active_coupons = [c for c in coupons if int(c.get("active") or 0) == 1]
+
+    if not active_coupons:
+        admin_states[message.from_user.id] = {"step": "coupons_menu"}
+        await message.answer(
+            rtl("<b>⚠️ אין קופונים פעילים לכיבוי.</b>"),
+            reply_markup=admin_coupons_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
     admin_states[message.from_user.id] = {"step": "coupon_disable_code"}
+
     await message.answer(
-        rtl("<b>🔴 כיבוי קופון</b>\n\nרשום את קוד הקופון שברצונך לכבות."),
-        reply_markup=coupon_back_keyboard(),
+        rtl("<b>🔴 כיבוי קופון</b>\n\nבחר קופון מהרשימה לכיבוי."),
+        reply_markup=coupon_selection_keyboard(active_coupons),
         parse_mode="HTML"
     )
 
@@ -2984,10 +3031,23 @@ async def admin_coupon_enable_start(message: Message):
     if not is_admin(message.from_user.id):
         return
 
+    coupons = get_coupons()
+    inactive_coupons = [c for c in coupons if int(c.get("active") or 0) == 0]
+
+    if not inactive_coupons:
+        admin_states[message.from_user.id] = {"step": "coupons_menu"}
+        await message.answer(
+            rtl("<b>⚠️ אין קופונים כבויים להפעלה.</b>"),
+            reply_markup=admin_coupons_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
     admin_states[message.from_user.id] = {"step": "coupon_enable_code"}
+
     await message.answer(
-        rtl("<b>🟢 הפעלת קופון</b>\n\nרשום את קוד הקופון שברצונך להפעיל."),
-        reply_markup=coupon_back_keyboard(),
+        rtl("<b>🟢 הפעלת קופון</b>\n\nבחר קופון מהרשימה להפעלה."),
+        reply_markup=coupon_selection_keyboard(inactive_coupons),
         parse_mode="HTML"
     )
 
@@ -3013,7 +3073,7 @@ async def admin_coupon_flow(message: Message):
         return
 
     if step == "coupon_disable_code":
-        code = txt.upper().strip()
+        code = clean_coupon_code_from_selection(txt)
         ok = set_coupon_active(code, False)
         admin_states[uid] = {"step": "coupons_menu"}
         await message.answer(
@@ -3027,7 +3087,7 @@ async def admin_coupon_flow(message: Message):
         return
 
     if step == "coupon_enable_code":
-        code = txt.upper().strip()
+        code = clean_coupon_code_from_selection(txt)
         ok = set_coupon_active(code, True)
         admin_states[uid] = {"step": "coupons_menu"}
         await message.answer(
@@ -4361,29 +4421,3 @@ async def admin_flow(message: Message):
         text = f"<b>🗑️ המוצר נמחק</b>\n\n{field('מוצר', txt)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
         await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
         return
-
-
-# ================== COUPON_TOGGLE_LIST_SELECTION_FIX ==================
-def coupon_selection_keyboard(coupons):
-    rows = []
-
-    for coupon in coupons:
-        code = coupon.get("code", "UNKNOWN")
-        status = "🟢" if coupon.get("active", 1) else "🔴"
-
-        rows.append([
-            KeyboardButton(text=f"{status} {code}")
-        ])
-
-    rows.append([
-        KeyboardButton(text="⬅️ חזרה לניהול קופונים")
-    ])
-
-    return ReplyKeyboardMarkup(
-        keyboard=rows,
-        resize_keyboard=True
-    )
-
-
-
-# COUPON_TOGGLE_LIST_SELECTION_FIX
