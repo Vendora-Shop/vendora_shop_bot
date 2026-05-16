@@ -2393,29 +2393,41 @@ def payment_keyboard():
 
 
 def use_saved_details_keyboard():
+    # CHECKOUT_NAV_FIX_SAVED_PROFILE
     return _inline(_wide_buttons([
         _btn("✅ המשך עם הפרטים השמורים", "ui:saved:continue"),
         _btn("✏️ הזן פרטים חדשים", "ui:saved:new"),
         _btn("⬅️ חזרה לבחירת משלוח / איסוף", "ui:fulfillment:back"),
+        _btn("⬅️ חזרה לסל", "ui:fulfillment:back_cart"),
         _btn("❌ בטל הזמנה", "ui:nav:cancel"),
     ]))
+
+
 
 
 def manual_details_keyboard():
+    # CHECKOUT_NAV_FIX_MANUAL_DETAILS
     return _inline(_wide_buttons([
         _btn("✅ חזור לפרטים השמורים", "ui:saved:continue"),
         _btn("⬅️ חזרה לבחירת משלוח / איסוף", "ui:fulfillment:back"),
+        _btn("⬅️ חזרה לסל", "ui:fulfillment:back_cart"),
         _btn("❌ בטל הזמנה", "ui:nav:cancel"),
     ]))
 
 
+
+
 def fulfillment_keyboard():
+    # CHECKOUT_NAV_FIX_FULFILLMENT
     return _inline(_wide_buttons([
         _btn("🚚 משלוח עד הבית", "ui:fulfillment:delivery"),
         _btn("🛍️ איסוף עצמי מהחנות", "ui:fulfillment:pickup"),
         _btn("⬅️ חזרה לסל", "ui:fulfillment:back_cart"),
+        _btn("⬅️ חזרה לתפריט", "ui:nav:main"),
         _btn("❌ בטל הזמנה", "ui:nav:cancel"),
     ]))
+
+
 
 
 def my_orders_keyboard():
@@ -4262,12 +4274,7 @@ async def edit_details(message: Message):
 
     if not data or not data.get("cart"):
         await delete_temp_bot_messages(message.bot, uid)
-        await send_temp_message(
-            message,
-            rtl("<b>⚠️ אין הזמנה פעילה.</b>"),
-            reply_markup=main_keyboard(message.from_user.id),
-            parse_mode="HTML"
-        )
+        await reset_customer_to_main_menu(message)
         return
 
     await consume_customer_click(message)
