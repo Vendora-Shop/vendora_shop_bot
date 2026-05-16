@@ -9,6 +9,7 @@ from shop_handlers import router as shop_router
 from auto_backup_scheduler import automatic_backup_loop
 from logger import log_info, log_error
 from error_notifier import notify_admin_error
+from health_monitor import health_monitor_loop
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -32,6 +33,9 @@ async def main():
 
         asyncio.create_task(automatic_backup_loop())
         log_info("Automatic backup loop started", kind="backup")
+
+        asyncio.create_task(health_monitor_loop())
+        log_info("Health monitor loop started", kind="system")
 
         print("Vendora Shop Running...")
         log_info("Vendora polling started", kind="system")
