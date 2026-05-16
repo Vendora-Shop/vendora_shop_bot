@@ -421,6 +421,11 @@ users = {}
 START_DEBOUNCE_SECONDS = 1.2
 START_LAST_RUN = {}
 
+# START_IN_PROGRESS_LOCK_FIX
+# מונע מצב של שתי לחיצות /start שיוצרות שני תפריטים בהפרש זמן.
+START_IN_PROGRESS_SECONDS = 90
+START_IN_PROGRESS = {}
+
 CUSTOMER_ACTION_LAST_RUN = {}
 CUSTOMER_ACTION_LOCK_SECONDS = 1.0
 
@@ -4245,7 +4250,24 @@ Vendora תמשיך לפעול לשיפור הנגישות והחוויה עבו�
 async def start(message: Message):
     uid = message.from_user.id
 
+    if await customer_blocked_by_maintenance(message):
+        return
+
+    if await check_customer_rate_limit(message, "start"):
+        return
+
     now = time.time()
+
+    # START_IN_PROGRESS_LOCK_FIX
+    # אם /start קודם עדיין באמצע שליחת באנר/ניקוי — לא שולחים תפריט נוסף.
+    in_progress_at = START_IN_PROGRESS.get(uid, 0)
+    if now - in_progress_at < START_IN_PROGRESS_SECONDS:
+        try:
+            asyncio.create_task(message.delete())
+        except Exception:
+            pass
+        return
+
     last_run = START_LAST_RUN.get(uid, 0)
     if now - last_run < START_DEBOUNCE_SECONDS:
         try:
@@ -4253,7 +4275,9 @@ async def start(message: Message):
         except Exception:
             pass
         return
+
     START_LAST_RUN[uid] = now
+    START_IN_PROGRESS[uid] = now
 
     old_data = users.get(uid) or {}
     old_temp_ids = list(old_data.get("temp_bot_messages", []) or [])
@@ -4304,10 +4328,12 @@ async def start(message: Message):
         except Exception:
             pass
 
+        START_IN_PROGRESS.pop(uid, None)
+
     try:
         asyncio.create_task(_cleanup_start_after_send())
     except Exception:
-        pass
+        START_IN_PROGRESS.pop(uid, None)
 
 
 @router.message(Command("menu"))
