@@ -169,25 +169,28 @@ async def delete_customer_last_menu(bot, customer_telegram_id):
 
 def status_customer_inline_main_keyboard(customer_telegram_id=None):
     """
-    STATUS_CUSTOMER_INLINE_MAIN_KEYBOARD_FIX
-    תפריט לקוח Inline בתוך הצ'אט, לא ReplyKeyboard תחתון.
-    זה העיצוב הירוק/זכוכית כמו בתפריט הראשי.
+    STATUS_CUSTOMER_INLINE_MAIN_KEYBOARD_EXACT_MAIN_MENU_FIX
+    אותו תפריט בדיוק כמו main_keyboard ב-shop_handlers:
+    אותם אייקונים, אותו סדר, ואייקונים בצד ימין של הטקסט.
     """
     keyboard = [
-        [InlineKeyboardButton(text="חנות 🛒", callback_data="ui:main:shop")],
         [
-            InlineKeyboardButton(text="הפרופיל שלי 👤", callback_data="ui:main:details"),
-            InlineKeyboardButton(text="ההזמנות שלי 📋", callback_data="ui:main:orders"),
+            InlineKeyboardButton(text="🛍️ חנות", callback_data="ui:main:shop"),
+            InlineKeyboardButton(text="🛒 הסל שלי", callback_data="ui:nav:cart"),
         ],
         [
-            InlineKeyboardButton(text="הכתובות שלי 📍", callback_data="ui:main:addresses"),
-            InlineKeyboardButton(text="שירות לקוחות 💬", callback_data="ui:main:support"),
+            InlineKeyboardButton(text="👤 האזור האישי", callback_data="ui:personal:menu"),
+            InlineKeyboardButton(text="💬 שירות לקוחות", callback_data="ui:main:support"),
+        ],
+        [
+            InlineKeyboardButton(text="🌐 אודות", callback_data="ui:info:about"),
+            InlineKeyboardButton(text="⚖️ מידע משפטי", callback_data="ui:legal:menu"),
         ],
     ]
 
     try:
         if customer_telegram_id == ADMIN_ID:
-            keyboard.append([InlineKeyboardButton(text="פאנל ניהול 🛡️", callback_data="ui:main:admin")])
+            keyboard.append([InlineKeyboardButton(text="🛡️ פאנל ניהול", callback_data="ui:main:admin")])
     except Exception:
         pass
 
@@ -204,7 +207,7 @@ async def send_customer_main_menu_bottom(bot, customer_telegram_id):
     """
     try:
         caption = widen_customer_status_menu_caption(
-            rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט:")
+            rtl("<b>💎 תפריט ראשי</b> — בחרו פעולה:")
         )
 
         sent_menu = await send_customer_banner_photo(
@@ -1874,6 +1877,7 @@ async def broadcast_start(message: Message):
             "ההודעה לא תישלח מיד.\n"
             "קודם תקבל תצוגה מקדימה ותצטרך לאשר שליחה."
         ),
+        reply_markup=broadcast_text_input_keyboard(),
         parse_mode="HTML"
     )
 
