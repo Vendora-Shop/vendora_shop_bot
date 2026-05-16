@@ -11,6 +11,7 @@ import re
 from config import ADMIN_ID
 from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard, customers_menu_keyboard, customer_actions_keyboard, customer_select_keyboard, support_tickets_menu_keyboard, support_ticket_actions_keyboard, closed_support_ticket_actions_keyboard, support_ticket_select_keyboard, admin_orders_menu_keyboard, admin_products_menu_keyboard, admin_stock_menu_keyboard, admin_customers_menu_root_keyboard, admin_coupons_root_keyboard, admin_marketing_menu_keyboard, admin_support_root_keyboard, admin_reports_menu_keyboard, admin_settings_menu_keyboard
 from backup_manager import create_db_backup, list_db_backups, format_backup_list
+from logger import log_admin_action, log_order_event, log_backup_event, log_error
 from database import (
     add_product,
     get_all_products,
@@ -2057,6 +2058,8 @@ async def admin_create_db_backup(message: Message):
 
     admin_states[message.from_user.id] = {"step": "settings_section"}
 
+    # ADMIN_ACTION_LOGGING_V1
+    log_admin_action(message.from_user.id, "create_db_backup_clicked")
     result = create_db_backup(reason="admin_manual")
 
     if not result.get("ok"):
@@ -2109,6 +2112,7 @@ async def admin_list_db_backups(message: Message):
 
     admin_states[message.from_user.id] = {"step": "settings_section"}
 
+    log_admin_action(message.from_user.id, "list_db_backups_clicked")
     backups = list_db_backups(limit=20)
 
     await message.answer(
@@ -3148,6 +3152,10 @@ async def admin_coupon_flow(message: Message):
     if step == "coupon_disable_code":
         code = clean_coupon_code_from_selection(txt)
         ok = set_coupon_active(code, False)
+        if ok:
+            log_admin_action(uid, "coupon_disabled", f"code={code}")
+        else:
+            log_admin_action(uid, "coupon_disable_failed", f"code={code}")
         admin_states[uid] = {"step": "coupons_menu"}
         await message.answer(
             rtl(
@@ -3162,6 +3170,10 @@ async def admin_coupon_flow(message: Message):
     if step == "coupon_enable_code":
         code = clean_coupon_code_from_selection(txt)
         ok = set_coupon_active(code, True)
+        if ok:
+            log_admin_action(uid, "coupon_enabled", f"code={code}")
+        else:
+            log_admin_action(uid, "coupon_enable_failed", f"code={code}")
         admin_states[uid] = {"step": "coupons_menu"}
         await message.answer(
             rtl(
@@ -3365,6 +3377,8 @@ async def admin_flow(message: Message):
             return
 
         deleted_count = clear_all_orders_for_testing()
+
+        log_admin_action(uid, "reset_orders_confirmed", f"deleted_count={deleted_count}")
 
         admin_states[uid] = {"step": "admin"}
 
@@ -4342,6 +4356,8 @@ async def admin_flow(message: Message):
             return
 
         ok = set_product_price(state["product_name"], price)
+        if ok:
+            log_admin_action(uid, "product_price_changed", f"product={state['product_name']} | price={price}")
         admin_states[uid] = {"step": "products_section"}
 
         text = (
@@ -4381,6 +4397,8 @@ async def admin_flow(message: Message):
             return
 
         ok = set_product_description(state["product_name"], txt)
+        if ok:
+            log_admin_action(uid, "product_description_changed", f"product={state['product_name']}")
         admin_states[uid] = {"step": "products_section"}
 
         text = (
