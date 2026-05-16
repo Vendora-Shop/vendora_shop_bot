@@ -6,6 +6,7 @@ from html import escape
 from datetime import datetime
 import calendar
 import json
+import re
 
 from config import ADMIN_ID
 from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard, customers_menu_keyboard, customer_actions_keyboard, customer_select_keyboard, support_tickets_menu_keyboard, support_ticket_actions_keyboard, closed_support_ticket_actions_keyboard, support_ticket_select_keyboard
@@ -42,6 +43,9 @@ from database import (
     get_support_messages,
     add_support_message,
     close_support_ticket,
+    create_coupon,
+    get_coupons,
+    set_coupon_active,
 )
 
 router = Router()
@@ -322,6 +326,14 @@ def is_valid_admin_button_text(text):
         "🔴 כבה מוצר",
         "🟢 הפעל מוצר",
         "🗑️ מחק מוצר",
+        "🏷️ ניהול קופונים",
+        "➕ צור קופון",
+        "📋 רשימת קופונים",
+        "🔴 כבה קופון",
+        "🟢 הפעל קופון",
+        "אחוז %",
+        "סכום ₪",
+        "ללא תוקף",
         "⬅️ יציאה מניהול",
         "⬅️ חזרה לניהול",
         "⬅️ חזרה לניהול הזמנות",
@@ -2579,6 +2591,355 @@ async def handle_photo(message: Message):
 @router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "order_actions" and clean_admin_text(message.text) in ORDER_ACTION_BY_BUTTON)
 async def admin_order_action_direct_guard(message: Message):
     await admin_flow(message)
+
+
+
+# ================== ADMIN COUPONS ==================
+def admin_coupons_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="➕ צור קופון")],
+            [KeyboardButton(text="📋 רשימת קופונים")],
+            [KeyboardButton(text="🔴 כבה קופון"), KeyboardButton(text="🟢 הפעל קופון")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")],
+        ],
+        resize_keyboard=True
+    )
+
+
+def coupon_discount_type_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="אחוז %"), KeyboardButton(text="סכום ₪")],
+            [KeyboardButton(text="⬅️ חזרה לניהול קופונים")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")],
+        ],
+        resize_keyboard=True
+    )
+
+
+def coupon_back_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="⬅️ חזרה לניהול קופונים")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")],
+        ],
+        resize_keyboard=True
+    )
+
+
+def format_coupon_for_admin(coupon):
+    dtype = coupon.get("discount_type")
+    dtype_text = "אחוז" if dtype == "percent" else "סכום"
+    value = coupon.get("discount_value")
+    min_total = coupon.get("min_order_total") or 0
+    max_uses = int(coupon.get("max_uses") or 0)
+    used = int(coupon.get("used_count") or 0)
+    active = "🟢 פעיל" if int(coupon.get("active") or 0) == 1 else "🔴 כבוי"
+    expires = coupon.get("expires_at") or "ללא תוקף"
+
+    return (
+        f"<b>🏷️ {h(coupon.get('code'))}</b>\n"
+        f"{field('סטטוס', active)}\n"
+        f"{field('סוג הנחה', dtype_text)}\n"
+        f"{field('ערך', value)}\n"
+        f"{field('מינימום הזמנה', money(min_total))}\n"
+        f"{field('שימושים', f'{used}/{max_uses}' if max_uses else f'{used}/ללא הגבלה')}\n"
+        f"{field('תוקף', expires)}"
+    )
+
+
+async def show_admin_coupons_menu(message: Message):
+    admin_states[message.from_user.id] = {"step": "coupons_menu"}
+    await message.answer(
+        rtl("<b>🏷️ ניהול קופונים</b>\n\nבחר פעולה:"),
+        reply_markup=admin_coupons_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "🏷️ ניהול קופונים")
+async def admin_coupons_start(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    await show_admin_coupons_menu(message)
+
+
+@router.message(F.text == "⬅️ חזרה לניהול קופונים")
+async def admin_coupons_back(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    await show_admin_coupons_menu(message)
+
+
+@router.message(F.text == "📋 רשימת קופונים")
+async def admin_coupons_list(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "coupons_menu"}
+
+    coupons = get_coupons(30)
+    if not coupons:
+        await message.answer(
+            rtl("<b>📋 רשימת קופונים</b>\n\nאין קופונים במערכת כרגע."),
+            reply_markup=admin_coupons_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    text = "<b>📋 רשימת קופונים</b>\n\n"
+    for coupon in coupons:
+        text += format_coupon_for_admin(coupon) + "\n\n"
+
+    await message.answer(
+        rtl(text),
+        reply_markup=admin_coupons_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "➕ צור קופון")
+async def admin_coupon_create_start(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "coupon_code"}
+
+    await message.answer(
+        rtl(
+            "<b>➕ יצירת קופון חדש</b>\n\n"
+            "רשום קוד קופון.\n"
+            "לדוגמה: VENDORA10"
+        ),
+        reply_markup=coupon_back_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "🔴 כבה קופון")
+async def admin_coupon_disable_start(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "coupon_disable_code"}
+    await message.answer(
+        rtl("<b>🔴 כיבוי קופון</b>\n\nרשום את קוד הקופון שברצונך לכבות."),
+        reply_markup=coupon_back_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "🟢 הפעל קופון")
+async def admin_coupon_enable_start(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "coupon_enable_code"}
+    await message.answer(
+        rtl("<b>🟢 הפעלת קופון</b>\n\nרשום את קוד הקופון שברצונך להפעיל."),
+        reply_markup=coupon_back_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step", "").startswith("coupon_"))
+async def admin_coupon_flow(message: Message):
+    uid = message.from_user.id
+    txt = clean_admin_text(message.text)
+    state = admin_states.get(uid) or {}
+    step = state.get("step")
+
+    if txt in {"⬅️ חזרה לניהול", "⬅️ יציאה מניהול"}:
+        admin_states[uid] = {"step": "admin"}
+        await message.answer(
+            rtl("<b>🔐 פאנל ניהול</b>\n\nבחר פעולה:"),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if txt == "⬅️ חזרה לניהול קופונים":
+        await show_admin_coupons_menu(message)
+        return
+
+    if step == "coupon_disable_code":
+        code = txt.upper().strip()
+        ok = set_coupon_active(code, False)
+        admin_states[uid] = {"step": "coupons_menu"}
+        await message.answer(
+            rtl(
+                "<b>🔴 כיבוי קופון</b>\n\n"
+                + (f"הקופון <b>{h(code)}</b> כובה בהצלחה." if ok else f"הקופון <b>{h(code)}</b> לא נמצא.")
+            ),
+            reply_markup=admin_coupons_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if step == "coupon_enable_code":
+        code = txt.upper().strip()
+        ok = set_coupon_active(code, True)
+        admin_states[uid] = {"step": "coupons_menu"}
+        await message.answer(
+            rtl(
+                "<b>🟢 הפעלת קופון</b>\n\n"
+                + (f"הקופון <b>{h(code)}</b> הופעל בהצלחה." if ok else f"הקופון <b>{h(code)}</b> לא נמצא.")
+            ),
+            reply_markup=admin_coupons_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if step == "coupon_code":
+        code = txt.upper().strip()
+        if len(code) < 3:
+            await message.answer(
+                rtl("<b>⚠️ קוד לא תקין</b>\n\nרשום קוד באורך 3 תווים לפחות."),
+                reply_markup=coupon_back_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        state["coupon_code"] = code
+        state["step"] = "coupon_type"
+        await message.answer(
+            rtl("<b>🏷️ סוג הנחה</b>\n\nבחר אם הקופון הוא אחוז או סכום קבוע."),
+            reply_markup=coupon_discount_type_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if step == "coupon_type":
+        if txt == "אחוז %":
+            state["coupon_type"] = "percent"
+        elif txt == "סכום ₪":
+            state["coupon_type"] = "fixed"
+        else:
+            await message.answer(
+                rtl("<b>⚠️ בחירה לא תקינה</b>\n\nבחר אחוז או סכום."),
+                reply_markup=coupon_discount_type_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        state["step"] = "coupon_value"
+        await message.answer(
+            rtl("<b>💰 ערך ההנחה</b>\n\nרשום מספר בלבד.\nלדוגמה: 10"),
+            reply_markup=coupon_back_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if step == "coupon_value":
+        try:
+            value = float(txt.replace(",", "."))
+            if value <= 0:
+                raise ValueError()
+            if state.get("coupon_type") == "percent" and value > 100:
+                raise ValueError()
+        except Exception:
+            await message.answer(
+                rtl("<b>⚠️ ערך לא תקין</b>\n\nרשום מספר תקין."),
+                reply_markup=coupon_back_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        state["coupon_value"] = value
+        state["step"] = "coupon_min_total"
+        await message.answer(
+            rtl("<b>🧾 מינימום הזמנה</b>\n\nרשום סכום מינימום להזמנה.\nאם אין מינימום, רשום 0."),
+            reply_markup=coupon_back_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if step == "coupon_min_total":
+        try:
+            min_total = float(txt.replace(",", "."))
+            if min_total < 0:
+                raise ValueError()
+        except Exception:
+            await message.answer(
+                rtl("<b>⚠️ סכום לא תקין</b>\n\nרשום מספר תקין."),
+                reply_markup=coupon_back_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        state["coupon_min_total"] = min_total
+        state["step"] = "coupon_max_uses"
+        await message.answer(
+            rtl("<b>🔢 מגבלת שימושים</b>\n\nרשום מספר שימושים מקסימלי.\nאם אין הגבלה, רשום 0."),
+            reply_markup=coupon_back_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if step == "coupon_max_uses":
+        try:
+            max_uses = int(txt)
+            if max_uses < 0:
+                raise ValueError()
+        except Exception:
+            await message.answer(
+                rtl("<b>⚠️ מספר לא תקין</b>\n\nרשום מספר שלם."),
+                reply_markup=coupon_back_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        state["coupon_max_uses"] = max_uses
+        state["step"] = "coupon_expires"
+        await message.answer(
+            rtl(
+                "<b>📅 תוקף קופון</b>\n\n"
+                "רשום תאריך בפורמט YYYY-MM-DD.\n"
+                "אם אין תוקף, רשום: ללא תוקף"
+            ),
+            reply_markup=coupon_back_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if step == "coupon_expires":
+        expires = "" if txt == "ללא תוקף" else txt.strip()
+        if expires and not re.match(r"^\\d{4}-\\d{2}-\\d{2}$", expires):
+            await message.answer(
+                rtl("<b>⚠️ תאריך לא תקין</b>\n\nרשום בפורמט YYYY-MM-DD או ללא תוקף."),
+                reply_markup=coupon_back_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        create_coupon(
+            code=state["coupon_code"],
+            discount_type=state["coupon_type"],
+            discount_value=state["coupon_value"],
+            min_order_total=state.get("coupon_min_total", 0),
+            max_uses=state.get("coupon_max_uses", 0),
+            expires_at=expires,
+        )
+
+        admin_states[uid] = {"step": "coupons_menu"}
+
+        dtype_text = "אחוז" if state["coupon_type"] == "percent" else "סכום"
+        await message.answer(
+            rtl(
+                "<b>✅ קופון נוצר בהצלחה</b>\n\n"
+                f"{field('קוד', state['coupon_code'])}\n"
+                f"{field('סוג', dtype_text)}\n"
+                f"{field('ערך', state['coupon_value'])}\n"
+                f"{field('מינימום הזמנה', money(state.get('coupon_min_total', 0)))}\n"
+                f"{field('מגבלת שימושים', state.get('coupon_max_uses', 0) or 'ללא הגבלה')}\n"
+                f"{field('תוקף', expires or 'ללא תוקף')}"
+            ),
+            reply_markup=admin_coupons_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
 
 
 @router.message(is_admin_active_step)
