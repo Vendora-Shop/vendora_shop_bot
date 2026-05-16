@@ -11,7 +11,7 @@ import re
 from config import ADMIN_ID
 from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard, customers_menu_keyboard, customer_actions_keyboard, customer_select_keyboard, support_tickets_menu_keyboard, support_ticket_actions_keyboard, closed_support_ticket_actions_keyboard, support_ticket_select_keyboard, admin_orders_menu_keyboard, admin_products_menu_keyboard, admin_stock_menu_keyboard, admin_customers_menu_root_keyboard, admin_coupons_root_keyboard, admin_marketing_menu_keyboard, admin_support_root_keyboard, admin_reports_menu_keyboard, admin_settings_menu_keyboard
 from backup_manager import create_db_backup, list_db_backups, format_backup_list
-from logger import log_admin_action, log_order_event, log_backup_event, log_error
+from logger import log_admin_action, log_order_event, log_backup_event, log_error, list_log_files
 from database import (
     add_product,
     get_all_products,
@@ -2050,6 +2050,24 @@ async def admin_settings_category(message: Message):
 
 
 
+
+def format_log_list_for_admin(logs):
+    # ADMIN_LOGS_LIST_VIEW_FIX
+    if not logs:
+        return "אין עדיין קבצי לוג."
+
+    lines = []
+    for idx, log in enumerate(logs, start=1):
+        size_mb = float(log.get("size_bytes", 0)) / 1024 / 1024
+        lines.append(
+            f"{idx}. {h(log.get('filename'))}\n"
+            f"   תאריך: {h(log.get('modified_at'))}\n"
+            f"   גודל: {size_mb:.2f}MB"
+        )
+
+    return "\n\n".join(lines)
+
+
 @router.message(F.text == "💾 צור גיבוי DB")
 async def admin_create_db_backup(message: Message):
     # ADMIN_BACKUP_MANAGER_BUTTONS_FIX
@@ -2119,6 +2137,28 @@ async def admin_list_db_backups(message: Message):
         rtl(
             "<b>📋 רשימת גיבויי DB</b>\n\n"
             f"{format_backup_list(backups)}"
+        ),
+        reply_markup=admin_settings_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+
+@router.message(F.text == "📄 רשימת לוגים")
+async def admin_list_log_files(message: Message):
+    # ADMIN_LOGS_LIST_VIEW_FIX
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "settings_section"}
+    log_admin_action(message.from_user.id, "list_log_files_clicked")
+
+    logs = list_log_files(limit=20)
+
+    await message.answer(
+        rtl(
+            "<b>📄 רשימת קבצי לוג</b>\n\n"
+            f"{format_log_list_for_admin(logs)}"
         ),
         reply_markup=admin_settings_menu_keyboard(),
         parse_mode="HTML"
