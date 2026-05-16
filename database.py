@@ -1398,28 +1398,7 @@ def add_customer_address(telegram_id, label, city, street, floor='', apartment='
     return True
 
 
-def get_customer_addresses(telegram_id):
-    create_customer_experience_tables()
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT id, label, city, street, floor, apartment, is_default
-        FROM customer_addresses
-        WHERE telegram_id = ?
-        ORDER BY is_default DESC, id DESC
-    """, (int(telegram_id),))
-    rows = cur.fetchall()
-    conn.close()
-    return [
-        {
-            'id': r[0], 'label': r[1], 'city': r[2], 'street': r[3],
-            'floor': r[4], 'apartment': r[5], 'is_default': r[6]
-        }
-        for r in rows
-    ]
 
-
-# ---------- Favorites ----------
 def toggle_favorite_product(telegram_id, product_name):
     create_customer_experience_tables()
     conn = get_connection()
