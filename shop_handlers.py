@@ -10,6 +10,7 @@ import time
 
 from config import ADMIN_ID
 from rate_limiter import is_rate_limited, rate_limit_message
+from maintenance_mode import is_maintenance_enabled, maintenance_message
 from keyboards import main_keyboard, my_orders_keyboard, addresses_menu_keyboard, address_select_keyboard, address_actions_keyboard, reorder_select_keyboard, support_subject_keyboard
 from database import (
     get_active_products,
@@ -891,6 +892,27 @@ async def force_close_callback_phone_keyboard(callback: CallbackQuery):
         pass
     return None
 
+
+
+
+async def customer_blocked_by_maintenance(message: Message):
+    # MAINTENANCE_MODE_CUSTOMER_V1
+    uid = message.from_user.id
+
+    if is_admin(uid):
+        return False
+
+    if not is_maintenance_enabled():
+        return False
+
+    await message.answer(
+        rtl(
+            f"<b>{maintenance_message()}</b>"
+        ),
+        parse_mode="HTML"
+    )
+
+    return True
 
 
 async def check_customer_rate_limit(message: Message, action: str):
@@ -5452,6 +5474,9 @@ async def add_address_start(message: Message):
 
 @router.message()
 async def handle_shop(message: Message):
+    if await customer_blocked_by_maintenance(message):
+        return
+
     uid = message.from_user.id
     txt = (message.text or "").strip()
     data = users.setdefault(uid, {"cart": []})
