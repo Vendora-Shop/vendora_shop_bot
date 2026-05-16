@@ -1761,6 +1761,41 @@ def delete_customer_address(telegram_id, address_id):
 
 
 
+def set_default_customer_address(telegram_id, address_id):
+    # DEFAULT_ADDRESS_FIX
+    # מגדיר כתובת ברירת מחדל אחת בלבד ללקוח.
+    create_customer_addresses_table()
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT id FROM customer_addresses WHERE telegram_id = ? AND id = ?",
+        (int(telegram_id), int(address_id))
+    )
+    row = cur.fetchone()
+
+    if not row:
+        conn.close()
+        return False
+
+    cur.execute(
+        "UPDATE customer_addresses SET is_default = 0 WHERE telegram_id = ?",
+        (int(telegram_id),)
+    )
+
+    cur.execute(
+        "UPDATE customer_addresses SET is_default = 1 WHERE telegram_id = ? AND id = ?",
+        (int(telegram_id), int(address_id))
+    )
+
+    conn.commit()
+    conn.close()
+    return True
+
+
+
+
 def clear_all_orders_for_testing():
     """
     מוחק את כל ההזמנות בלבד.
