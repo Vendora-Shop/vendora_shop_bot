@@ -23,6 +23,7 @@ from database import (
     get_customer_addresses,
     get_customer_address_by_id,
     delete_customer_address,
+    set_default_customer_address,
     create_support_ticket,
     add_support_message,
     get_open_support_ticket_by_user,
@@ -100,8 +101,16 @@ async def customer_cancel_payment_button(message: Message):
 
 # ================== SAVED ADDRESSES UI ==================
 def format_address(address):
+    default_line = ""
+    try:
+        if int(address.get("is_default") or 0) == 1:
+            default_line = f"{field('ברירת מחדל', 'כן')}\n"
+    except Exception:
+        pass
+
     return (
         f"{field('שם כתובת', address.get('label') or 'כתובת')}\n"
+        f"{default_line}"
         f"{field('עיר / יישוב', address.get('city') or '-')}\n"
         f"{field('רחוב', address.get('street') or '-')}\n"
         f"{field('קומה', address.get('floor') or '-')}\n"
@@ -110,8 +119,15 @@ def format_address(address):
 
 
 def address_profile_text(address):
+    title = "<b>🏠 פרטי כתובת</b>"
+    try:
+        if int(address.get("is_default") or 0) == 1:
+            title = "<b>⭐ כתובת ברירת מחדל</b>"
+    except Exception:
+        pass
+
     return rtl(
-        "<b>🏠 פרטי כתובת</b>\n\n"
+        f"{title}\n\n"
         f"{format_address(address)}"
     )
 
@@ -180,10 +196,12 @@ def customer_order_short_text(order):
 
 
 def customer_orders_text(orders):
+    # CUSTOMER_ORDERS_CLEAN_SCREEN_FIX
     if not orders:
         return rtl(
             "<b>📦 ההזמנות שלי</b>\n\n"
-            "עדיין לא קיימות הזמנות בחשבון שלך."
+            "עדיין לא קיימות הזמנות בחשבון שלך.\n\n"
+            "לאחר שתבצע הזמנה, היא תופיע כאן."
         )
 
     text = "<b>📦 ההזמנות שלי</b>\n\n"
@@ -192,7 +210,7 @@ def customer_orders_text(orders):
     for order in orders[:5]:
         text += customer_order_short_text(order) + "\n\n"
 
-    text += "כדי לבצע הזמנה חוזרת, לחץ על 🔁 הזמן שוב."
+    text += "אפשר לבצע הזמנה חוזרת דרך הכפתור למטה."
 
     return rtl(text)
 
@@ -2622,7 +2640,8 @@ def address_select_keyboard(addresses):
         label = address.get("label") or "כתובת"
         city = address.get("city") or "-"
         street = address.get("street") or "-"
-        rows.append([_btn(f"🏠 {address_id} | {label} | {city}, {street}", f"ui:addr:id:{address_id}")])
+        default_icon = "⭐ " if int(address.get("is_default") or 0) == 1 else ""
+        rows.append([_btn(f"🏠 {address_id} | {default_icon}{label} | {city}, {street}", f"ui:addr:id:{address_id}")])
 
     rows.append([_btn("➕ הוסף כתובת", "ui:addr:add")])
     rows.append([_btn("↩️ חזרה לכתובות", "ui:addr:menu")])
@@ -2634,8 +2653,9 @@ def address_select_keyboard(addresses):
 
 
 def address_actions_keyboard():
-    # ADDRESS_FLOW_NAV_FIX_ACTIONS
+    # ADDRESS_FLOW_NAV_FIX_ACTIONS + DEFAULT_ADDRESS_FIX
     return _inline([
+        [_btn("⭐ הגדר כברירת מחדל", "ui:addr:set_default")],
         [
             _btn("📝 עריכה", "ui:addr:edit"),
             _btn("🗑️ מחיקה", "ui:addr:delete"),
@@ -5370,6 +5390,12 @@ async def handle_shop(message: Message):
     # CUSTOMER_QTY_FREE_TEXT_MERGE_FIX
     # היה catch-all כפול בהמשך הקובץ. כדי שלא תהיה כפילות router.message(),
     # טיפול בכמות ידנית עבר לכאן, לפני ש-handle_shop מוחק טקסט לא צפוי.
+    # CUSTOMER_MAIN_MENU_OVERLAY_FIX
+    # אם הלקוח נמצא באמצע הזנת טקסט/כתובת/קופון, לא נותנים לכפתורי תפריט ישנים לקפוץ מעל ה-flow.
+    if is_free_text_step_for_customer(data.get("step")) and txt in {"🛍️ חנות", "🛒 חנות", "🛒 הסל שלי", "📦 ההזמנות שלי", "🏠 הכתובות שלי", "👤 הפרטים שלי", "📞 שירות לקוחות"}:
+        await delete_customer_message(message)
+        return
+
     if data.get("waiting_for_qty"):
         value = txt
 
@@ -6201,13 +6227,16 @@ async def handle_shop(message: Message):
 
         address = data["new_address"]
 
+        existing_addresses = get_customer_addresses(uid, 1)
+
         save_customer_address(
             telegram_id=uid,
             label=address["label"],
             city=address["city"],
             street=address["street"],
             floor=address.get("floor", "0"),
-            apartment=address.get("apartment", "0")
+            apartment=address.get("apartment", "0"),
+            is_default=1 if not existing_addresses else 0
         )
 
         data.pop("new_address", None)
