@@ -2493,8 +2493,8 @@ def coupon_input_keyboard():
 
 def confirm_keyboard():
     return _inline(_wide_buttons([
-        _btn("🏷️ הוסף קופון", "ui:coupon:add"),
         _btn("✅ אשר הזמנה", "ui:order:confirm"),
+        _btn("🏷️ יש לך קופון?", "ui:coupon:add"),
         _btn("⬅️ חזרה לשלב קודם", "ui:order:back_prev"),
         _btn("❌ בטל הזמנה", "ui:nav:cancel"),
     ]))
@@ -3045,7 +3045,7 @@ async def _dispatch_customer_inline(callback: CallbackQuery, text: str):
         "⬅️ חזרה לבחירת משלוח / איסוף": back_to_fulfillment_choice,
         "⬅️ חזרה לשלב קודם": back_from_order_summary_to_previous_step,
         "✅ אשר הזמנה": confirm_order,
-        "🏷️ הוסף קופון": add_coupon_start,
+        "🏷️ יש לך קופון?": add_coupon_start,
         "📋 הצג כתובות": show_my_addresses,
         "➕ הוסף כתובת": add_address_start,
         "↩️ חזרה לכתובות": my_addresses,
@@ -5407,15 +5407,16 @@ async def handle_shop(message: Message):
         if not ok:
             data.pop("coupon_code", None)
             data.pop("coupon_discount", None)
-            data["step"] = "confirm"
+            data["step"] = "coupon_code"
 
             await send_temp_message(
                 message,
                 rtl(
                     "<b>⚠️ הקופון לא הופעל.</b>\n\n"
-                    f"{h(msg)}"
+                    f"{h(msg)}\n\n"
+                    "נסה שוב או חזור לסיכום ההזמנה."
                 ),
-                reply_markup=order_summary_keyboard(data),
+                reply_markup=coupon_input_keyboard(),
                 parse_mode="HTML"
             )
             return
