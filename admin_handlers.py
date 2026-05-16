@@ -13,6 +13,7 @@ from config import ADMIN_ID
 from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard, customers_menu_keyboard, customer_actions_keyboard, customer_select_keyboard, support_tickets_menu_keyboard, support_ticket_actions_keyboard, closed_support_ticket_actions_keyboard, support_ticket_select_keyboard, admin_orders_menu_keyboard, admin_products_menu_keyboard, admin_stock_menu_keyboard, admin_customers_menu_root_keyboard, admin_coupons_root_keyboard, admin_marketing_menu_keyboard, admin_support_root_keyboard, admin_reports_menu_keyboard, admin_settings_menu_keyboard
 from backup_manager import create_db_backup, list_db_backups, format_backup_list
 from logger import log_admin_action, log_order_event, log_backup_event, log_error, list_log_files
+from maintenance_mode import is_maintenance_enabled, enable_maintenance, disable_maintenance
 from database import (
     add_product,
     get_all_products,
@@ -2069,6 +2070,24 @@ def format_log_list_for_admin(logs):
     return "\n\n".join(lines)
 
 
+
+def maintenance_mode_keyboard():
+    # MAINTENANCE_MODE_ADMIN_V1
+    enabled = is_maintenance_enabled()
+
+    status_text = "🟢 פעיל" if enabled else "🔴 כבוי"
+
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=f"📊 סטטוס: {status_text}")],
+            [KeyboardButton(text="🟢 הפעל תחזוקה")],
+            [KeyboardButton(text="🔴 כבה תחזוקה")],
+            [KeyboardButton(text="⬅️ חזרה להגדרות מערכת")],
+        ],
+        resize_keyboard=True
+    )
+
+
 def log_file_selection_keyboard(logs):
     # ADMIN_LOG_FILE_DOWNLOAD_FIX
     rows = []
@@ -2286,6 +2305,80 @@ async def admin_download_selected_log(message: Message):
     await message.answer(
         rtl("<b>✅ קובץ הלוג נשלח.</b>"),
         reply_markup=admin_settings_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+
+@router.message(F.text == "🛠️ מצב תחזוקה")
+async def maintenance_mode_menu(message: Message):
+    # MAINTENANCE_MODE_ADMIN_V1
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "maintenance_mode"}
+
+    enabled = is_maintenance_enabled()
+
+    status = "🟢 פעיל" if enabled else "🔴 כבוי"
+
+    await message.answer(
+        rtl(
+            "<b>🛠️ מצב תחזוקה</b>\n\n"
+            f"<b>סטטוס:</b> {status}\n\n"
+            "בחר פעולה:"
+        ),
+        reply_markup=maintenance_mode_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "🟢 הפעל תחזוקה")
+async def enable_maintenance_mode_handler(message: Message):
+    # MAINTENANCE_MODE_ADMIN_V1
+    if not is_admin(message.from_user.id):
+        return
+
+    enable_maintenance()
+
+    log_admin_action(
+        message.from_user.id,
+        "maintenance_enabled"
+    )
+
+    admin_states[message.from_user.id] = {"step": "maintenance_mode"}
+
+    await message.answer(
+        rtl(
+            "<b>🟢 מצב תחזוקה הופעל.</b>\n\n"
+            "לקוחות רגילים לא יוכלו להשתמש בחנות."
+        ),
+        reply_markup=maintenance_mode_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "🔴 כבה תחזוקה")
+async def disable_maintenance_mode_handler(message: Message):
+    # MAINTENANCE_MODE_ADMIN_V1
+    if not is_admin(message.from_user.id):
+        return
+
+    disable_maintenance()
+
+    log_admin_action(
+        message.from_user.id,
+        "maintenance_disabled"
+    )
+
+    admin_states[message.from_user.id] = {"step": "maintenance_mode"}
+
+    await message.answer(
+        rtl(
+            "<b>🔴 מצב תחזוקה כובה.</b>\n\n"
+            "החנות פתוחה שוב ללקוחות."
+        ),
+        reply_markup=maintenance_mode_keyboard(),
         parse_mode="HTML"
     )
 
