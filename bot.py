@@ -8,6 +8,7 @@ from admin_handlers import router as admin_router
 from shop_handlers import router as shop_router
 from auto_backup_scheduler import automatic_backup_loop
 from logger import log_info, log_error
+from error_notifier import notify_admin_error
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -39,6 +40,7 @@ async def main():
 
     except Exception as e:
         log_error(e, context="main polling/startup")
+        await notify_admin_error(bot, e, context="main polling/startup")
         raise
 
 
