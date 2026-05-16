@@ -1,7 +1,7 @@
 import os
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, ReplyKeyboardRemove
 from html import escape
 from datetime import datetime
 import calendar
@@ -1967,11 +1967,16 @@ async def exit_admin(message: Message):
 
     admin_states.pop(message.from_user.id, None)
 
+    # ADMIN_EXIT_TO_CUSTOMER_BANNER_MENU_FIX
+    # יציאה מפאנל ניהול צריכה להסיר את מקלדת האדמין הישנה
+    # ואז להציג ללקוח את התפריט הראשי החדש עם באנר וכפתורי Inline.
     await message.answer(
         rtl("<b>✅ יצאת מפאנל הניהול.</b>"),
-        reply_markup=main_keyboard(message.from_user.id),
+        reply_markup=ReplyKeyboardRemove(),
         parse_mode="HTML"
     )
+
+    await send_customer_main_menu_bottom(message.bot, message.from_user.id)
 
 
 
@@ -3032,7 +3037,7 @@ async def admin_coupon_flow(message: Message):
 
     if step == "coupon_expires":
         expires = "" if txt == "ללא תוקף" else txt.strip()
-        if expires and not re.match(r"^\\d{4}-\\d{2}-\\d{2}$", expires):
+        if expires and not re.match(r"^\d{4}-\d{2}-\d{2}$", expires):
             await message.answer(
                 rtl("<b>⚠️ תאריך לא תקין</b>\n\nרשום בפורמט YYYY-MM-DD או ללא תוקף."),
                 reply_markup=coupon_back_keyboard(),
