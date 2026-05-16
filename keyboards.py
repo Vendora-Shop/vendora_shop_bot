@@ -160,9 +160,9 @@ def admin_reports_menu_keyboard():
 def admin_settings_menu_keyboard():
     # ADMIN_SYSTEM_RESET_ONLY_HERE_FINAL
     # ADMIN_BACKUP_MANAGER_BUTTONS_FIX
+    # SETTINGS_MENU_NO_PRODUCT_ACTIONS_FIX
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🖼️ עדכן תמונה")],
             [KeyboardButton(text="💾 צור גיבוי DB")],
             [KeyboardButton(text="📋 רשימת גיבויים")],
             [KeyboardButton(text="📄 רשימת לוגים")],
