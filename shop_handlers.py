@@ -3493,6 +3493,36 @@ async def customer_inline_ui_router(callback: CallbackQuery):
         await callback.answer()
         return
 
+    if raw == "ui:addr:set_default":
+        # ADDRESS_DEFAULT_BUTTON_REAL_FIX
+        address_id = data.get("selected_address_id")
+
+        try:
+            address_id = int(address_id)
+        except Exception:
+            await callback.answer("כתובת לא תקינה.", show_alert=True)
+            return
+
+        ok = set_default_customer_address(uid, address_id)
+
+        if not ok:
+            await callback.answer("הכתובת לא נמצאה.", show_alert=True)
+            return
+
+        data["selected_address_id"] = address_id
+
+        try:
+            await callback.answer("⭐ הוגדרה כברירת מחדל")
+        except Exception:
+            pass
+
+        await show_selected_address_profile_by_message(
+            callback.message,
+            uid,
+            address_id
+        )
+        return
+
     if raw == "ui:addr:back_profile":
         address_id = data.get("selected_address_id")
         await show_selected_address_profile_by_message(callback.message, uid, address_id)
