@@ -562,6 +562,7 @@ async def open_broadcast_screen(message: Message):
             "ההודעה לא תישלח מיד.\n"
             "קודם תקבל תצוגה מקדימה ותצטרך לאשר שליחה."
         ),
+        reply_markup=broadcast_text_input_keyboard(),
         parse_mode="HTML"
     )
 
@@ -574,6 +575,31 @@ async def handle_broadcast_text_screen(message: Message):
         return
 
     broadcast_text = clean_broadcast_text(clean_admin_text(message.text))
+
+    # BROADCAST_ADMIN_BUTTON_GUARD_FIX
+    # אם האדמין לוחץ בטעות על כפתור ניהול בזמן שהמערכת מחכה לטקסט הודעה,
+    # לא משתמשים בכפתור הזה כתוכן הודעה לשליחה.
+    if broadcast_text == "⬅️ חזרה לניהול":
+        admin_states[uid] = {"step": "admin"}
+        await message.answer(
+            rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if is_valid_admin_button_text(broadcast_text):
+        await message.answer(
+            rtl(
+                "<b>⚠️ זה נראה כמו כפתור ניהול, לא הודעה ללקוחות.</b>\n\n"
+                "רשום טקסט חופשי שברצונך לשלוח ללקוחות, "
+                "או לחץ ⬅️ חזרה לניהול."
+            ),
+            reply_markup=broadcast_text_input_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
     is_valid, error_text = validate_broadcast_text(broadcast_text)
 
     if not is_valid:
@@ -1849,6 +1875,19 @@ async def broadcast_start(message: Message):
             "קודם תקבל תצוגה מקדימה ותצטרך לאשר שליחה."
         ),
         parse_mode="HTML"
+    )
+
+
+
+def broadcast_text_input_keyboard():
+    # BROADCAST_TEXT_INPUT_KEYBOARD_FIX
+    # בזמן כתיבת הודעה ללקוחות לא מציגים כפתורי ניהול אחרים,
+    # כדי שלא ייקלט בטעות "חפש לקוח" כתוכן הודעה לשליחה.
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
     )
 
 
@@ -3409,6 +3448,28 @@ async def admin_flow(message: Message):
 
     if step == "broadcast_text":
         broadcast_text = clean_broadcast_text(txt)
+
+        if broadcast_text == "⬅️ חזרה לניהול":
+            admin_states[uid] = {"step": "admin"}
+            await message.answer(
+                rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
+                reply_markup=admin_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        if is_valid_admin_button_text(broadcast_text):
+            await message.answer(
+                rtl(
+                    "<b>⚠️ זה נראה כמו כפתור ניהול, לא הודעה ללקוחות.</b>\n\n"
+                    "רשום טקסט חופשי שברצונך לשלוח ללקוחות, "
+                    "או לחץ ⬅️ חזרה לניהול."
+                ),
+                reply_markup=broadcast_text_input_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
         is_valid, error_text = validate_broadcast_text(broadcast_text)
 
         if not is_valid:
