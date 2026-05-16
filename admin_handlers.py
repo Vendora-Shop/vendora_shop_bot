@@ -7,6 +7,7 @@ from datetime import datetime
 import calendar
 import json
 import re
+from pathlib import Path
 
 from config import ADMIN_ID
 from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard, customers_menu_keyboard, customer_actions_keyboard, customer_select_keyboard, support_tickets_menu_keyboard, support_ticket_actions_keyboard, closed_support_ticket_actions_keyboard, support_ticket_select_keyboard, admin_orders_menu_keyboard, admin_products_menu_keyboard, admin_stock_menu_keyboard, admin_customers_menu_root_keyboard, admin_coupons_root_keyboard, admin_marketing_menu_keyboard, admin_support_root_keyboard, admin_reports_menu_keyboard, admin_settings_menu_keyboard
@@ -2068,6 +2069,31 @@ def format_log_list_for_admin(logs):
     return "\n\n".join(lines)
 
 
+def log_file_selection_keyboard(logs):
+    # ADMIN_LOG_FILE_DOWNLOAD_FIX
+    rows = []
+
+    for idx, log in enumerate(logs, start=1):
+        filename = log.get("filename") or f"log_{idx}"
+        rows.append([KeyboardButton(text=f"📄 {idx}. {filename}")])
+
+    rows.append([KeyboardButton(text="⬅️ חזרה להגדרות מערכת")])
+    rows.append([KeyboardButton(text="⬅️ חזרה לניהול")])
+
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+def extract_log_index_from_button(text):
+    text = clean_admin_text(text)
+    match = re.search(r"(\d+)", text)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except Exception:
+        return None
+
+
 @router.message(F.text == "💾 צור גיבוי DB")
 async def admin_create_db_backup(message: Message):
     # ADMIN_BACKUP_MANAGER_BUTTONS_FIX
@@ -2160,6 +2186,120 @@ async def admin_list_log_files(message: Message):
             "<b>📄 רשימת קבצי לוג</b>\n\n"
             f"{format_log_list_for_admin(logs)}"
         ),
+        reply_markup=admin_settings_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "⬇️ הורד קובץ לוג")
+async def admin_download_log_start(message: Message):
+    # ADMIN_LOG_FILE_DOWNLOAD_FIX
+    if not is_admin(message.from_user.id):
+        return
+
+    logs = list_log_files(limit=20)
+
+    if not logs:
+        admin_states[message.from_user.id] = {"step": "settings_section"}
+        await message.answer(
+            rtl("<b>📄 הורדת קובץ לוג</b>\n\nאין עדיין קבצי לוג להורדה."),
+            reply_markup=admin_settings_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    admin_states[message.from_user.id] = {
+        "step": "log_file_select",
+        "logs": logs,
+    }
+
+    await message.answer(
+        rtl(
+            "<b>⬇️ הורדת קובץ לוג</b>\n\n"
+            "בחר קובץ לוג מהרשימה:"
+        ),
+        reply_markup=log_file_selection_keyboard(logs),
+        parse_mode="HTML"
+    )
+
+
+@router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "log_file_select")
+async def admin_download_selected_log(message: Message):
+    # ADMIN_LOG_FILE_DOWNLOAD_FIX
+    uid = message.from_user.id
+    txt = clean_admin_text(message.text)
+
+    if txt == "⬅️ חזרה להגדרות מערכת":
+        admin_states[uid] = {"step": "settings_section"}
+        await message.answer(
+            rtl("<b>⚙️ הגדרות מערכת</b>\n\nבחר פעולה:"),
+            reply_markup=admin_settings_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if txt == "⬅️ חזרה לניהול":
+        admin_states[uid] = {"step": "admin"}
+        await message.answer(
+            rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    state = admin_states.get(uid) or {}
+    logs = state.get("logs") or list_log_files(limit=20)
+
+    idx = extract_log_index_from_button(txt)
+
+    if not idx or idx < 1 or idx > len(logs):
+        await message.answer(
+            rtl("<b>⚠️ בחר קובץ לוג מתוך הרשימה בלבד.</b>"),
+            reply_markup=log_file_selection_keyboard(logs),
+            parse_mode="HTML"
+        )
+        return
+
+    selected = logs[idx - 1]
+    path = selected.get("path")
+    filename = selected.get("filename")
+
+    if not path or not Path(path).exists():
+        await message.answer(
+            rtl("<b>⚠️ קובץ הלוג לא נמצא בשרת.</b>"),
+            reply_markup=admin_settings_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        admin_states[uid] = {"step": "settings_section"}
+        return
+
+    log_admin_action(uid, "download_log_file", f"file={filename}")
+
+    await message.answer_document(
+        FSInputFile(path),
+        caption=rtl(f"<b>📄 קובץ לוג</b>\n\n{h(filename)}"),
+        parse_mode="HTML"
+    )
+
+    admin_states[uid] = {"step": "settings_section"}
+
+    await message.answer(
+        rtl("<b>✅ קובץ הלוג נשלח.</b>"),
+        reply_markup=admin_settings_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "⬅️ חזרה להגדרות מערכת")
+async def back_to_settings_management(message: Message):
+    # ADMIN_LOG_FILE_DOWNLOAD_FIX
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "settings_section"}
+
+    await message.answer(
+        rtl("<b>⚙️ הגדרות מערכת</b>\n\nבחר פעולה:"),
         reply_markup=admin_settings_menu_keyboard(),
         parse_mode="HTML"
     )
