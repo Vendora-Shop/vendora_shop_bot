@@ -4361,3 +4361,29 @@ async def admin_flow(message: Message):
         text = f"<b>🗑️ המוצר נמחק</b>\n\n{field('מוצר', txt)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
         await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
         return
+
+
+# ================== COUPON_TOGGLE_LIST_SELECTION_FIX ==================
+def coupon_selection_keyboard(coupons):
+    rows = []
+
+    for coupon in coupons:
+        code = coupon.get("code", "UNKNOWN")
+        status = "🟢" if coupon.get("active", 1) else "🔴"
+
+        rows.append([
+            KeyboardButton(text=f"{status} {code}")
+        ])
+
+    rows.append([
+        KeyboardButton(text="⬅️ חזרה לניהול קופונים")
+    ])
+
+    return ReplyKeyboardMarkup(
+        keyboard=rows,
+        resize_keyboard=True
+    )
+
+
+
+# COUPON_TOGGLE_LIST_SELECTION_FIX
