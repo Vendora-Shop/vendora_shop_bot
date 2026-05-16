@@ -1439,25 +1439,60 @@ def create_coupon(code, discount_type, discount_value, min_order_total=0, max_us
 
 
 def validate_coupon(code, telegram_id, order_total):
+    # COUPON_VALIDATE_EXPIRY_AND_TYPE_FIX
     create_customer_experience_tables()
     code = str(code or '').upper().strip()
-    conn = get_connection(); cur = conn.cursor()
-    cur.execute("SELECT code, discount_type, discount_value, min_order_total, max_uses, used_count, active, expires_at FROM coupons WHERE code = ?", (code,))
-    row = cur.fetchone(); conn.close()
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT code, discount_type, discount_value, min_order_total, max_uses, used_count, active, expires_at "
+        "FROM coupons WHERE code = ?",
+        (code,)
+    )
+    row = cur.fetchone()
+    conn.close()
+
     if not row:
         return False, 0, 'קוד קופון לא נמצא.'
+
     _, dtype, dvalue, min_total, max_uses, used_count, active, expires_at = row
+
     if not active:
         return False, 0, 'הקופון אינו פעיל.'
-    if float(order_total) < float(min_total or 0):
+
+    try:
+        order_total = float(order_total or 0)
+        min_total = float(min_total or 0)
+        dvalue = float(dvalue or 0)
+    except Exception:
+        return False, 0, 'לא ניתן לחשב את הקופון.'
+
+    if order_total < min_total:
         return False, 0, f'הקופון תקף להזמנות מעל {min_total}₪.'
+
     if int(max_uses or 0) > 0 and int(used_count or 0) >= int(max_uses):
         return False, 0, 'הקופון הגיע למגבלת שימושים.'
+
+    expires_at = str(expires_at or '').strip()
+    if expires_at:
+        try:
+            today = datetime.now().strftime('%Y-%m-%d')
+            if expires_at < today:
+                return False, 0, 'תוקף הקופון פג.'
+        except Exception:
+            return False, 0, 'תאריך תוקף הקופון לא תקין.'
+
+    dtype = str(dtype or '').strip().lower()
+
     if dtype == 'percent':
-        discount = float(order_total) * float(dvalue) / 100
+        discount = order_total * dvalue / 100
+    elif dtype == 'fixed':
+        discount = dvalue
     else:
-        discount = float(dvalue)
-    discount = max(0, min(discount, float(order_total)))
+        return False, 0, 'סוג הקופון לא תקין.'
+
+    discount = max(0, min(discount, order_total))
     return True, round(discount, 2), 'ok'
 
 
