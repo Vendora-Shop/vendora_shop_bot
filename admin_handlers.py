@@ -346,6 +346,7 @@ def is_valid_admin_button_text(text):
         "⚙️ הגדרות מערכת",
         "⬅️ יציאה מניהול",
         "⬅️ חזרה לניהול",
+        "⬅️ חזרה לניהול מוצרים",
         "⬅️ חזרה לניהול הזמנות",
         "⬅️ חזרה לרשימת הזמנות",
         "📋 הזמנות פתוחות",
@@ -1200,6 +1201,28 @@ def product_names_keyboard():
 
 
 
+def product_action_back_keyboard():
+    # ADMIN_PRODUCT_EDIT_FLOW_CLEAN_FIX
+    # מקלדת נקייה בזמן שינוי מחיר/תיאור כדי שלא יופיעו כפתורים לא קשורים.
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="⬅️ חזרה לניהול מוצרים")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+async def show_admin_products_menu(message: Message):
+    admin_states[message.from_user.id] = {"step": "products_section"}
+    await message.answer(
+        rtl("<b>🛍️ ניהול מוצרים</b>\n\nבחר פעולה:"),
+        reply_markup=admin_products_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+
 def statistics_calendar_keyboard(year=None, month=None):
     today = datetime.now()
 
@@ -1922,12 +1945,7 @@ async def admin_orders_category(message: Message):
 async def admin_products_category(message: Message):
     if not is_admin(message.from_user.id):
         return
-    admin_states[message.from_user.id] = {"step": "products_section"}
-    await message.answer(
-        rtl("<b>🛍️ ניהול מוצרים</b>\n\nבחר פעולה:"),
-        reply_markup=admin_products_menu_keyboard(),
-        parse_mode="HTML"
-    )
+    await show_admin_products_menu(message)
 
 
 @router.message(F.text == "📊 ניהול מלאי")
@@ -2013,6 +2031,13 @@ async def admin_settings_category(message: Message):
         parse_mode="HTML"
     )
 
+
+
+@router.message(F.text == "⬅️ חזרה לניהול מוצרים")
+async def back_to_products_management(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    await show_admin_products_menu(message)
 
 
 @router.message(F.text == "⬅️ יציאה מניהול")
@@ -3236,6 +3261,17 @@ async def admin_flow(message: Message):
         await delete_admin_message(message)
         return
 
+    if step in {
+        "price_name", "price_value",
+        "description_name", "description_text",
+        "stock_name", "stock_value",
+        "add_stock_name", "add_stock_value",
+        "image_name", "off_name", "on_name", "delete_name",
+        "add_category", "add_name", "add_price", "add_description", "add_max_qty", "add_stock"
+    } and txt == "⬅️ חזרה לניהול מוצרים":
+        await show_admin_products_menu(message)
+        return
+
     if step == "broadcast_text":
         await handle_broadcast_text_screen(message)
         return
@@ -4112,14 +4148,23 @@ async def admin_flow(message: Message):
         state["step"] = "price_value"
 
         await message.answer(
-            rtl(f"<b>✏️ שינוי מחיר</b>\n\n{field('מחיר נוכחי', money(product['price']))}\nרשום מחיר חדש."),
+            rtl(f"<b>✏️ שינוי מחיר</b>\n\n{field('מוצר', txt)}\n{field('מחיר נוכחי', money(product['price']))}\n\nרשום מחיר חדש."),
+            reply_markup=product_action_back_keyboard(),
             parse_mode="HTML"
         )
         return
 
     if step == "price_value":
+        if is_valid_admin_button_text(txt):
+            await message.answer(
+                rtl("<b>⚠️ זה כפתור ניהול, לא מחיר.</b>\n\nרשום מחיר במספרים או לחץ ⬅️ חזרה לניהול מוצרים."),
+                reply_markup=product_action_back_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
         try:
-            price = float(txt)
+            price = float(txt.replace(",", "."))
             if price <= 0:
                 raise ValueError
         except Exception:
@@ -4127,10 +4172,14 @@ async def admin_flow(message: Message):
             return
 
         ok = set_product_price(state["product_name"], price)
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "products_section"}
 
-        text = f"<b>✅ המחיר עודכן</b>\n\n{field('מחיר חדש', money(price))}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
-        await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
+        text = (
+            f"<b>✅ המחיר עודכן</b>\n\n"
+            f"{field('מוצר', state['product_name'])}\n"
+            f"{field('מחיר חדש', money(price))}"
+        ) if ok else "<b>⚠️ המוצר לא נמצא.</b>"
+        await message.answer(rtl(text), reply_markup=admin_products_menu_keyboard(), parse_mode="HTML")
         return
 
     if step == "description_name":
@@ -4145,15 +4194,30 @@ async def admin_flow(message: Message):
 
         state["product_name"] = txt
         state["step"] = "description_text"
-        await message.answer(rtl("<b>📝 שינוי תיאור</b>\n\nרשום תיאור חדש למוצר."), parse_mode="HTML")
+        await message.answer(
+            rtl(f"<b>📝 שינוי תיאור</b>\n\n{field('מוצר', txt)}\n\nרשום תיאור חדש למוצר."),
+            reply_markup=product_action_back_keyboard(),
+            parse_mode="HTML"
+        )
         return
 
     if step == "description_text":
-        ok = set_product_description(state["product_name"], txt)
-        admin_states[uid] = {"step": "admin"}
+        if is_valid_admin_button_text(txt):
+            await message.answer(
+                rtl("<b>⚠️ זה כפתור ניהול, לא תיאור מוצר.</b>\n\nרשום תיאור חופשי או לחץ ⬅️ חזרה לניהול מוצרים."),
+                reply_markup=product_action_back_keyboard(),
+                parse_mode="HTML"
+            )
+            return
 
-        text = "<b>✅ התיאור עודכן.</b>" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
-        await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
+        ok = set_product_description(state["product_name"], txt)
+        admin_states[uid] = {"step": "products_section"}
+
+        text = (
+            f"<b>✅ התיאור עודכן.</b>\n\n"
+            f"{field('מוצר', state['product_name'])}"
+        ) if ok else "<b>⚠️ המוצר לא נמצא.</b>"
+        await message.answer(rtl(text), reply_markup=admin_products_menu_keyboard(), parse_mode="HTML")
         return
 
     if step == "stock_name":
