@@ -1,7 +1,7 @@
 import os
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from html import escape
 from datetime import datetime
 import calendar
@@ -71,6 +71,80 @@ def save_customer_menu_store(store):
         print(f"CUSTOMER_MENU_STORE_SAVE_ERROR: {type(e).__name__}: {e}")
 
 
+# ================== CUSTOMER STATUS MAIN MENU BANNER FIX ==================
+# כשאדמין מעדכן סטטוס הזמנה, הלקוח מקבל תפריט ראשי עם באנר,
+# בדיוק כמו בתפריט הראשי של shop_handlers.
+CUSTOMER_BANNER_FILE_ID_CACHE_FILE = "customer_banner_file_ids.json"
+CUSTOMER_MAIN_MENU_BANNER_KEY = "main_menu"
+CUSTOMER_MAIN_MENU_BANNER_PATH = "assets/banners/main_menu.jpg"
+
+
+def load_customer_banner_file_ids():
+    try:
+        if os.path.exists(CUSTOMER_BANNER_FILE_ID_CACHE_FILE):
+            with open(CUSTOMER_BANNER_FILE_ID_CACHE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+
+def save_customer_banner_file_ids(data):
+    try:
+        with open(CUSTOMER_BANNER_FILE_ID_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data or {}, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"CUSTOMER_BANNER_FILE_ID_CACHE_SAVE_ERROR: {type(e).__name__}: {e}")
+
+
+def widen_customer_status_menu_caption(text):
+    text = str(text or "")
+    wide_line = "\u00A0" * 65
+    if wide_line in text:
+        return text
+    return text.rstrip() + "\n" + wide_line
+
+
+async def send_customer_banner_photo(bot, customer_telegram_id, banner_key, caption, reply_markup=None, parse_mode="HTML"):
+    cache = load_customer_banner_file_ids()
+    file_id = cache.get(str(banner_key))
+
+    if file_id:
+        try:
+            return await bot.send_photo(
+                customer_telegram_id,
+                photo=file_id,
+                caption=caption,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode
+            )
+        except Exception as e:
+            print(f"CUSTOMER_BANNER_FILE_ID_SEND_FAILED_{banner_key}: {type(e).__name__}: {e}")
+            cache.pop(str(banner_key), None)
+            save_customer_banner_file_ids(cache)
+
+    if os.path.exists(CUSTOMER_MAIN_MENU_BANNER_PATH):
+        try:
+            sent = await bot.send_photo(
+                customer_telegram_id,
+                photo=FSInputFile(CUSTOMER_MAIN_MENU_BANNER_PATH),
+                caption=caption,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode
+            )
+            try:
+                if sent.photo:
+                    cache[str(banner_key)] = sent.photo[-1].file_id
+                    save_customer_banner_file_ids(cache)
+            except Exception:
+                pass
+            return sent
+        except Exception as e:
+            print(f"CUSTOMER_BANNER_SEND_ERROR_{banner_key}: {type(e).__name__}: {e}")
+
+    return None
+
+
 async def delete_customer_last_menu(bot, customer_telegram_id):
     store = load_customer_menu_store()
     old_menu_id = store.pop(str(customer_telegram_id), None)
@@ -119,13 +193,32 @@ def status_customer_inline_main_keyboard(customer_telegram_id=None):
 
 
 async def send_customer_main_menu_bottom(bot, customer_telegram_id):
+    """
+    STATUS_CUSTOMER_MENU_WITH_BANNER_FIX
+    אחרי עדכון סטטוס הזמנה מצד האדמין, שולח ללקוח תפריט ראשי עם באנר.
+    אם אין באנר או file_id נכשל — חוזר אוטומטית לטקסט רגיל כדי לא להפיל את הבוט.
+    """
     try:
-        sent_menu = await bot.send_message(
+        caption = widen_customer_status_menu_caption(
+            rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט:")
+        )
+
+        sent_menu = await send_customer_banner_photo(
+            bot,
             customer_telegram_id,
-            rtl("<b>🏠 תפריט ראשי</b>\n\nבחר פעולה מהתפריט:"),
+            CUSTOMER_MAIN_MENU_BANNER_KEY,
+            caption=caption,
             reply_markup=status_customer_inline_main_keyboard(customer_telegram_id),
             parse_mode="HTML"
         )
+
+        if sent_menu is None:
+            sent_menu = await bot.send_message(
+                customer_telegram_id,
+                caption,
+                reply_markup=status_customer_inline_main_keyboard(customer_telegram_id),
+                parse_mode="HTML"
+            )
 
         store = load_customer_menu_store()
         store[str(customer_telegram_id)] = int(sent_menu.message_id)
@@ -135,7 +228,6 @@ async def send_customer_main_menu_bottom(bot, customer_telegram_id):
     except Exception as e:
         print(f"CUSTOMER_MENU_BOTTOM_SEND_ERROR: {type(e).__name__}: {e}")
         return None
-
 
 async def send_customer_status_with_menu(bot, customer_telegram_id, status_text):
     """
