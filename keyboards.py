@@ -166,7 +166,7 @@ def admin_settings_menu_keyboard():
             [KeyboardButton(text="💾 צור גיבוי DB")],
             [KeyboardButton(text="📋 רשימת גיבויים")],
             [KeyboardButton(text="📄 רשימת לוגים")],
-            [KeyboardButton(text="⬇️ הורד קובץ לוג")],
+            [KeyboardButton(text="🛠️ מצב תחזוקה")],
             [KeyboardButton(text="🧹 איפוס מערכת הזמנות")],
             [KeyboardButton(text="⬅️ חזרה לניהול")]
         ],
