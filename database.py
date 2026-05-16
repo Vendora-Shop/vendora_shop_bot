@@ -1272,22 +1272,6 @@ def get_orders_by_customer_telegram_id(telegram_id, limit=30):
 def create_customer_experience_tables():
     conn = get_connection()
     cur = conn.cursor()
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS customer_addresses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            telegram_id INTEGER NOT NULL,
-            label TEXT DEFAULT 'כתובת',
-            city TEXT NOT NULL,
-            street TEXT NOT NULL,
-            floor TEXT DEFAULT '',
-            apartment TEXT DEFAULT '',
-            is_default INTEGER DEFAULT 0,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-    """)
-
     cur.execute("""
         CREATE TABLE IF NOT EXISTS favorite_products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
