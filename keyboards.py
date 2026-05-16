@@ -42,28 +42,132 @@ def main_keyboard(user_id=None):
 
 
 def admin_keyboard():
+    # ADMIN_PANEL_CATEGORIES_V1
+    # תפריט ראשי נקי — רק קטגוריות. כל הפעולות הישנות נשארות בתתי־תפריטים.
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📦 ניהול הזמנות")],
-            [KeyboardButton(text="🧾 הזמנות אחרונות"), KeyboardButton(text="🆕 הזמנות חדשות")],
-            [KeyboardButton(text="🔎 חפש הזמנה"), KeyboardButton(text="📞 חפש לפי טלפון")],
-            [KeyboardButton(text="📊 מצב העסק"), KeyboardButton(text="📅 סטטיסטיקה לפי תאריך")],
-            [KeyboardButton(text="📢 שלח הודעה ללקוחות")],
-            [KeyboardButton(text="👥 לקוחות")],
-            [KeyboardButton(text="🏷️ ניהול קופונים")],
-            [KeyboardButton(text=support_tickets_button_text())],
-            [KeyboardButton(text="🔄 עדכן סטטוס הזמנה")],
-            [KeyboardButton(text="🧹 איפוס מערכת הזמנות")],
-            [KeyboardButton(text="➕ הוסף מוצר"), KeyboardButton(text="📦 רשימת מוצרים")],
-            [KeyboardButton(text="✏️ שנה מחיר"), KeyboardButton(text="📝 שנה תיאור")],
-            [KeyboardButton(text="✏️ אפס והגדר מלאי חדש"), KeyboardButton(text="➕ הגדל מלאי קיים")],
-            [KeyboardButton(text="🖼️ עדכן תמונה")],
-            [KeyboardButton(text="🔴 כבה מוצר"), KeyboardButton(text="🟢 הפעל מוצר")],
-            [KeyboardButton(text="🗑️ מחק מוצר")],
+            [KeyboardButton(text="🛍️ ניהול מוצרים"), KeyboardButton(text="📊 ניהול מלאי")],
+            [KeyboardButton(text="👥 ניהול לקוחות"), KeyboardButton(text="🏷️ קופונים ומבצעים")],
+            [KeyboardButton(text="🎧 שירות לקוחות"), KeyboardButton(text="📢 שיווק והודעות")],
+            [KeyboardButton(text="📊 סטטיסטיקה ודוחות"), KeyboardButton(text="⚙️ הגדרות מערכת")],
             [KeyboardButton(text="⬅️ יציאה מניהול")]
         ],
         resize_keyboard=True
     )
+
+
+def admin_orders_menu_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📋 הזמנות פתוחות")],
+            [KeyboardButton(text="🆕 הזמנות חדשות"), KeyboardButton(text="🧾 הזמנות אחרונות")],
+            [KeyboardButton(text="🔎 חפש הזמנה"), KeyboardButton(text="📞 חפש לפי טלפון")],
+            [KeyboardButton(text="🔄 עדכן סטטוס הזמנה")],
+            [KeyboardButton(text="🧹 איפוס מערכת הזמנות")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def admin_products_menu_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="➕ הוסף מוצר"), KeyboardButton(text="📦 רשימת מוצרים")],
+            [KeyboardButton(text="✏️ שנה מחיר"), KeyboardButton(text="📝 שנה תיאור")],
+            [KeyboardButton(text="🖼️ עדכן תמונה")],
+            [KeyboardButton(text="🔴 כבה מוצר"), KeyboardButton(text="🟢 הפעל מוצר")],
+            [KeyboardButton(text="🗑️ מחק מוצר")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def admin_stock_menu_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✏️ אפס והגדר מלאי חדש")],
+            [KeyboardButton(text="➕ הגדל מלאי קיים")],
+            [KeyboardButton(text="📦 רשימת מוצרים")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def admin_customers_menu_root_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="👥 לקוחות")],
+            [KeyboardButton(text="🔎 חפש לקוח")],
+            [KeyboardButton(text="📢 שלח הודעה ללקוחות")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def admin_coupons_root_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🏷️ ניהול קופונים")],
+            [KeyboardButton(text="➕ צור קופון")],
+            [KeyboardButton(text="📋 רשימת קופונים")],
+            [KeyboardButton(text="🔴 כבה קופון"), KeyboardButton(text="🟢 הפעל קופון")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def admin_marketing_menu_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📢 שלח הודעה ללקוחות")],
+            [KeyboardButton(text="👥 לקוחות")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def admin_support_root_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=support_tickets_button_text())],
+            [KeyboardButton(text="📬 פניות פתוחות"), KeyboardButton(text="📁 פניות סגורות")],
+            [KeyboardButton(text="🔍 חיפוש פנייה")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def admin_reports_menu_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📊 מצב העסק")],
+            [KeyboardButton(text="📅 סטטיסטיקה לפי תאריך")],
+            [KeyboardButton(text="📦 ניהול הזמנות")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def admin_settings_menu_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🖼️ עדכן תמונה")],
+            [KeyboardButton(text="🧹 איפוס מערכת הזמנות")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
 
 
 def order_status_keyboard():
