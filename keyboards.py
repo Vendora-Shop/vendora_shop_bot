@@ -58,13 +58,13 @@ def admin_keyboard():
 
 
 def admin_orders_menu_keyboard():
+    # ADMIN_ORDERS_MENU_NO_DUPLICATES_FINAL
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📋 הזמנות פתוחות")],
             [KeyboardButton(text="🆕 הזמנות חדשות"), KeyboardButton(text="🧾 הזמנות אחרונות")],
             [KeyboardButton(text="🔎 חפש הזמנה"), KeyboardButton(text="📞 חפש לפי טלפון")],
             [KeyboardButton(text="🔄 עדכן סטטוס הזמנה")],
-            [KeyboardButton(text="🧹 איפוס מערכת הזמנות")],
             [KeyboardButton(text="⬅️ חזרה לניהול")]
         ],
         resize_keyboard=True
@@ -146,11 +146,11 @@ def admin_support_root_keyboard():
 
 
 def admin_reports_menu_keyboard():
+    # ADMIN_REPORTS_MENU_NO_DUPLICATES_FINAL
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📊 מצב העסק")],
             [KeyboardButton(text="📅 סטטיסטיקה לפי תאריך")],
-            [KeyboardButton(text="📦 ניהול הזמנות")],
             [KeyboardButton(text="⬅️ חזרה לניהול")]
         ],
         resize_keyboard=True
@@ -158,6 +158,7 @@ def admin_reports_menu_keyboard():
 
 
 def admin_settings_menu_keyboard():
+    # ADMIN_SYSTEM_RESET_ONLY_HERE_FINAL
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🖼️ עדכן תמונה")],
