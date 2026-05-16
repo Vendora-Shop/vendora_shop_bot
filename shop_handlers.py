@@ -2427,11 +2427,14 @@ def addresses_menu_keyboard():
     # ADDRESS_FLOW_NAV_FIX_MENU
     return _inline([
         [
-            _btn("📍 הכתובות שלי", "ui:addr:show"),
+            _btn("📋 הצג כתובות", "ui:addr:show"),
             _btn("➕ הוסף כתובת", "ui:addr:add"),
         ],
         [_btn("⬅️ חזרה לאזור אישי", "ui:personal:menu")],
+        [_btn("⬅️ חזרה לתפריט", "ui:nav:main")],
     ])
+
+
 
 
 def address_select_keyboard(addresses):
@@ -2445,9 +2448,12 @@ def address_select_keyboard(addresses):
         rows.append([_btn(f"🏠 {address_id} | {label} | {city}, {street}", f"ui:addr:id:{address_id}")])
 
     rows.append([_btn("➕ הוסף כתובת", "ui:addr:add")])
-    rows.append([_btn("↩️ כתובות", "ui:addr:menu")])
+    rows.append([_btn("↩️ חזרה לכתובות", "ui:addr:menu")])
     rows.append([_btn("⬅️ חזרה לאזור אישי", "ui:personal:menu")])
+    rows.append([_btn("⬅️ חזרה לתפריט", "ui:nav:main")])
     return _inline(rows)
+
+
 
 
 def address_actions_keyboard():
@@ -2457,9 +2463,12 @@ def address_actions_keyboard():
             _btn("📝 עריכה", "ui:addr:edit"),
             _btn("🗑️ מחיקה", "ui:addr:delete"),
         ],
-        [_btn("↩️ רשימת כתובות", "ui:addr:back_list")],
+        [_btn("↩️ חזרה לרשימת כתובות", "ui:addr:back_list")],
         [_btn("⬅️ חזרה לאזור אישי", "ui:personal:menu")],
+        [_btn("⬅️ חזרה לתפריט", "ui:nav:main")],
     ])
+
+
 
 
 def address_edit_keyboard():
@@ -4968,24 +4977,18 @@ async def back_to_main_menu(message: Message):
 @router.message(F.text == "🏠 הכתובות שלי")
 async def my_addresses(message: Message):
     uid = message.from_user.id
-    # MY_ADDRESSES_CLEAR_TEMP_FIX
-    try:
-        await delete_temp_bot_messages(message.bot, uid)
-    except Exception:
-        pass
 
-
-    if uid not in users:
-        users[uid] = {"cart": []}
-
+    # ADDRESS_MENU_STABLE_FIX
+    users.setdefault(uid, {"cart": []})
     users[uid]["step"] = "addresses_menu"
 
     await send_temp_message(
         message,
-        rtl("<b>🏠 הכתובות שלי</b>\n\nבחר פעולה מהתפריט."),
+        rtl("<b>📍 הכתובות שלי</b>\n\nבחר פעולה:"),
         reply_markup=addresses_menu_keyboard(),
         parse_mode="HTML"
     )
+
 
 
 @router.message(F.text == "📋 הצג כתובות")
@@ -5056,7 +5059,7 @@ async def handle_shop(message: Message):
         await show_addresses_list_screen(message, uid)
         return
 
-    if txt in {"↩️ כתובות"}:
+    if txt in {"↩️ כתובות", "↩️ חזרה לכתובות"}:
         await show_addresses_menu_screen(message, uid)
         return
 
