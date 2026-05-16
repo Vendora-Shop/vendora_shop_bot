@@ -973,16 +973,19 @@ async def customer_blocked_by_maintenance(message: Message):
     except Exception:
         pass
 
-    # MAINTENANCE_DELETE_USER_SPAM_TEXT_FIX_V2
-    # בזמן תחזוקה מוחקים גם כל טקסט/קשקוש שהלקוח שולח.
-    # כאן משתמשים ב-await ולא create_task, כדי שהמחיקה באמת תתבצע מיד.
-    try:
-        await message.delete()
-    except Exception:
+    # MAINTENANCE_DELETE_USER_SPAM_TEXT_FIX_V3
+    # בזמן תחזוקה מוחקים קשקושים וטקסטים לא רלוונטיים,
+    # אבל לא מוחקים /start כדי שללקוח יישאר כפתור/פקודה שאפשר ללחוץ עליה שוב אחרי פתיחת החנות.
+    incoming_text = (message.text or "").strip()
+
+    if incoming_text != "/start":
         try:
-            await message.bot.delete_message(message.chat.id, message.message_id)
+            await message.delete()
         except Exception:
-            pass
+            try:
+                await message.bot.delete_message(message.chat.id, message.message_id)
+            except Exception:
+                pass
 
     try:
         await delete_temp_bot_messages(message.bot, uid)
