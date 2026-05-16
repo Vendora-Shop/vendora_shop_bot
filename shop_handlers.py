@@ -5365,6 +5365,56 @@ async def add_address_start(message: Message):
 async def handle_shop(message: Message):
     uid = message.from_user.id
     txt = (message.text or "").strip()
+    data = users.setdefault(uid, {"cart": []})
+
+    # CUSTOMER_QTY_FREE_TEXT_MERGE_FIX
+    # היה catch-all כפול בהמשך הקובץ. כדי שלא תהיה כפילות router.message(),
+    # טיפול בכמות ידנית עבר לכאן, לפני ש-handle_shop מוחק טקסט לא צפוי.
+    if data.get("waiting_for_qty"):
+        value = txt
+
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        if not value.isdigit():
+            await send_temp_message(
+                message,
+                rtl("<b>⚠️ רשום את הכמות במספרים בלבד.</b>"),
+                parse_mode="HTML",
+                clear_previous=False
+            )
+            return
+
+        qty = int(value)
+        if qty <= 0:
+            await send_temp_message(
+                message,
+                rtl("<b>⚠️ הכמות חייבת להיות גדולה מ־0.</b>"),
+                parse_mode="HTML",
+                clear_previous=False
+            )
+            return
+
+        clear_invalid_warning(data, "qty_invalid_warned")
+        try:
+            await cleanup_input_warnings(message.bot, uid)
+        except Exception:
+            pass
+
+        data["selected_qty"] = qty
+        data["waiting_for_qty"] = False
+
+        product = data.get("current_product")
+        if product:
+            await send_temp_message(
+                message,
+                rtl(f"✅ הכמות עודכנה ל־{qty}."),
+                parse_mode="HTML",
+                clear_previous=False
+            )
+        return
     # ADDRESS_FLOW_TEXT_ALIAS_FIX
     if txt in {"↩️ רשימת כתובות", "↩️ רשימה"}:
         await show_addresses_list_screen(message, uid)
@@ -5373,8 +5423,6 @@ async def handle_shop(message: Message):
     if txt in {"↩️ כתובות", "↩️ חזרה לכתובות"}:
         await show_addresses_menu_screen(message, uid)
         return
-
-    data = users.get(uid)
 
     products = get_active_products()
 
@@ -7006,7 +7054,6 @@ async def handle_shop(message: Message):
         return
 
 
-@router.message()
 async def handle_customer_free_text(message: Message):
     data = users.setdefault(message.from_user.id, {"cart": []})
 
