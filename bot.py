@@ -6,6 +6,7 @@ from config import BOT_TOKEN
 from database import create_tables
 from admin_handlers import router as admin_router
 from shop_handlers import router as shop_router
+from auto_backup_scheduler import automatic_backup_loop
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -22,6 +23,8 @@ async def main():
     # כך מצמצמים הופעה של הכפתור הכחול התחתון במכשירים שונים.
     await bot.delete_my_commands()
     await bot.set_chat_menu_button(menu_button=MenuButtonDefault())
+
+    asyncio.create_task(automatic_backup_loop())
 
     print("Vendora Shop Running...")
     await dp.start_polling(bot)
