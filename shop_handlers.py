@@ -973,6 +973,14 @@ async def customer_blocked_by_maintenance(message: Message):
     except Exception:
         pass
 
+    # MAINTENANCE_DELETE_USER_SPAM_TEXT_FIX
+    # בזמן תחזוקה מוחקים גם כל טקסט/קשקוש שהלקוח שולח,
+    # כדי שהצ'אט לא יתמלא בהודעות לא רלוונטיות.
+    try:
+        asyncio.create_task(message.delete())
+    except Exception:
+        pass
+
     try:
         await delete_temp_bot_messages(message.bot, uid)
     except Exception:
