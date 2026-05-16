@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from pathlib import Path
 
 from database import DB_PATH
+from logger import log_backup_event, log_error
 
 
 BACKUP_DIR = os.getenv("VENDORA_BACKUP_DIR", "/data/backups")
@@ -68,7 +69,13 @@ def create_db_backup(reason="manual", keep_last=DEFAULT_KEEP_LAST):
         src_conn.close()
         dst_conn.close()
 
-        cleanup_old_backups(keep_last=keep_last)
+        deleted = cleanup_old_backups(keep_last=keep_last)
+
+        # BACKUP_LOGGING_V1
+        log_backup_event(
+            "created",
+            f"reason={reason} | file={target.name} | size={target.stat().st_size if target.exists() else 0} | deleted_old={len(deleted)}"
+        )
 
         return {
             "ok": True,
@@ -79,6 +86,7 @@ def create_db_backup(reason="manual", keep_last=DEFAULT_KEEP_LAST):
         }
 
     except Exception as e:
+        log_error(e, context=f"create_db_backup reason={reason}")
         try:
             src_conn.close()
         except Exception:
@@ -160,6 +168,11 @@ def restore_db_backup(backup_path):
 
         shutil.copy2(str(backup_path), str(target))
 
+        log_backup_event(
+            "restored",
+            f"restored_from={backup_path} | safety_backup={safety.get('path')}"
+        )
+
         return {
             "ok": True,
             "error": None,
@@ -168,6 +181,7 @@ def restore_db_backup(backup_path):
         }
 
     except Exception as e:
+        log_error(e, context=f"restore_db_backup backup_path={backup_path}")
         return {
             "ok": False,
             "error": f"{type(e).__name__}: {e}",
