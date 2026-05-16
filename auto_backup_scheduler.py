@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 from backup_manager import create_db_backup
 
 
-AUTO_BACKUP_INTERVAL_HOURS = 24
+AUTO_BACKUP_INTERVAL_HOURS = 12
 
 
 def israel_now():
