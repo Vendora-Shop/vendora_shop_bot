@@ -1017,6 +1017,18 @@ def format_customer_orders_summary(customer, orders):
     return rtl(text)
 
 
+def customer_history_result_keyboard():
+    # CUSTOMER_HISTORY_RESULT_KEYBOARD_FIX
+    # אחרי הצגת היסטוריית הזמנות, לא מציגים שוב את אותו כפתור.
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="⬅️ חזרה לרשימת לקוחות")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
 def clean_broadcast_text(text):
     return str(text or "").strip()
 
@@ -3371,7 +3383,7 @@ async def admin_flow(message: Message):
 
             await message.answer(
                 format_customer_orders_summary(customer, orders),
-                reply_markup=customer_actions_keyboard(),
+                reply_markup=customer_history_result_keyboard(),
                 parse_mode="HTML"
             )
             return
