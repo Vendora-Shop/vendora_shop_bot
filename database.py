@@ -1507,6 +1507,49 @@ def mark_coupon_used(code, telegram_id, order_number):
     conn.commit(); conn.close(); return True
 
 
+def get_coupons(limit=50):
+    create_customer_experience_tables()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT code, discount_type, discount_value, min_order_total, max_uses, used_count, active, expires_at, created_at
+        FROM coupons
+        ORDER BY id DESC
+        LIMIT ?
+    """, (int(limit),))
+    rows = cur.fetchall()
+    conn.close()
+
+    result = []
+    for row in rows:
+        result.append({
+            "code": row[0],
+            "discount_type": row[1],
+            "discount_value": row[2],
+            "min_order_total": row[3],
+            "max_uses": row[4],
+            "used_count": row[5],
+            "active": row[6],
+            "expires_at": row[7],
+            "created_at": row[8],
+        })
+    return result
+
+
+def set_coupon_active(code, active):
+    create_customer_experience_tables()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE coupons SET active = ? WHERE code = ?",
+        (1 if active else 0, str(code or "").upper().strip())
+    )
+    changed = cur.rowcount
+    conn.commit()
+    conn.close()
+    return changed > 0
+
+
 # ---------- Reviews ----------
 def save_order_review(order_number, telegram_id, rating, comment=''):
     create_customer_experience_tables()
