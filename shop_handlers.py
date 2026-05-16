@@ -900,8 +900,63 @@ async def force_close_callback_phone_keyboard(callback: CallbackQuery):
 
 
 
+
+async def callback_blocked_by_maintenance(callback: CallbackQuery):
+    # MAINTENANCE_CALLBACK_BLOCK_FIX
+    # MAINTENANCE_CLOSE_ACTIVE_CUSTOMER_SCREEN_FIX
+    uid = callback.from_user.id
+
+    if uid == ADMIN_ID:
+        return False
+
+    if not is_maintenance_enabled():
+        return False
+
+    try:
+        await callback.answer(
+            "החנות נמצאת כרגע בתחזוקה.",
+            show_alert=True
+        )
+    except Exception:
+        pass
+
+    try:
+        data = users.setdefault(uid, {"cart": []})
+        data["step"] = "maintenance"
+        data.pop("checkout_in_progress", None)
+        data.pop("payment_simulation", None)
+    except Exception:
+        pass
+
+    try:
+        await delete_temp_bot_messages(callback.message.bot, uid)
+    except Exception:
+        pass
+
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    try:
+        sent = await callback.message.answer(
+            rtl(
+                "<b>🛠️ החנות נסגרה זמנית לתחזוקה.</b>\n\n"
+                "הפעולה נעצרה כדי למנוע הזמנה/שינוי בזמן עדכון מערכת.\n"
+                "נסה שוב מאוחר יותר."
+            ),
+            parse_mode="HTML"
+        )
+        users.setdefault(uid, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+    except Exception:
+        pass
+
+    return True
+
+
 async def customer_blocked_by_maintenance(message: Message):
     # MAINTENANCE_MODE_CUSTOMER_V1
+    # MAINTENANCE_CLOSE_ACTIVE_CUSTOMER_SCREEN_FIX
     uid = message.from_user.id
 
     if uid == ADMIN_ID:
@@ -910,12 +965,32 @@ async def customer_blocked_by_maintenance(message: Message):
     if not is_maintenance_enabled():
         return False
 
-    await message.answer(
+    try:
+        data = users.setdefault(uid, {"cart": []})
+        data["step"] = "maintenance"
+        data.pop("checkout_in_progress", None)
+        data.pop("payment_simulation", None)
+    except Exception:
+        pass
+
+    try:
+        await delete_temp_bot_messages(message.bot, uid)
+    except Exception:
+        pass
+
+    sent = await message.answer(
         rtl(
-            f"<b>{maintenance_message()}</b>"
+            "<b>🛠️ החנות סגורה כרגע לתחזוקה.</b>\n\n"
+            "לא ניתן לבצע פעולות בחנות בזמן תחזוקה.\n"
+            "נסה שוב מאוחר יותר."
         ),
         parse_mode="HTML"
     )
+
+    try:
+        users.setdefault(uid, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+    except Exception:
+        pass
 
     return True
 
@@ -3516,6 +3591,9 @@ async def support_inline_router(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("ui:"))
 async def customer_inline_ui_router(callback: CallbackQuery):
+    if await callback_blocked_by_maintenance(callback):
+        return
+
     if await check_customer_callback_rate_limit(callback, "callback"):
         return
 
