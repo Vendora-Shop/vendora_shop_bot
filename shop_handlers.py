@@ -530,10 +530,30 @@ def widen_inline_screen_text(text):
 # מוחק קשקושים של לקוחות רק במקומות שבהם צריך לבחור מכפתורים.
 # לא מוחק סיכומי הזמנה, PDF או הודעות מעקב.
 async def delete_customer_message(message: Message):
+    """
+    CUSTOMER_INPUT_DELETE_FIX
+    מוחק הודעת לקוח וגם שומר אותה לרשימת ניקוי,
+    כדי שבקלט חופשי כמו שם כתובת/עיר היא לא תישאר בצ'אט.
+    """
     try:
-        await message.delete()
+        uid = message.from_user.id
+        data = users.setdefault(uid, {"cart": []})
+        msg_id = getattr(message, "message_id", None)
+        if msg_id:
+            data.setdefault("customer_input_message_ids", []).append(msg_id)
+            data.setdefault("temp_bot_messages", []).append(msg_id)
     except Exception:
         pass
+
+    try:
+        await message.bot.delete_message(message.chat.id, message.message_id)
+    except Exception:
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+
 
 
 async def warn_once_then_delete_invalid(message: Message, data: dict, warn_key: str, text: str, reply_markup=None):
@@ -656,13 +676,27 @@ def remember_customer_input_message(data: dict, message_obj):
 
 
 async def consume_customer_click(message: Message):
-    # FAST_TRANSITION_FIX
-    # לא מחכים למחיקת הודעת הלקוח לפני פתיחת המסך הבא.
-    # המחיקה רצה ברקע כדי למנוע תקיעה במעבר.
+    # CUSTOMER_INPUT_DELETE_FIX
+    # שומר ומוחק גם הודעות טקסט חופשי של לקוחות, למשל שם כתובת/עיר/רחוב.
     try:
-        asyncio.create_task(message.delete())
+        uid = message.from_user.id
+        data = users.setdefault(uid, {"cart": []})
+        msg_id = getattr(message, "message_id", None)
+        if msg_id:
+            data.setdefault("customer_input_message_ids", []).append(msg_id)
+            data.setdefault("temp_bot_messages", []).append(msg_id)
     except Exception:
         pass
+
+    try:
+        asyncio.create_task(_delete_message_safely(message.bot, message.chat.id, message.message_id))
+    except Exception:
+        try:
+            asyncio.create_task(message.delete())
+        except Exception:
+            pass
+
+
 
 
 def remember_temp_bot_message(uid, message_obj):
@@ -975,6 +1009,7 @@ async def cleanup_customer_order_screens(bot, uid):
 
     ids = []
     ids.extend(list(data.get("temp_bot_messages", []) or []))
+    ids.extend(list(data.get("customer_input_message_ids", []) or []))
 
     for key in [
         "qty_manual_message_id",
@@ -993,6 +1028,7 @@ async def cleanup_customer_order_screens(bot, uid):
             ids.append(msg_id)
 
     data["temp_bot_messages"] = []
+    data["customer_input_message_ids"] = []
 
     if ids:
         try:
