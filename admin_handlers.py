@@ -1781,6 +1781,21 @@ async def cancel_support_reply(message: Message):
         )
 
 
+# ================== GLOBAL ADMIN BACK GUARD ==================
+@router.message(lambda message: is_admin(message.from_user.id) and clean_admin_text(message.text) == "⬅️ חזרה לניהול" and bool(admin_states.get(message.from_user.id, {}).get("step")) and admin_states.get(message.from_user.id, {}).get("step") != "admin")
+async def global_admin_back_guard(message: Message):
+    # ADMIN_GLOBAL_BACK_STATE_FIX
+    # חייב להיות לפני handlers של states כמו פניות שירות,
+    # כדי שכפתור חזרה לניהול לא ייתפס בטעות כבחירת פנייה/טקסט.
+    admin_states[message.from_user.id] = {"step": "admin"}
+
+    await message.answer(
+        rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
+        reply_markup=admin_keyboard(),
+        parse_mode="HTML"
+    )
+
+
 @router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "support_reply")
 async def send_support_reply_to_customer(message: Message):
     state = admin_states.get(message.from_user.id, {})
@@ -2133,7 +2148,18 @@ async def search_support_ticket_start(message: Message):
 
 @router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "support_ticket_search")
 async def search_support_ticket_run(message: Message):
-    ticket_number = clean_admin_text(message.text).upper()
+    txt = clean_admin_text(message.text)
+
+    if txt == "⬅️ חזרה לניהול":
+        admin_states[message.from_user.id] = {"step": "admin"}
+        await message.answer(
+            rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    ticket_number = txt.upper()
     ticket = get_support_ticket(ticket_number)
 
     if not ticket:
@@ -2159,7 +2185,18 @@ async def search_support_ticket_run(message: Message):
 
 @router.message(lambda message: is_admin(message.from_user.id) and admin_states.get(message.from_user.id, {}).get("step") == "support_ticket_select")
 async def open_support_ticket_from_list(message: Message):
-    ticket_number = extract_ticket_number_from_button(message.text)
+    txt = clean_admin_text(message.text)
+
+    if txt == "⬅️ חזרה לניהול":
+        admin_states[message.from_user.id] = {"step": "admin"}
+        await message.answer(
+            rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    ticket_number = extract_ticket_number_from_button(txt)
     ticket = get_support_ticket(ticket_number)
 
     if not ticket:
