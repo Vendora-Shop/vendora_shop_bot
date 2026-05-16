@@ -9,7 +9,7 @@ import json
 import re
 
 from config import ADMIN_ID
-from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard, customers_menu_keyboard, customer_actions_keyboard, customer_select_keyboard, support_tickets_menu_keyboard, support_ticket_actions_keyboard, closed_support_ticket_actions_keyboard, support_ticket_select_keyboard
+from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard, customers_menu_keyboard, customer_actions_keyboard, customer_select_keyboard, support_tickets_menu_keyboard, support_ticket_actions_keyboard, closed_support_ticket_actions_keyboard, support_ticket_select_keyboard, admin_orders_menu_keyboard, admin_products_menu_keyboard, admin_stock_menu_keyboard, admin_customers_menu_root_keyboard, admin_coupons_root_keyboard, admin_marketing_menu_keyboard, admin_support_root_keyboard, admin_reports_menu_keyboard, admin_settings_menu_keyboard
 from database import (
     add_product,
     get_all_products,
@@ -334,6 +334,13 @@ def is_valid_admin_button_text(text):
         "אחוז %",
         "סכום ₪",
         "ללא תוקף",
+        "🛍️ ניהול מוצרים",
+        "📊 ניהול מלאי",
+        "🏷️ קופונים ומבצעים",
+        "🎧 שירות לקוחות",
+        "📢 שיווק והודעות",
+        "📊 סטטיסטיקה ודוחות",
+        "⚙️ הגדרות מערכת",
         "⬅️ יציאה מניהול",
         "⬅️ חזרה לניהול",
         "⬅️ חזרה לניהול הזמנות",
@@ -1833,6 +1840,126 @@ async def broadcast_start(message: Message):
     )
 
 
+
+# ================== ADMIN CATEGORIZED PANEL ==================
+async def show_admin_root_menu(message: Message):
+    admin_states[message.from_user.id] = {"step": "admin"}
+    await message.answer(
+        rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
+        reply_markup=admin_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "📦 ניהול הזמנות")
+async def admin_orders_category(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    admin_states[message.from_user.id] = {"step": "orders_section"}
+    await message.answer(
+        rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"),
+        reply_markup=admin_orders_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "🛍️ ניהול מוצרים")
+async def admin_products_category(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    admin_states[message.from_user.id] = {"step": "products_section"}
+    await message.answer(
+        rtl("<b>🛍️ ניהול מוצרים</b>\n\nבחר פעולה:"),
+        reply_markup=admin_products_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "📊 ניהול מלאי")
+async def admin_stock_category(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    admin_states[message.from_user.id] = {"step": "stock_section"}
+    await message.answer(
+        rtl("<b>📊 ניהול מלאי</b>\n\nבחר פעולה:"),
+        reply_markup=admin_stock_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "👥 ניהול לקוחות")
+async def admin_customers_category(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    admin_states[message.from_user.id] = {"step": "customers_root"}
+    await message.answer(
+        rtl("<b>👥 ניהול לקוחות</b>\n\nבחר פעולה:"),
+        reply_markup=admin_customers_menu_root_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "🏷️ קופונים ומבצעים")
+async def admin_coupons_category(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    admin_states[message.from_user.id] = {"step": "coupons_menu"}
+    await message.answer(
+        rtl("<b>🏷️ קופונים ומבצעים</b>\n\nבחר פעולה:"),
+        reply_markup=admin_coupons_root_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "🎧 שירות לקוחות")
+async def admin_support_category(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    admin_states[message.from_user.id] = {"step": "support_tickets_menu"}
+    await message.answer(
+        rtl("<b>🎧 שירות לקוחות</b>\n\nבחר פעולה:"),
+        reply_markup=admin_support_root_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "📢 שיווק והודעות")
+async def admin_marketing_category(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    admin_states[message.from_user.id] = {"step": "marketing_section"}
+    await message.answer(
+        rtl("<b>📢 שיווק והודעות</b>\n\nבחר פעולה:"),
+        reply_markup=admin_marketing_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "📊 סטטיסטיקה ודוחות")
+async def admin_reports_category(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    admin_states[message.from_user.id] = {"step": "reports_section"}
+    await message.answer(
+        rtl("<b>📊 סטטיסטיקה ודוחות</b>\n\nבחר פעולה:"),
+        reply_markup=admin_reports_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "⚙️ הגדרות מערכת")
+async def admin_settings_category(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    admin_states[message.from_user.id] = {"step": "settings_section"}
+    await message.answer(
+        rtl("<b>⚙️ הגדרות מערכת</b>\n\nבחר פעולה:"),
+        reply_markup=admin_settings_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+
 @router.message(F.text == "⬅️ יציאה מניהול")
 async def exit_admin(message: Message):
     if not is_admin(message.from_user.id):
@@ -2252,7 +2379,7 @@ async def back_admin(message: Message):
         parse_mode="HTML"
     )
 
-@router.message(F.text == "📦 ניהול הזמנות")
+@router.message(F.text == "📋 הזמנות פתוחות")
 async def orders_management_start(message: Message):
     if not is_admin(message.from_user.id):
         return
