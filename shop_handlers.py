@@ -904,7 +904,7 @@ async def customer_blocked_by_maintenance(message: Message):
     # MAINTENANCE_MODE_CUSTOMER_V1
     uid = message.from_user.id
 
-    if is_admin(uid):
+    if uid == ADMIN_ID:
         return False
 
     if not is_maintenance_enabled():
