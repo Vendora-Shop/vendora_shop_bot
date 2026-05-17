@@ -2889,6 +2889,17 @@ async def confirm_clear_all_orders(message: Message):
 
     deleted_count = clear_all_orders_for_testing()
 
+    log_admin_action(message.from_user.id, "clear_all_orders_confirmed", f"deleted_count={deleted_count}")
+    safe_write_audit_event(
+        message.from_user.id,
+        "clear_all_orders_confirmed",
+        entity_type="orders",
+        entity_id="all_orders",
+        old_value={"orders_deleted": deleted_count},
+        new_value={"orders_deleted": 0},
+        details="admin_confirm_clear_all_orders",
+    )
+
     admin_states[message.from_user.id] = {"step": "admin"}
 
     await message.answer(
@@ -3239,10 +3250,22 @@ async def handle_photo(message: Message):
     file_id = message.photo[-1].file_id
     product_name = state["product_name"]
 
+    before_product = get_product_by_name(product_name)
+    old_image_file_id = before_product.get("image_file_id") if before_product else None
+
     ok = set_product_image(product_name, file_id)
     admin_states[uid] = {"step": "admin"}
 
     if ok:
+        log_admin_action(uid, "product_image_changed", f"product={product_name}")
+        safe_write_audit_event(
+            uid,
+            "product_image_changed",
+            entity_type="product",
+            entity_id=product_name,
+            old_value={"image_file_id": old_image_file_id},
+            new_value={"image_file_id": file_id},
+        )
         text = f"<b>✅ התמונה עודכנה בהצלחה</b>\n\n{field('מוצר', product_name)}"
     else:
         text = "<b>⚠️ המוצר לא נמצא.</b>"
@@ -3671,6 +3694,24 @@ async def admin_coupon_flow(message: Message):
             expires_at=expires,
         )
 
+        log_admin_action(uid, "coupon_created", f"code={state['coupon_code']}")
+        safe_write_audit_event(
+            uid,
+            "coupon_created",
+            entity_type="coupon",
+            entity_id=state["coupon_code"],
+            old_value=None,
+            new_value={
+                "code": state["coupon_code"],
+                "discount_type": state["coupon_type"],
+                "discount_value": state["coupon_value"],
+                "min_order_total": state.get("coupon_min_total", 0),
+                "max_uses": state.get("coupon_max_uses", 0),
+                "expires_at": expires,
+                "active": True,
+            },
+        )
+
         admin_states[uid] = {"step": "coupons_menu"}
 
         dtype_text = "אחוז" if state["coupon_type"] == "percent" else "סכום"
@@ -3734,6 +3775,15 @@ async def admin_flow(message: Message):
         deleted_count = clear_all_orders_for_testing()
 
         log_admin_action(uid, "reset_orders_confirmed", f"deleted_count={deleted_count}")
+        safe_write_audit_event(
+            uid,
+            "reset_orders_confirmed",
+            entity_type="orders",
+            entity_id="all_orders",
+            old_value={"orders_deleted": deleted_count},
+            new_value={"orders_deleted": 0},
+            details="admin_reset_orders_flow",
+        )
 
         admin_states[uid] = {"step": "admin"}
 
@@ -4399,6 +4449,18 @@ async def admin_flow(message: Message):
         ok = update_order_status(order_number, new_status)
         order = get_order_by_number(order_number)
 
+        if ok:
+            log_order_event(order_number, "status_changed", f"admin_id={uid} | from={current_status} | to={new_status}")
+            safe_write_audit_event(
+                uid,
+                "order_status_changed",
+                entity_type="order",
+                entity_id=order_number,
+                old_value={"status": current_status},
+                new_value={"status": new_status},
+                details="admin_order_action_direct_guard",
+            )
+
         if not ok or not order:
             await message.answer(
                 rtl("<b>⚠️ לא הצלחתי לעדכן את ההזמנה.</b>"),
@@ -4551,6 +4613,18 @@ async def admin_flow(message: Message):
         ok = update_order_status(order_number, new_status)
         order = get_order_by_number(order_number)
 
+        if ok:
+            log_order_event(order_number, "status_changed", f"admin_id={uid} | from={current_status} | to={new_status}")
+            safe_write_audit_event(
+                uid,
+                "order_status_changed",
+                entity_type="order",
+                entity_id=order_number,
+                old_value={"status": current_status},
+                new_value={"status": new_status},
+                details="manual_status_update_flow",
+            )
+
         admin_states[uid] = {"step": "admin"}
 
         if not ok or not order:
@@ -4656,6 +4730,26 @@ async def admin_flow(message: Message):
             sku=sku,
             image_file_id="",
             active=1,
+        )
+
+        log_admin_action(uid, "product_created", f"product={state['name']}")
+        safe_write_audit_event(
+            uid,
+            "product_created",
+            entity_type="product",
+            entity_id=state["name"],
+            old_value=None,
+            new_value={
+                "category": state["category"],
+                "name": state["name"],
+                "price": float(state["price"]),
+                "description": state["description"],
+                "max_qty": int(state["max_qty"]),
+                "stock": int(state["stock"]),
+                "sku": sku,
+                "image_file_id": "",
+                "active": 1,
+            },
         )
 
         admin_states[uid] = {"step": "admin"}
@@ -4811,7 +4905,22 @@ async def admin_flow(message: Message):
             await message.answer(rtl("<b>⚠️ נא לרשום מלאי תקין.</b>"), parse_mode="HTML")
             return
 
-        ok = set_product_stock(state["product_name"], int(txt))
+        product_name = state["product_name"]
+        new_stock = int(txt)
+        before_product = get_product_by_name(product_name)
+        old_stock = before_product.get("stock") if before_product else None
+
+        ok = set_product_stock(product_name, new_stock)
+        if ok:
+            log_admin_action(uid, "product_stock_changed", f"product={product_name} | old_stock={old_stock} | new_stock={new_stock}")
+            safe_write_audit_event(
+                uid,
+                "product_stock_changed",
+                entity_type="product",
+                entity_id=product_name,
+                old_value={"stock": old_stock},
+                new_value={"stock": new_stock},
+            )
         admin_states[uid] = {"step": "admin"}
 
         text = f"<b>✅ המלאי עודכן</b>\n\n{field('מלאי חדש', txt)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
@@ -4885,25 +4994,67 @@ async def admin_flow(message: Message):
         return
 
     if step == "off_name":
-        ok = set_product_active(txt, 0)
+        product_name = txt
+        before_product = get_product_by_name(product_name)
+        old_active = before_product.get("active") if before_product else None
+
+        ok = set_product_active(product_name, 0)
+        if ok:
+            log_admin_action(uid, "product_disabled", f"product={product_name}")
+            safe_write_audit_event(
+                uid,
+                "product_disabled",
+                entity_type="product",
+                entity_id=product_name,
+                old_value={"active": old_active},
+                new_value={"active": 0},
+            )
         admin_states[uid] = {"step": "admin"}
 
-        text = f"<b>🔴 המוצר כובה</b>\n\n{field('מוצר', txt)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
+        text = f"<b>🔴 המוצר כובה</b>\n\n{field('מוצר', product_name)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
         await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
         return
 
     if step == "on_name":
-        ok = set_product_active(txt, 1)
+        product_name = txt
+        before_product = get_product_by_name(product_name)
+        old_active = before_product.get("active") if before_product else None
+
+        ok = set_product_active(product_name, 1)
+        if ok:
+            log_admin_action(uid, "product_enabled", f"product={product_name}")
+            safe_write_audit_event(
+                uid,
+                "product_enabled",
+                entity_type="product",
+                entity_id=product_name,
+                old_value={"active": old_active},
+                new_value={"active": 1},
+            )
         admin_states[uid] = {"step": "admin"}
 
-        text = f"<b>🟢 המוצר הופעל</b>\n\n{field('מוצר', txt)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
+        text = f"<b>🟢 המוצר הופעל</b>\n\n{field('מוצר', product_name)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
         await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
         return
 
     if step == "delete_name":
-        ok = delete_product(txt)
+        product_name = txt
+        before_product = get_product_by_name(product_name)
+        old_value = dict(before_product) if isinstance(before_product, dict) else before_product
+
+        ok = delete_product(product_name)
+        if ok:
+            log_admin_action(uid, "product_deleted", f"product={product_name}")
+            safe_write_audit_event(
+                uid,
+                "product_deleted",
+                entity_type="product",
+                entity_id=product_name,
+                old_value=old_value,
+                new_value=None,
+            )
         admin_states[uid] = {"step": "admin"}
 
-        text = f"<b>🗑️ המוצר נמחק</b>\n\n{field('מוצר', txt)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
+        text = f"<b>🗑️ המוצר נמחק</b>\n\n{field('מוצר', product_name)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
         await message.answer(rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
         return
