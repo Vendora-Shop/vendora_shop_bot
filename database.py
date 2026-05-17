@@ -30,6 +30,46 @@ ACTIVE_PRODUCTS_CACHE = {
 }
 ACTIVE_PRODUCTS_CACHE_TTL_SECONDS = 2.0
 
+# ================== PERFORMANCE V8 ORDER / STATS CACHE ==================
+# Cache קצר מאוד לפאנל אדמין: סטטיסטיקות/רשימות הזמנות.
+# מתנקה בכל יצירת הזמנה או שינוי סטטוס.
+ORDER_STATS_CACHE = {}
+ORDER_STATS_CACHE_TTL_SECONDS = 1.5
+
+
+def _cache_get(key):
+    try:
+        item = ORDER_STATS_CACHE.get(str(key))
+        if not item:
+            return None
+
+        value, expires_at = item
+
+        if time.monotonic() < float(expires_at):
+            return value
+
+        ORDER_STATS_CACHE.pop(str(key), None)
+    except Exception:
+        pass
+
+    return None
+
+
+def _cache_set(key, value, ttl=ORDER_STATS_CACHE_TTL_SECONDS):
+    try:
+        ORDER_STATS_CACHE[str(key)] = (value, time.monotonic() + float(ttl))
+    except Exception:
+        pass
+
+    return value
+
+
+def invalidate_order_stats_cache():
+    try:
+        ORDER_STATS_CACHE.clear()
+    except Exception:
+        pass
+
 
 def invalidate_products_cache():
     try:
@@ -510,6 +550,8 @@ def create_order(
     conn.commit()
     conn.close()
 
+    invalidate_order_stats_cache()
+
     return order_number
 
 
@@ -565,6 +607,12 @@ def order_row_to_dict(row):
 
 
 def get_order_by_number(order_number):
+    # PERFORMANCE_V8_ORDER_STATS_CACHE
+    cache_key = f"order_by_number:{order_number}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -577,10 +625,16 @@ def get_order_by_number(order_number):
     """, (order_number,))
     row = cur.fetchone()
     conn.close()
-    return order_row_to_dict(row) if row else None
+    return _cache_set(cache_key, order_row_to_dict(row) if row else None)
 
 
 def get_recent_orders(limit=10):
+    # PERFORMANCE_V8_ORDER_STATS_CACHE
+    cache_key = f"recent_orders:{int(limit)}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -594,10 +648,16 @@ def get_recent_orders(limit=10):
     """, (int(limit),))
     rows = cur.fetchall()
     conn.close()
-    return [order_row_to_dict(row) for row in rows]
+    return _cache_set(cache_key, [order_row_to_dict(row) for row in rows])
 
 
 def get_orders_by_status(status, limit=20):
+    # PERFORMANCE_V8_ORDER_STATS_CACHE
+    cache_key = f"orders_by_status:{status}:{int(limit)}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -612,7 +672,7 @@ def get_orders_by_status(status, limit=20):
     """, (status, int(limit)))
     rows = cur.fetchall()
     conn.close()
-    return [order_row_to_dict(row) for row in rows]
+    return _cache_set(cache_key, [order_row_to_dict(row) for row in rows])
 
 
 def update_order_status(order_number, status):
@@ -629,11 +689,21 @@ def update_order_status(order_number, status):
     conn.commit()
     changed = cur.rowcount
     conn.close()
+
+    if changed > 0:
+        invalidate_order_stats_cache()
+
     return changed > 0
 
 
 def get_orders_by_phone(phone, limit=20):
     phone = str(phone).replace(" ", "").replace("-", "").strip()
+    # PERFORMANCE_V8_ORDER_STATS_CACHE
+    cache_key = f"orders_by_phone:{phone}:{int(limit)}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
 
     conn = get_connection()
     cur = conn.cursor()
@@ -650,7 +720,7 @@ def get_orders_by_phone(phone, limit=20):
 
     rows = cur.fetchall()
     conn.close()
-    return [order_row_to_dict(row) for row in rows]
+    return _cache_set(cache_key, [order_row_to_dict(row) for row in rows])
 
 
 
@@ -944,6 +1014,12 @@ def get_statistics_by_date(date_text):
     }
 
 def get_open_orders(limit=30):
+    # PERFORMANCE_V8_ORDER_STATS_CACHE
+    cache_key = f"open_orders:{int(limit)}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -958,10 +1034,16 @@ def get_open_orders(limit=30):
     """, (int(limit),))
     rows = cur.fetchall()
     conn.close()
-    return [order_row_to_dict(row) for row in rows]
+    return _cache_set(cache_key, [order_row_to_dict(row) for row in rows])
 
 
 def get_done_orders(limit=30):
+    # PERFORMANCE_V8_ORDER_STATS_CACHE
+    cache_key = f"done_orders:{int(limit)}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -976,10 +1058,16 @@ def get_done_orders(limit=30):
     """, (int(limit),))
     rows = cur.fetchall()
     conn.close()
-    return [order_row_to_dict(row) for row in rows]
+    return _cache_set(cache_key, [order_row_to_dict(row) for row in rows])
 
 
 def get_cancelled_orders(limit=30):
+    # PERFORMANCE_V8_ORDER_STATS_CACHE
+    cache_key = f"cancelled_orders:{int(limit)}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -994,7 +1082,7 @@ def get_cancelled_orders(limit=30):
     """, (int(limit),))
     rows = cur.fetchall()
     conn.close()
-    return [order_row_to_dict(row) for row in rows]
+    return _cache_set(cache_key, [order_row_to_dict(row) for row in rows])
 
 
 def get_orders_status_summary():
