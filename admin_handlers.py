@@ -2512,9 +2512,73 @@ async def admin_download_selected_log(message: Message):
     uid = message.from_user.id
     txt = clean_admin_text(message.text)
 
-    # AUDIT_SEARCH_FINAL_V1
+    # AUDIT_REAL_FIX_V1
+    # חשוב: טיפול ב־Audit חייב להיות בראש admin_flow,
+    # כי כשיש state פעיל admin_flow תופס את ההודעה לפני handlers רגילים.
     state = admin_states.get(uid) or {}
     step = state.get("step")
+
+    if txt == "📜 Audit Logs":
+        admin_states[uid] = {"step": "audit_logs_menu"}
+        await tracked_admin_answer(message,
+            rtl("<b>📜 Audit Logs</b>\n\nבחר פעולה:"),
+            reply_markup=audit_logs_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if txt == "📊 10 פעולות אחרונות":
+        admin_states[uid] = {"step": "audit_logs_menu"}
+        await send_recent_audit_events(message, rtl=rtl, parse_mode="HTML", limit=10)
+        return
+
+    if txt == "📜 רשימת Audit Logs":
+        admin_states[uid] = {"step": "audit_logs_menu"}
+        await send_audit_logs_list(message, rtl=rtl, parse_mode="HTML")
+        return
+
+    if txt == "📥 הורד Audit אחרון":
+        admin_states[uid] = {"step": "audit_logs_menu"}
+        await send_latest_audit_log(message, rtl=rtl, parse_mode="HTML")
+        await tracked_admin_answer(message,
+            rtl("<b>📜 Audit Logs</b>\n\nבחר פעולה נוספת."),
+            reply_markup=audit_logs_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if txt == "👤 חיפוש לפי אדמין":
+        admin_states[uid] = {"step": "audit_search_admin"}
+        await tracked_admin_answer(message,
+            rtl("<b>👤 חיפוש Audit לפי אדמין</b>\n\nשלח Telegram ID של האדמין שברצונך לבדוק."),
+            reply_markup=audit_search_back_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if txt == "🛍️ חיפוש לפי מוצר":
+        admin_states[uid] = {"step": "audit_search_product"}
+        await tracked_admin_answer(message,
+            rtl("<b>🛍️ חיפוש Audit לפי מוצר</b>\n\nשלח שם מוצר או חלק משם מוצר."),
+            reply_markup=audit_search_back_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if txt == "⚙️ חיפוש לפי פעולה":
+        admin_states[uid] = {"step": "audit_search_action"}
+        await tracked_admin_answer(message,
+            rtl(
+                "<b>⚙️ חיפוש Audit לפי פעולה</b>\n\n"
+                "שלח שם פעולה, לדוגמה:\n"
+                "<code>product_price_changed</code>\n"
+                "<code>product_stock_changed</code>\n"
+                "<code>order_status_changed</code>"
+            ),
+            reply_markup=audit_search_back_keyboard(),
+            parse_mode="HTML"
+        )
+        return
 
     if step in {"audit_search_admin", "audit_search_product", "audit_search_action"}:
         if txt == "⬅️ חזרה ל־Audit Logs":
@@ -2546,10 +2610,7 @@ async def admin_download_selected_log(message: Message):
 
         if len(txt) < 2:
             await tracked_admin_answer(message,
-                rtl(
-                    "<b>⚠️ חיפוש קצר מדי</b>\n\n"
-                    "שלח לפחות 2 תווים לחיפוש."
-                ),
+                rtl("<b>⚠️ חיפוש קצר מדי</b>\n\nשלח לפחות 2 תווים לחיפוש."),
                 reply_markup=audit_search_back_keyboard(),
                 parse_mode="HTML"
             )
@@ -2561,14 +2622,17 @@ async def admin_download_selected_log(message: Message):
             "audit_search_action": "action",
         }.get(step)
 
-        log_admin_action(uid, "audit_search_performed", f"mode={mode} | query={txt}")
-        safe_write_audit_event(
-            uid,
-            "audit_search_performed",
-            entity_type="audit_logs",
-            entity_id=mode,
-            new_value={"query": txt},
-        )
+        try:
+            log_admin_action(uid, "audit_search_performed", f"mode={mode} | query={txt}")
+            safe_write_audit_event(
+                uid,
+                "audit_search_performed",
+                entity_type="audit_logs",
+                entity_id=mode,
+                new_value={"query": txt},
+            )
+        except Exception:
+            pass
 
         await send_audit_search_results(
             message,
@@ -2713,36 +2777,24 @@ async def admin_download_latest_audit_log(message: Message):
 
 @router.message(F.text == "📊 10 פעולות אחרונות")
 async def admin_recent_audit_events(message: Message):
-    # AUDIT_SEARCH_FINAL_V1
+    # AUDIT_REAL_FIX_V1
     if not is_admin(message.from_user.id):
         return
 
     admin_states[message.from_user.id] = {"step": "audit_logs_menu"}
-
-    log_admin_action(message.from_user.id, "audit_recent_events_viewed")
-    safe_write_audit_event(
-        message.from_user.id,
-        "audit_recent_events_viewed",
-        entity_type="audit_logs",
-        entity_id="recent_10",
-    )
-
     await send_recent_audit_events(message, rtl=rtl, parse_mode="HTML", limit=10)
 
 
 @router.message(F.text == "👤 חיפוש לפי אדמין")
 async def admin_audit_search_by_admin_start(message: Message):
-    # AUDIT_SEARCH_FINAL_V1
+    # AUDIT_REAL_FIX_V1
     if not is_admin(message.from_user.id):
         return
 
     admin_states[message.from_user.id] = {"step": "audit_search_admin"}
 
     await tracked_admin_answer(message,
-        rtl(
-            "<b>👤 חיפוש Audit לפי אדמין</b>\n\n"
-            "שלח Telegram ID של האדמין שברצונך לבדוק."
-        ),
+        rtl("<b>👤 חיפוש Audit לפי אדמין</b>\n\nשלח Telegram ID של האדמין שברצונך לבדוק."),
         reply_markup=audit_search_back_keyboard(),
         parse_mode="HTML"
     )
@@ -2750,17 +2802,14 @@ async def admin_audit_search_by_admin_start(message: Message):
 
 @router.message(F.text == "🛍️ חיפוש לפי מוצר")
 async def admin_audit_search_by_product_start(message: Message):
-    # AUDIT_SEARCH_FINAL_V1
+    # AUDIT_REAL_FIX_V1
     if not is_admin(message.from_user.id):
         return
 
     admin_states[message.from_user.id] = {"step": "audit_search_product"}
 
     await tracked_admin_answer(message,
-        rtl(
-            "<b>🛍️ חיפוש Audit לפי מוצר</b>\n\n"
-            "שלח שם מוצר או חלק משם מוצר."
-        ),
+        rtl("<b>🛍️ חיפוש Audit לפי מוצר</b>\n\nשלח שם מוצר או חלק משם מוצר."),
         reply_markup=audit_search_back_keyboard(),
         parse_mode="HTML"
     )
@@ -2768,7 +2817,7 @@ async def admin_audit_search_by_product_start(message: Message):
 
 @router.message(F.text == "⚙️ חיפוש לפי פעולה")
 async def admin_audit_search_by_action_start(message: Message):
-    # AUDIT_SEARCH_FINAL_V1
+    # AUDIT_REAL_FIX_V1
     if not is_admin(message.from_user.id):
         return
 
@@ -2789,7 +2838,7 @@ async def admin_audit_search_by_action_start(message: Message):
 
 @router.message(F.text == "⬅️ חזרה ל־Audit Logs")
 async def admin_back_to_audit_logs_menu(message: Message):
-    # AUDIT_SEARCH_FINAL_V1
+    # AUDIT_REAL_FIX_V1
     if not is_admin(message.from_user.id):
         return
 
