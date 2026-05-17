@@ -7,7 +7,7 @@ from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyb
 from html import escape
 import asyncio
 import time
-from performance_utils_v3 import schedule_delete_message, schedule_delete_messages, is_fast_duplicate_action
+from performance_utils_v3_1 import schedule_delete_message, schedule_delete_messages, is_fast_duplicate_action
 
 from config import ADMIN_ID
 from rate_limiter import is_rate_limited, rate_limit_message
@@ -937,7 +937,7 @@ async def _delete_message_safely(bot, chat_id, message_id):
     # PERFORMANCE_V3_TELEGRAM_LOAD
     # מחיקות עוברות דרך queue מבוקר כדי לא להציף את Telegram API.
     try:
-        schedule_delete_message(bot, chat_id, message_id)
+        schedule_delete_message(bot, chat_id, message_id, urgent=True)
     except Exception:
         pass
 
@@ -945,7 +945,7 @@ async def _delete_message_safely(bot, chat_id, message_id):
 async def _delete_messages_safely(bot, chat_id, message_ids):
     """PERFORMANCE_V3_TELEGRAM_LOAD — מחיקה דרך queue מבוקר."""
     try:
-        schedule_delete_messages(bot, chat_id, message_ids, max_items=25)
+        schedule_delete_messages(bot, chat_id, message_ids, max_items=25, urgent=True)
     except Exception:
         pass
 
