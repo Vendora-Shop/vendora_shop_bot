@@ -7,7 +7,7 @@ from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyb
 from html import escape
 import asyncio
 import time
-from performance_utils_v3_1 import schedule_delete_message, schedule_delete_messages, is_fast_duplicate_action
+from performance_utils_v3 import schedule_delete_message, schedule_delete_messages, is_fast_duplicate_action
 
 from config import ADMIN_ID
 from rate_limiter import is_rate_limited, rate_limit_message
