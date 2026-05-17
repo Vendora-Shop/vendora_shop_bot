@@ -418,6 +418,56 @@ async def notify_admin_ticket_closed_by_customer(bot, ticket_number, user_full_n
 
 
 users = {}
+
+
+# ================== QUICK OPEN KEYBOARD V1 ==================
+# כפתור קבוע משלנו לפתיחת תפריט מחדש בלי לכתוב /start.
+# לא מחזיר את הכפתור הכחול הרשמי של Telegram.
+def quick_open_keyboard(user_id=None):
+    rows = [
+        [KeyboardButton(text="🔄 פתח תפריט מחדש")]
+    ]
+
+    try:
+        if user_id == ADMIN_ID:
+            rows.append([KeyboardButton(text="🛡️ פאנל ניהול")])
+    except Exception:
+        pass
+
+    return ReplyKeyboardMarkup(
+        keyboard=rows,
+        resize_keyboard=True,
+        input_field_placeholder="בחר פעולה מהירה..."
+    )
+
+
+async def ensure_quick_open_keyboard(message: Message):
+    """
+    מציג מקלדת קבועה בתחתית הצ'אט.
+    ההודעה עצמה נמחקת ברקע, אבל המקלדת נשארת זמינה.
+    """
+    try:
+        sent = await message.answer(
+            rtl("⌨️ כפתור פתיחה מהירה הופעל."),
+            reply_markup=quick_open_keyboard(message.from_user.id),
+            parse_mode="HTML"
+        )
+
+        try:
+            users.setdefault(message.from_user.id, {"cart": []}).setdefault("temp_bot_messages", []).append(sent.message_id)
+        except Exception:
+            pass
+
+        try:
+            asyncio.create_task(_delete_message_safely(message.bot, message.chat.id, sent.message_id))
+        except Exception:
+            pass
+
+        return sent
+    except Exception:
+        return None
+
+
 START_DEBOUNCE_SECONDS = 1.2
 START_LAST_RUN = {}
 
@@ -1010,15 +1060,61 @@ async def customer_blocked_by_maintenance(message: Message):
 
 
 async def check_customer_rate_limit(message: Message, action: str):
-    # CUSTOMER_RATE_LIMIT_CONNECT_V1
+    # CUSTOMER_RATE_LIMIT_CONNECT_V2
+    # משאיר רק אזהרת Rate Limit אחת ומוחק הודעות /start כפולות.
     uid = message.from_user.id
+    data = users.setdefault(uid, {"cart": []})
 
     if is_rate_limited(uid, action):
         try:
-            await message.answer(rtl(rate_limit_message(action)), parse_mode="HTML")
+            asyncio.create_task(
+                _delete_message_safely(
+                    message.bot,
+                    message.chat.id,
+                    message.message_id
+                )
+            )
         except Exception:
             pass
+
+        old_warning_id = data.get(f"{action}_rate_limit_warning_message_id")
+        if old_warning_id:
+            try:
+                asyncio.create_task(
+                    _delete_message_safely(
+                        message.bot,
+                        message.chat.id,
+                        old_warning_id
+                    )
+                )
+            except Exception:
+                pass
+
+        try:
+            sent = await message.answer(
+                rtl(rate_limit_message(action)),
+                reply_markup=quick_open_keyboard(uid),
+                parse_mode="HTML"
+            )
+            data[f"{action}_rate_limit_warning_message_id"] = sent.message_id
+            data.setdefault("temp_bot_messages", []).append(sent.message_id)
+        except Exception:
+            pass
+
         return True
+
+    old_warning_id = data.pop(f"{action}_rate_limit_warning_message_id", None)
+    if old_warning_id:
+        try:
+            asyncio.create_task(
+                _delete_message_safely(
+                    message.bot,
+                    message.chat.id,
+                    old_warning_id
+                )
+            )
+        except Exception:
+            pass
 
     return False
 
@@ -4338,6 +4434,49 @@ Vendora תמשיך לפעול לשיפור הנגישות והחוויה עבו�
         except Exception:
             pass
 
+
+@router.message(F.text == "🔄 פתח תפריט מחדש")
+async def quick_open_main_menu_button(message: Message):
+    # QUICK_OPEN_KEYBOARD_V1
+    # פתיחה מחדש בלי להקליד /start ובלי כפתור Telegram הרשמי.
+    uid = message.from_user.id
+
+    if await customer_blocked_by_maintenance(message):
+        return
+
+    try:
+        asyncio.create_task(_delete_message_safely(message.bot, message.chat.id, message.message_id))
+    except Exception:
+        pass
+
+    data = users.setdefault(uid, {"cart": []})
+
+    if is_duplicate_customer_action(uid, "quick_open_main_menu", seconds=1.0):
+        return
+
+    await reset_customer_to_main_menu(message)
+
+
+@router.message(F.text == "🛡️ פאנל ניהול")
+async def quick_open_admin_panel_button(message: Message):
+    # QUICK_ADMIN_PANEL_BUTTON_V1
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    try:
+        from admin_handlers import admin_panel_button
+        await admin_panel_button(message)
+    except Exception as e:
+        try:
+            await message.answer(
+                rtl("<b>⚠️ לא הצלחתי לפתוח פאנל ניהול.</b>"),
+                reply_markup=quick_open_keyboard(message.from_user.id),
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
+
 @router.message(CommandStart())
 async def start(message: Message):
     uid = message.from_user.id
@@ -4395,6 +4534,13 @@ async def start(message: Message):
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
+
+    # QUICK_OPEN_KEYBOARD_V1
+    # מפעיל כפתור קבוע משלנו בתחתית הצ'אט לפתיחה מחדש.
+    try:
+        await ensure_quick_open_keyboard(message)
+    except Exception:
+        pass
 
     async def _cleanup_start_after_send():
         try:
