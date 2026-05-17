@@ -21,7 +21,26 @@ print(f"Using database: {DB_PATH}")
 
 
 def get_connection():
-    return sqlite3.connect(DB_PATH)
+    """
+    PERFORMANCE_SAFE_V1
+    חיבור SQLite יציב ומהיר יותר:
+    - timeout כדי להפחית database locked
+    - busy_timeout כדי לתת ל-SQLite להמתין קצר במקום להיכשל
+    - foreign_keys ON לתקינות
+    לא משנה מבנה טבלאות ולא משנה לוגיקה עסקית.
+    """
+    conn = sqlite3.connect(
+        DB_PATH,
+        timeout=30
+    )
+
+    try:
+        conn.execute("PRAGMA busy_timeout = 30000")
+        conn.execute("PRAGMA foreign_keys = ON")
+    except Exception:
+        pass
+
+    return conn
 
 
 
@@ -53,6 +72,20 @@ def israel_year_str():
 def create_tables():
     conn = get_connection()
     cur = conn.cursor()
+
+    # PERFORMANCE_SAFE_V1
+    # SQLite performance pragmas.
+    # WAL משפר עבודה במקביל של קריאות/כתיבות.
+    # synchronous=NORMAL מאזן בין מהירות ובטיחות.
+    # cache_size/temp_store מקטינים עיכובים בקריאות חוזרות.
+    try:
+        cur.execute("PRAGMA journal_mode = WAL")
+        cur.execute("PRAGMA synchronous = NORMAL")
+        cur.execute("PRAGMA temp_store = MEMORY")
+        cur.execute("PRAGMA cache_size = -20000")
+        cur.execute("PRAGMA busy_timeout = 30000")
+    except Exception as e:
+        print(f"DB_PERFORMANCE_PRAGMA_ERROR: {type(e).__name__}: {e}")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS products (
