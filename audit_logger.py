@@ -60,6 +60,20 @@ def write_audit_event(
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
+    # AUDIT_DEBUG_PRINT_V1
+    # מציג ב-Railway Deploy Logs שה-Audit נרשם בהצלחה.
+    # זה לא משנה את הלוגיקה ולא מפיל את הבוט אם ההדפסה נכשלת.
+    try:
+        print(
+            f"AUDIT_OK: {event.get('action')} | "
+            f"{event.get('entity_type')} | "
+            f"{event.get('entity_id')} | "
+            f"path={path}",
+            flush=True
+        )
+    except Exception:
+        pass
+
     return str(path)
 
 
