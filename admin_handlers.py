@@ -91,6 +91,42 @@ admin_states = {}
 # - פעולות לקוח
 ADMIN_SCREEN_STORE_FILE = "admin_screen_messages.json"
 
+# PERFORMANCE_V2_MEMORY_CACHE
+# במקום לקרוא/לכתוב JSON מהדיסק בכל מעבר אדמין,
+# שומרים cache בזיכרון וכותבים לדיסק ברקע עם debounce.
+ADMIN_SCREEN_STORE_MEMORY_CACHE = None
+ADMIN_SCREEN_STORE_SAVE_TASK = None
+
+
+async def _save_admin_screen_store_async(snapshot):
+    try:
+        await asyncio.sleep(0.25)
+        with open(ADMIN_SCREEN_STORE_FILE, "w", encoding="utf-8") as f:
+            json.dump(snapshot or {}, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def _schedule_admin_screen_store_save(snapshot):
+    global ADMIN_SCREEN_STORE_SAVE_TASK
+
+    try:
+        if ADMIN_SCREEN_STORE_SAVE_TASK and not ADMIN_SCREEN_STORE_SAVE_TASK.done():
+            ADMIN_SCREEN_STORE_SAVE_TASK.cancel()
+    except Exception:
+        pass
+
+    try:
+        ADMIN_SCREEN_STORE_SAVE_TASK = asyncio.create_task(
+            _save_admin_screen_store_async(dict(snapshot or {}))
+        )
+    except Exception:
+        try:
+            with open(ADMIN_SCREEN_STORE_FILE, "w", encoding="utf-8") as f:
+                json.dump(snapshot or {}, f, ensure_ascii=False)
+        except Exception:
+            pass
+
 
 def is_admin_known_panel_text(text):
     txt = clean_admin_text(text)
@@ -154,20 +190,30 @@ def is_admin_cleanup_active(admin_id, text):
 
 
 def load_admin_screen_store():
+    global ADMIN_SCREEN_STORE_MEMORY_CACHE
+
+    if ADMIN_SCREEN_STORE_MEMORY_CACHE is not None:
+        return ADMIN_SCREEN_STORE_MEMORY_CACHE
+
     try:
         if os.path.exists(ADMIN_SCREEN_STORE_FILE):
             with open(ADMIN_SCREEN_STORE_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                return data if isinstance(data, dict) else {}
+                ADMIN_SCREEN_STORE_MEMORY_CACHE = data if isinstance(data, dict) else {}
+                return ADMIN_SCREEN_STORE_MEMORY_CACHE
     except Exception:
         pass
-    return {}
+
+    ADMIN_SCREEN_STORE_MEMORY_CACHE = {}
+    return ADMIN_SCREEN_STORE_MEMORY_CACHE
 
 
 def save_admin_screen_store(store):
+    global ADMIN_SCREEN_STORE_MEMORY_CACHE
+
     try:
-        with open(ADMIN_SCREEN_STORE_FILE, "w", encoding="utf-8") as f:
-            json.dump(store or {}, f, ensure_ascii=False)
+        ADMIN_SCREEN_STORE_MEMORY_CACHE = dict(store or {})
+        _schedule_admin_screen_store_save(ADMIN_SCREEN_STORE_MEMORY_CACHE)
     except Exception:
         pass
 
