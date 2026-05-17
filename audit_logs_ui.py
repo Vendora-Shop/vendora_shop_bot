@@ -284,6 +284,171 @@ def format_audit_events(events, title="📊 Audit Logs", limit=10):
     return _fit(text.strip())
 
 
+
+# ================== AUDIT AUTO SELECT LISTS V1 ==================
+# רשימות בחירה אוטומטיות מתוך קבצי Audit.
+# אם נוסף אדמין / מוצר / פעולה חדשים — הם יופיעו לבד ברשימה.
+
+def _unique_values_from_events(mode, limit=30):
+    events = _read_events(20)
+    values = []
+    seen = set()
+
+    for event in reversed(events):
+        value = None
+
+        if mode == "admin":
+            value = str(event.get("admin_id") or "").strip()
+
+        elif mode == "product":
+            if str(event.get("entity_type") or "").lower() == "product":
+                value = str(event.get("entity_id") or "").strip()
+            elif "product" in str(event.get("action") or "").lower():
+                value = str(event.get("entity_id") or "").strip()
+
+        elif mode == "action":
+            value = str(event.get("action") or "").strip()
+
+        if not value or value == "-":
+            continue
+
+        key = value.lower()
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        values.append(value)
+
+        if len(values) >= int(limit):
+            break
+
+    return values
+
+
+def audit_select_keyboard(mode, limit=25):
+    values = _unique_values_from_events(mode, limit=limit)
+    keyboard = []
+
+    prefix = {
+        "admin": "👤",
+        "product": "🛍️",
+        "action": "⚙️",
+    }.get(mode, "🔎")
+
+    for value in values:
+        clean_value = str(value).strip()
+
+        if not clean_value:
+            continue
+
+        # Telegram מגביל אורך טקסט בכפתור. שומרים את הערך מספיק קריא.
+        display_value = clean_value
+        if len(display_value) > 45:
+            display_value = display_value[:45] + "..."
+
+        keyboard.append([KeyboardButton(text=f"{prefix} {display_value}")])
+
+    keyboard.append([KeyboardButton(text="✍️ הקלד ידנית")])
+    keyboard.append([KeyboardButton(text="⬅️ חזרה ל־Audit Logs")])
+    keyboard.append([KeyboardButton(text="⬅️ חזרה להגדרות מערכת")])
+    keyboard.append([KeyboardButton(text="⬅️ חזרה לניהול")])
+
+    return ReplyKeyboardMarkup(
+        keyboard=keyboard,
+        resize_keyboard=True,
+        input_field_placeholder="בחר מהרשימה או הקלד ידנית..."
+    )
+
+
+def audit_select_prompt_text(mode):
+    values = _unique_values_from_events(mode, limit=25)
+
+    if mode == "admin":
+        title = "👤 חיפוש Audit לפי אדמין"
+        if values:
+            return (
+                f"<b>{title}</b>\n\n"
+                "בחר Admin ID מהרשימה למטה.\n"
+                "אם האדמין לא מופיע — לחץ ✍️ הקלד ידנית."
+            )
+        return (
+            f"<b>{title}</b>\n\n"
+            "לא נמצאו עדיין אדמינים ב־Audit.\n"
+            "אפשר ללחוץ ✍️ הקלד ידנית."
+        )
+
+    if mode == "product":
+        title = "🛍️ חיפוש Audit לפי מוצר"
+        if values:
+            return (
+                f"<b>{title}</b>\n\n"
+                "בחר מוצר מהרשימה למטה.\n"
+                "אם המוצר לא מופיע — לחץ ✍️ הקלד ידנית."
+            )
+        return (
+            f"<b>{title}</b>\n\n"
+            "לא נמצאו עדיין מוצרים ב־Audit.\n"
+            "אפשר ללחוץ ✍️ הקלד ידנית."
+        )
+
+    if mode == "action":
+        title = "⚙️ חיפוש Audit לפי פעולה"
+        if values:
+            return (
+                f"<b>{title}</b>\n\n"
+                "בחר פעולה מהרשימה למטה.\n"
+                "אם הפעולה לא מופיעה — לחץ ✍️ הקלד ידנית."
+            )
+        return (
+            f"<b>{title}</b>\n\n"
+            "לא נמצאו עדיין פעולות ב־Audit.\n"
+            "אפשר ללחוץ ✍️ הקלד ידנית."
+        )
+
+    return "<b>🔎 חיפוש Audit</b>\n\nבחר ערך או הקלד ידנית."
+
+
+def audit_manual_input_text(mode):
+    if mode == "admin":
+        return (
+            "<b>👤 הקלדה ידנית — אדמין</b>\n\n"
+            "שלח Telegram ID של האדמין."
+        )
+
+    if mode == "product":
+        return (
+            "<b>🛍️ הקלדה ידנית — מוצר</b>\n\n"
+            "שלח שם מוצר או חלק משם מוצר."
+        )
+
+    if mode == "action":
+        return (
+            "<b>⚙️ הקלדה ידנית — פעולה</b>\n\n"
+            "שלח שם פעולה, לדוגמה:\n"
+            "<code>product_price_changed</code>\n"
+            "<code>product_stock_changed</code>\n"
+            "<code>order_status_changed</code>"
+        )
+
+    return "<b>🔎 הקלדה ידנית</b>\n\nשלח טקסט לחיפוש."
+
+
+def parse_audit_selected_value(mode, text):
+    value = str(text or "").strip()
+
+    if mode == "admin" and value.startswith("👤 "):
+        return value.replace("👤 ", "", 1).strip()
+
+    if mode == "product" and value.startswith("🛍️ "):
+        return value.replace("🛍️ ", "", 1).strip()
+
+    if mode == "action" and value.startswith("⚙️ "):
+        return value.replace("⚙️ ", "", 1).strip()
+
+    return value
+
+
 async def send_audit_logs_list(message, rtl=None, parse_mode="HTML"):
     files = list_audit_files(20)
 
