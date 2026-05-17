@@ -898,6 +898,122 @@ def remember_temp_bot_message(uid, message_obj):
         pass
 
 
+def collect_customer_screen_message_ids(uid, data=None, include_store=True):
+    """
+    PERFORMANCE_V4_SCREEN_CLEANUP
+    אוסף את כל message_id שיכולים להיות שייכים למסך הלקוח הנוכחי.
+    המטרה: למנוע הצטברות תפריטים/באנרים שלא נשמרו ב-temp_bot_messages.
+    לא מוחק לבד — רק אוסף מזהים לניקוי.
+    """
+    ids = []
+
+    try:
+        data = data or users.setdefault(uid, {"cart": []})
+    except Exception:
+        data = data or {}
+
+    try:
+        ids.extend(list(data.get("temp_bot_messages", []) or []))
+    except Exception:
+        pass
+
+    try:
+        ids.extend(list(data.get("customer_input_message_ids", []) or []))
+    except Exception:
+        pass
+
+    try:
+        ids.extend(list(data.get("input_warning_message_ids", []) or []))
+    except Exception:
+        pass
+
+    try:
+        ids.extend(list(data.get("input_prompt_message_ids", []) or []))
+    except Exception:
+        pass
+
+    for key in [
+        "qty_manual_message_id",
+        "qty_manual_warning_message_id",
+        "product_message_id",
+        "product_photo_message_id",
+        "last_product_message_id",
+        "last_photo_message_id",
+        "cart_message_id",
+        "checkout_message_id",
+        "order_summary_message_id",
+        "payment_message_id",
+        "support_message_id",
+        "support_photo_message_id",
+        "address_message_id",
+        "personal_area_message_id",
+        "main_menu_message_id",
+        "last_screen_message_id",
+    ]:
+        try:
+            msg_id = data.get(key)
+            if msg_id:
+                ids.append(msg_id)
+        except Exception:
+            pass
+
+    if include_store:
+        try:
+            store = load_customer_menu_store()
+            old_menu_id = store.get(str(uid))
+            if old_menu_id:
+                ids.append(old_menu_id)
+        except Exception:
+            pass
+
+    clean = []
+    seen = set()
+
+    for mid in ids:
+        try:
+            mid_int = int(mid)
+        except Exception:
+            continue
+
+        if mid_int in seen:
+            continue
+
+        seen.add(mid_int)
+        clean.append(mid_int)
+
+    return clean
+
+
+def remember_customer_screen_message(uid, message_obj, key="last_screen_message_id"):
+    """
+    PERFORMANCE_V4_SCREEN_CLEANUP
+    שומר גם temp רגיל וגם key מרכזי כדי שכל מסך חדש יוכל למחוק את הקודם.
+    """
+    try:
+        if not message_obj:
+            return
+
+        msg_id = getattr(message_obj, "message_id", None)
+        if not msg_id:
+            return
+
+        data = users.setdefault(uid, {"cart": []})
+        data[key] = int(msg_id)
+
+        temp = data.setdefault("temp_bot_messages", [])
+        if int(msg_id) not in [int(x) for x in temp if str(x).isdigit()]:
+            temp.append(int(msg_id))
+
+        try:
+            remember_customer_main_menu_message(uid, int(msg_id))
+        except Exception:
+            pass
+
+    except Exception:
+        pass
+
+
+
 async def delete_temp_bot_messages(bot, user_id):
     """
     FAST_DELETE_TEMP_FINAL
@@ -1207,7 +1323,7 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
         except Exception:
             pass
 
-    old_ids = list(data.get("temp_bot_messages", []) or [])
+    old_ids = collect_customer_screen_message_ids(uid, data)
 
     try:
         if isinstance(reply_markup, InlineKeyboardMarkup):
@@ -1224,6 +1340,9 @@ async def send_temp_message(message: Message, text, reply_markup=None, parse_mod
         kwargs["disable_web_page_preview"] = disable_web_page_preview
 
     sent = await message.answer(text, **kwargs)
+    remember_customer_screen_message(uid, sent)
+
+    remember_customer_screen_message(uid, sent)
 
     if clear_previous:
         data["temp_bot_messages"] = [sent.message_id]
@@ -1266,7 +1385,7 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
         except Exception:
             pass
 
-    old_ids = list(data.get("temp_bot_messages", []) or [])
+    old_ids = collect_customer_screen_message_ids(uid, data)
 
     sent = await message.answer_photo(
         photo=photo,
@@ -1275,7 +1394,7 @@ async def send_temp_photo(message: Message, photo, caption=None, reply_markup=No
         parse_mode=parse_mode
     )
 
-    remember_temp_bot_message(uid, sent)
+    remember_customer_screen_message(uid, sent, key="product_photo_message_id")
     data["product_photo_message_id"] = sent.message_id
 
     if clear_previous:
@@ -1318,7 +1437,7 @@ async def send_ui_banner_message(message: Message, text, banner_key=None, reply_
         except Exception:
             pass
 
-    old_ids = list(data.get("temp_bot_messages", []) or [])
+    old_ids = collect_customer_screen_message_ids(uid, data)
 
     try:
         if isinstance(reply_markup, InlineKeyboardMarkup):
@@ -1374,9 +1493,7 @@ async def cleanup_customer_order_screens(bot, uid):
     """
     data = users.setdefault(uid, {"cart": []})
 
-    ids = []
-    ids.extend(list(data.get("temp_bot_messages", []) or []))
-    ids.extend(list(data.get("customer_input_message_ids", []) or []))
+    ids = collect_customer_screen_message_ids(uid, data)
 
     for key in [
         "qty_manual_message_id",
@@ -1396,6 +1513,17 @@ async def cleanup_customer_order_screens(bot, uid):
 
     data["temp_bot_messages"] = []
     data["customer_input_message_ids"] = []
+
+    for cleanup_key in [
+        "main_menu_message_id",
+        "last_screen_message_id",
+        "last_greeting_message_id",
+        "personal_area_message_id",
+        "support_message_id",
+        "support_photo_message_id",
+        "address_message_id",
+    ]:
+        data.pop(cleanup_key, None)
 
     if ids:
         try:
@@ -1479,13 +1607,14 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
     users.setdefault(uid, {"cart": []})
     data = users.setdefault(uid, {"cart": []})
 
-    old_ids = list(data.get("temp_bot_messages", []) or [])
+    old_ids = collect_customer_screen_message_ids(uid, data)
     new_ids = []
 
     if greeting_text:
         try:
             greeting_msg = await message.answer(greeting_text, parse_mode=parse_mode)
             new_ids.append(greeting_msg.message_id)
+            remember_customer_screen_message(uid, greeting_msg, key="last_greeting_message_id")
         except Exception:
             pass
 
@@ -1507,6 +1636,7 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
         )
 
     new_ids.append(sent.message_id)
+    remember_customer_screen_message(uid, sent, key="main_menu_message_id")
     data["temp_bot_messages"] = new_ids
 
     delete_ids = [mid for mid in old_ids if str(mid) not in {str(x) for x in new_ids}]
@@ -4586,7 +4716,7 @@ async def start(message: Message):
     START_IN_PROGRESS[uid] = now
 
     old_data = users.get(uid) or {}
-    old_temp_ids = list(old_data.get("temp_bot_messages", []) or [])
+    old_temp_ids = collect_customer_screen_message_ids(uid, old_data)
 
     users[uid] = {
         "cart": old_data.get("cart", []),
