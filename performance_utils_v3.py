@@ -3,21 +3,20 @@ import time
 from collections import deque
 
 
-# PERFORMANCE_V3_TELEGRAM_LOAD
-# כלי עזר להפחתת עומס על Telegram API:
-# - queue מבוקר למחיקות הודעות
-# - dedupe למחיקות כפולות
-# - debounce קצר ללחיצות/פעולות מהירות
-# לא משנה לוגיקה עסקית.
+# PERFORMANCE_V3_1_FAST_DELETE
+# שיפור ל־V3:
+# - מחיקות רגילות עדיין עוברות queue מבוקר.
+# - מחיקות של מסך קודם מקבלות urgent=True ונכנסות לראש התור.
+# - worker מהיר יותר כדי שלא יהיה דיליי של 1-2 שניות במחיקת המסך הקודם.
 
 
 _DELETE_QUEUE = deque()
 _DELETE_SEEN = {}
 _DELETE_WORKER_TASK = None
 
-DELETE_WORKER_SLEEP_SECONDS = 0.08
+DELETE_WORKER_SLEEP_SECONDS = 0.025
 DELETE_SEEN_TTL_SECONDS = 20
-MAX_QUEUE_SIZE = 500
+MAX_QUEUE_SIZE = 700
 
 _ACTION_DEBOUNCE = {}
 ACTION_DEBOUNCE_TTL_SECONDS = 8
@@ -45,22 +44,40 @@ async def _delete_worker():
     while True:
         try:
             if not _DELETE_QUEUE:
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.03)
                 continue
 
-            bot, chat_id, message_id = _DELETE_QUEUE.popleft()
+            # מוחקים עד 3 הודעות בכל סיבוב כדי לצמצם דיליי ויזואלי,
+            # אבל עדיין לא יורים עשרות מחיקות בבת אחת.
+            batch = []
+            for _ in range(min(3, len(_DELETE_QUEUE))):
+                try:
+                    batch.append(_DELETE_QUEUE.popleft())
+                except Exception:
+                    break
 
-            try:
-                await bot.delete_message(chat_id, int(message_id))
-            except Exception:
-                pass
+            if not batch:
+                await asyncio.sleep(0.03)
+                continue
+
+            await asyncio.gather(
+                *[_delete_one(bot, chat_id, message_id) for bot, chat_id, message_id in batch],
+                return_exceptions=True
+            )
 
             await asyncio.sleep(DELETE_WORKER_SLEEP_SECONDS)
 
         except asyncio.CancelledError:
             raise
         except Exception:
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.08)
+
+
+async def _delete_one(bot, chat_id, message_id):
+    try:
+        await bot.delete_message(chat_id, int(message_id))
+    except Exception:
+        pass
 
 
 def start_delete_worker():
@@ -76,7 +93,7 @@ def start_delete_worker():
         return None
 
 
-def schedule_delete_message(bot, chat_id, message_id):
+def schedule_delete_message(bot, chat_id, message_id, urgent=False):
     try:
         if not bot or not chat_id or not message_id:
             return False
@@ -97,7 +114,13 @@ def schedule_delete_message(bot, chat_id, message_id):
             except Exception:
                 pass
 
-        _DELETE_QUEUE.append((bot, int(chat_id), int(message_id)))
+        item = (bot, int(chat_id), int(message_id))
+
+        if urgent:
+            _DELETE_QUEUE.appendleft(item)
+        else:
+            _DELETE_QUEUE.append(item)
+
         start_delete_worker()
         return True
 
@@ -105,12 +128,18 @@ def schedule_delete_message(bot, chat_id, message_id):
         return False
 
 
-def schedule_delete_messages(bot, chat_id, message_ids, max_items=25):
+def schedule_delete_messages(bot, chat_id, message_ids, max_items=25, urgent=False):
     count = 0
 
     try:
-        for mid in list(message_ids or [])[-int(max_items):]:
-            if schedule_delete_message(bot, chat_id, mid):
+        clean = list(message_ids or [])[-int(max_items):]
+
+        # urgent=True: שומרים סדר מחיקה טבעי למרות appendleft.
+        if urgent:
+            clean = list(reversed(clean))
+
+        for mid in clean:
+            if schedule_delete_message(bot, chat_id, mid, urgent=urgent):
                 count += 1
     except Exception:
         pass
