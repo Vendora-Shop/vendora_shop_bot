@@ -420,10 +420,11 @@ async def notify_admin_ticket_closed_by_customer(bot, ticket_number, user_full_n
 users = {}
 
 
-# ================== QUICK OPEN KEYBOARD V1 ==================
-# כפתור קבוע משלנו לפתיחת תפריט מחדש בלי לכתוב /start.
-# לא מחזיר את הכפתור הכחול הרשמי של Telegram.
-def quick_open_keyboard(user_id=None):
+# ================== EMERGENCY OPEN KEYBOARD V1 ==================
+# כפתור חילוץ בלבד.
+# לא מופיע קבוע במסכי החנות.
+# מופיע רק כשיש תקלה / חסימה / מצב שאין למשתמש תפריט לחיץ.
+def emergency_open_keyboard(user_id=None):
     rows = [
         [KeyboardButton(text="🔄 פתח תפריט מחדש")]
     ]
@@ -437,19 +438,15 @@ def quick_open_keyboard(user_id=None):
     return ReplyKeyboardMarkup(
         keyboard=rows,
         resize_keyboard=True,
-        input_field_placeholder="בחר פעולה מהירה..."
+        input_field_placeholder="בחר פעולה..."
     )
 
 
-async def ensure_quick_open_keyboard(message: Message):
-    """
-    מציג מקלדת קבועה בתחתית הצ'אט.
-    ההודעה עצמה נמחקת ברקע, אבל המקלדת נשארת זמינה.
-    """
+async def send_emergency_open_message(message: Message, text=None):
     try:
         sent = await message.answer(
-            rtl("⌨️ כפתור פתיחה מהירה הופעל."),
-            reply_markup=quick_open_keyboard(message.from_user.id),
+            rtl(text or "<b>⚠️ נראה שאין תפריט פעיל.</b>\n\nלחץ 🔄 פתח תפריט מחדש."),
+            reply_markup=emergency_open_keyboard(message.from_user.id),
             parse_mode="HTML"
         )
 
@@ -458,12 +455,8 @@ async def ensure_quick_open_keyboard(message: Message):
         except Exception:
             pass
 
-        try:
-            asyncio.create_task(_delete_message_safely(message.bot, message.chat.id, sent.message_id))
-        except Exception:
-            pass
-
         return sent
+
     except Exception:
         return None
 
@@ -1060,8 +1053,8 @@ async def customer_blocked_by_maintenance(message: Message):
 
 
 async def check_customer_rate_limit(message: Message, action: str):
-    # CUSTOMER_RATE_LIMIT_CONNECT_V2
-    # משאיר רק אזהרת Rate Limit אחת ומוחק הודעות /start כפולות.
+    # CUSTOMER_RATE_LIMIT_CONNECT_V2_EMERGENCY_ONLY
+    # במצב Rate Limit מציגים כפתור חילוץ בלבד, כדי שהלקוח/אדמין לא יישאר בלי דרך חזרה.
     uid = message.from_user.id
     data = users.setdefault(uid, {"cart": []})
 
@@ -1093,7 +1086,7 @@ async def check_customer_rate_limit(message: Message, action: str):
         try:
             sent = await message.answer(
                 rtl(rate_limit_message(action)),
-                reply_markup=quick_open_keyboard(uid),
+                reply_markup=emergency_open_keyboard(uid),
                 parse_mode="HTML"
             )
             data[f"{action}_rate_limit_warning_message_id"] = sent.message_id
@@ -3291,7 +3284,11 @@ async def _dispatch_customer_inline(callback: CallbackQuery, text: str):
             from admin_handlers import admin_panel_button
             return await admin_panel_button(proxy)
         except Exception:
-            return await proxy.answer(rtl("<b>⚠️ לא הצלחתי לפתוח פאנל ניהול.</b>"), parse_mode="HTML")
+            return await proxy.answer(
+                rtl("<b>⚠️ לא הצלחתי לפתוח פאנל ניהול.</b>\n\nלחץ 🔄 פתח תפריט מחדש."),
+                reply_markup=emergency_open_keyboard(callback.from_user.id),
+                parse_mode="HTML"
+            )
 
     # כפתורים שיש להם פונקציות נפרדות.
     direct_handlers = {
@@ -4434,47 +4431,66 @@ Vendora תמשיך לפעול לשיפור הנגישות והחוויה עבו�
         except Exception:
             pass
 
+        try:
+            await callback.message.answer(
+                rtl("<b>⚠️ הפעולה לא הושלמה.</b>\n\nלחץ 🔄 פתח תפריט מחדש."),
+                reply_markup=emergency_open_keyboard(callback.from_user.id),
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
 
 @router.message(F.text == "🔄 פתח תפריט מחדש")
-async def quick_open_main_menu_button(message: Message):
-    # QUICK_OPEN_KEYBOARD_V1
-    # פתיחה מחדש בלי להקליד /start ובלי כפתור Telegram הרשמי.
+async def emergency_open_main_menu_button(message: Message):
+    # EMERGENCY_OPEN_KEYBOARD_V1
     uid = message.from_user.id
 
     if await customer_blocked_by_maintenance(message):
         return
 
     try:
-        asyncio.create_task(_delete_message_safely(message.bot, message.chat.id, message.message_id))
+        asyncio.create_task(
+            _delete_message_safely(
+                message.bot,
+                message.chat.id,
+                message.message_id
+            )
+        )
     except Exception:
         pass
 
-    data = users.setdefault(uid, {"cart": []})
-
-    if is_duplicate_customer_action(uid, "quick_open_main_menu", seconds=1.0):
+    if is_duplicate_customer_action(uid, "emergency_open_main_menu", seconds=1.0):
         return
 
     await reset_customer_to_main_menu(message)
 
 
 @router.message(F.text == "🛡️ פאנל ניהול")
-async def quick_open_admin_panel_button(message: Message):
-    # QUICK_ADMIN_PANEL_BUTTON_V1
+async def emergency_open_admin_panel_button(message: Message):
+    # EMERGENCY_ADMIN_PANEL_BUTTON_V1
     if message.from_user.id != ADMIN_ID:
         return
 
     try:
+        asyncio.create_task(
+            _delete_message_safely(
+                message.bot,
+                message.chat.id,
+                message.message_id
+            )
+        )
+    except Exception:
+        pass
+
+    try:
         from admin_handlers import admin_panel_button
         await admin_panel_button(message)
-    except Exception as e:
-        try:
-            await message.answer(
-                rtl("<b>⚠️ לא הצלחתי לפתוח פאנל ניהול.</b>"),
-                reply_markup=quick_open_keyboard(message.from_user.id),
-                parse_mode="HTML"
-            )
-        except Exception:
-            pass
+    except Exception:
+        await send_emergency_open_message(
+            message,
+            "<b>⚠️ לא הצלחתי לפתוח פאנל ניהול.</b>\n\nלחץ 🔄 פתח תפריט מחדש."
+        )
 
 
 @router.message(CommandStart())
@@ -4534,13 +4550,6 @@ async def start(message: Message):
         reply_markup=main_keyboard(message.from_user.id),
         parse_mode="HTML"
     )
-
-    # QUICK_OPEN_KEYBOARD_V1
-    # מפעיל כפתור קבוע משלנו בתחתית הצ'אט לפתיחה מחדש.
-    try:
-        await ensure_quick_open_keyboard(message)
-    except Exception:
-        pass
 
     async def _cleanup_start_after_send():
         try:
