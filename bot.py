@@ -61,6 +61,7 @@ async def main():
 
         create_tables()
         log_info("Database tables initialized", kind="system")
+        log_info("Performance Safe V1 active", kind="system")
 
         # STABLE_UI_V2:
         # לא מגדירים פקודות קבועות בכפתור Menu הרשמי של Telegram.
