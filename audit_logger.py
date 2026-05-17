@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 from pathlib import Path
 
 
-# AUDIT_LOGGER_V1
+# AUDIT_LOGGER_V2
 AUDIT_DIR = os.getenv("VENDORA_AUDIT_DIR", "/data/audit_logs")
 LOCAL_AUDIT_DIR = "audit_logs"
 
@@ -44,6 +44,7 @@ def write_audit_event(
     שומר פעולה רגישה של אדמין לקובץ JSONL.
     כל שורה היא אירוע audit עצמאי.
     """
+
     event = {
         "timestamp": israel_now().strftime("%Y-%m-%d %H:%M:%S"),
         "admin_id": int(admin_id) if str(admin_id).isdigit() else str(admin_id),
@@ -60,16 +61,16 @@ def write_audit_event(
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
-    # AUDIT_DEBUG_PRINT_V1
-    # מציג ב-Railway Deploy Logs שה-Audit נרשם בהצלחה.
-    # זה לא משנה את הלוגיקה ולא מפיל את הבוט אם ההדפסה נכשלת.
+    # AUDIT_DEBUG_LOG_V2
+    # מדפיס ללוגים של Railway מי עשה מה.
     try:
         print(
-            f"AUDIT_OK: {event.get('action')} | "
-            f"{event.get('entity_type')} | "
-            f"{event.get('entity_id')} | "
-            f"path={path}",
-            flush=True
+            f"AUDIT_OK: "
+            f"admin={event['admin_id']} | "
+            f"{action} | "
+            f"{entity_type} | "
+            f"{entity_id} | "
+            f"path={path}"
         )
     except Exception:
         pass
@@ -85,8 +86,10 @@ def list_audit_files(limit=20):
     )
 
     result = []
+
     for path in files[:int(limit)]:
         stat = path.stat()
+
         result.append({
             "filename": path.name,
             "path": str(path),
@@ -108,6 +111,7 @@ def format_audit_files(files):
 
     for idx, item in enumerate(files, start=1):
         size_mb = float(item.get("size_bytes", 0)) / 1024 / 1024
+
         lines.append(
             f"{idx}. {item.get('filename')}\n"
             f"   תאריך: {item.get('modified_at')}\n"
