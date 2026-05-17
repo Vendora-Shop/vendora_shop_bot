@@ -506,6 +506,58 @@ def is_duplicate_customer_action(uid, action_key, seconds=CUSTOMER_ACTION_LOCK_S
     return False
 
 
+# ================== PERFORMANCE V5 CALLBACK OPTIMIZATION ==================
+# טיפול עדין בלחיצות Inline:
+# 1. לחיצה כפולה על אותו callback לא שולחת מסך נוסף.
+# 2. callback כפול עדיין מקבל answer כדי שלא יישאר "טוען".
+# 3. לא חוסמים פעולות שונות לאורך זמן — רק חלון קצר מאוד.
+CALLBACK_SCREEN_LAST_RUN = {}
+CALLBACK_SCREEN_LOCK_SECONDS = 0.35
+
+
+def is_duplicate_callback_screen(uid, raw, seconds=CALLBACK_SCREEN_LOCK_SECONDS):
+    try:
+        uid = int(uid)
+    except Exception:
+        return False
+
+    key = (uid, str(raw or ""))
+    now = time.monotonic()
+    last = CALLBACK_SCREEN_LAST_RUN.get(key, 0)
+
+    if now - last < float(seconds):
+        return True
+
+    CALLBACK_SCREEN_LAST_RUN[key] = now
+
+    try:
+        if len(CALLBACK_SCREEN_LAST_RUN) > 1000:
+            cutoff = now - 8
+            for old_key, old_time in list(CALLBACK_SCREEN_LAST_RUN.items()):
+                if old_time < cutoff:
+                    CALLBACK_SCREEN_LAST_RUN.pop(old_key, None)
+    except Exception:
+        pass
+
+    return False
+
+
+async def ignore_duplicate_callback(callback: CallbackQuery):
+    try:
+        await callback.answer()
+    except Exception:
+        pass
+
+    try:
+        uid = callback.from_user.id
+        data = users.setdefault(uid, {"cart": []})
+        data["_suppress_next_screen_send"] = True
+    except Exception:
+        pass
+
+    return True
+
+
 
 
 # ================== CUSTOMER MAIN MENU MESSAGE STORE ==================
@@ -1518,6 +1570,7 @@ async def cleanup_customer_order_screens(bot, uid):
         "main_menu_message_id",
         "last_screen_message_id",
         "last_greeting_message_id",
+        "last_inline_screen_message_id",
         "personal_area_message_id",
         "support_message_id",
         "support_photo_message_id",
@@ -3654,8 +3707,9 @@ async def show_reorder_choose_inline(callback: CallbackQuery):
 
 async def send_inline_screen_replace(callback: CallbackQuery, text, reply_markup=None, parse_mode="HTML"):
     """
-    FAST_INLINE_REPLACE_FINAL
-    שולח מסך חדש מיד, מוחק את המסך הקודם ברקע ולא מחכה למחיקות.
+    PERFORMANCE_V5_CALLBACKS
+    שולח מסך Inline חדש, זוכר אותו לניקוי מלא,
+    ומוחק גם מסכים קודמים שלא היו ב-temp_bot_messages.
     """
     await force_close_callback_phone_keyboard(callback)
     uid = callback.from_user.id
@@ -3664,7 +3718,7 @@ async def send_inline_screen_replace(callback: CallbackQuery, text, reply_markup
     if data.pop("_suppress_next_screen_send", False):
         return None
 
-    old_ids = list(data.get("temp_bot_messages", []) or [])
+    old_ids = collect_customer_screen_message_ids(uid, data)
 
     try:
         delete_message_now_background(callback.message.bot, uid, callback.message.message_id)
@@ -3677,6 +3731,7 @@ async def send_inline_screen_replace(callback: CallbackQuery, text, reply_markup
         parse_mode=parse_mode
     )
 
+    remember_customer_screen_message(uid, sent, key="last_inline_screen_message_id")
     data["temp_bot_messages"] = [sent.message_id]
 
     cleanup_ids = [mid for mid in old_ids if str(mid) != str(sent.message_id)]
@@ -3712,8 +3767,8 @@ async def support_inline_router(callback: CallbackQuery):
     data = users.setdefault(uid, {"cart": [], "step": None})
     raw = callback.data or ""
 
-    if is_duplicate_customer_action(uid, f"callback:{raw}"):
-        data["_suppress_next_screen_send"] = True
+    if is_duplicate_customer_action(uid, f"callback:{raw}") or is_duplicate_callback_screen(uid, raw):
+        await ignore_duplicate_callback(callback)
         return
 
     subjects = [
@@ -3899,8 +3954,8 @@ async def customer_inline_ui_router(callback: CallbackQuery):
     raw = callback.data or ""
     parts = raw.split(":")
 
-    if is_duplicate_customer_action(uid, f"callback:{raw}"):
-        data["_suppress_next_screen_send"] = True
+    if is_duplicate_customer_action(uid, f"callback:{raw}") or is_duplicate_callback_screen(uid, raw):
+        await ignore_duplicate_callback(callback)
         return
 
     if raw.startswith("ui:support:"):
@@ -5501,6 +5556,13 @@ async def quantity_inline_action(callback: CallbackQuery):
     uid = callback.from_user.id
     data = users.setdefault(uid, {"cart": []})
     action = (callback.data or "").split(":", 1)[1]
+    raw = callback.data or ""
+
+    # PERFORMANCE_V5_CALLBACKS
+    # מונע לחיצה כפולה מהירה על כפתורי כמות/הוספה לסל.
+    if is_duplicate_callback_screen(uid, raw) or is_duplicate_customer_action(uid, f"callback:{raw}", seconds=0.35):
+        await ignore_duplicate_callback(callback)
+        return
 
     # חזרה למוצרים עובדת תמיד, גם אם המוצר כבר לא פעיל או שה-step השתנה.
     if action == "back_products":
