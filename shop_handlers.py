@@ -7,6 +7,7 @@ from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, ReplyKeyb
 from html import escape
 import asyncio
 import time
+from performance_utils_v3 import schedule_delete_message, schedule_delete_messages, is_fast_duplicate_action
 
 from config import ADMIN_ID
 from rate_limiter import is_rate_limited, rate_limit_message
@@ -933,42 +934,18 @@ def delete_message_now_background(bot, chat_id, message_id):
 
 
 async def _delete_message_safely(bot, chat_id, message_id):
+    # PERFORMANCE_V3_TELEGRAM_LOAD
+    # מחיקות עוברות דרך queue מבוקר כדי לא להציף את Telegram API.
     try:
-        await bot.delete_message(chat_id, int(message_id))
+        schedule_delete_message(bot, chat_id, message_id)
     except Exception:
         pass
 
 
 async def _delete_messages_safely(bot, chat_id, message_ids):
-    """מחיקה שקטה ברקע, בבאצ׳ים קטנים כדי לא להעמיס על Telegram."""
-    clean_ids = []
-    seen = set()
-
-    for mid in message_ids or []:
-        try:
-            mid = int(mid)
-        except Exception:
-            continue
-        if mid in seen:
-            continue
-        seen.add(mid)
-        clean_ids.append(mid)
-
-    if not clean_ids:
-        return
-
-    # מספיק למחוק את המסכים האחרונים. מחיקות ישנות רבות גורמות לעומס ותחושת תקיעה.
-    clean_ids = clean_ids[-25:]
-
+    """PERFORMANCE_V3_TELEGRAM_LOAD — מחיקה דרך queue מבוקר."""
     try:
-        for i in range(0, len(clean_ids), 8):
-            batch = clean_ids[i:i + 8]
-            await asyncio.gather(
-                *[_delete_message_safely(bot, chat_id, mid) for mid in batch],
-                return_exceptions=True
-            )
-            if i + 8 < len(clean_ids):
-                await asyncio.sleep(0)
+        schedule_delete_messages(bot, chat_id, message_ids, max_items=25)
     except Exception:
         pass
 
