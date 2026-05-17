@@ -1,17 +1,19 @@
 import asyncio
 
 from aiogram import Router, F
-from aiogram.types import Message, ReplyKeyboardRemove
+from aiogram.types import Message
 
 from config import ADMIN_ID
-from keyboards import main_keyboard, admin_keyboard
+from keyboards import admin_keyboard
 from recovery_keyboard import rtl
 
 
-# GLOBAL_RECOVERY_HANDLERS_V1
-# Handlers לכפתורי חילוץ גלובליים.
-# לא קשור ל־Audit Search רגיל.
-# מופעל רק אם הכפתור הופיע אחרי תקלה.
+# GLOBAL_RECOVERY_HANDLERS_V2_OFFICIAL_MENU_FIX
+# כפתורי חילוץ גלובליים.
+# חשוב:
+# לא שולחים תפריט טקסט פשוט.
+# כפתור "פתח תפריט מחדש" מפעיל את מסך הבית הרשמי של shop_handlers,
+# עם הבאנר, הניקוי והעיצוב הקיים של Vendora.
 
 
 router = Router()
@@ -28,10 +30,8 @@ async def _delete_message_safely(bot, chat_id, message_id):
 async def recovery_open_main_menu(message: Message):
     """
     כפתור חילוץ ללקוח/אדמין:
-    מחזיר למסך ראשי של הלקוח.
+    מחזיר למסך הראשי הרשמי של החנות.
     """
-    uid = message.from_user.id
-
     try:
         asyncio.create_task(
             _delete_message_safely(
@@ -44,31 +44,25 @@ async def recovery_open_main_menu(message: Message):
         pass
 
     try:
-        remove_msg = await message.answer(
-            rtl("<b>🔄 פותח תפריט מחדש...</b>"),
-            reply_markup=ReplyKeyboardRemove(),
-            parse_mode="HTML"
-        )
+        # import מאוחר כדי למנוע circular import בזמן עליית הבוט.
+        from shop_handlers import reset_customer_to_main_menu
 
+        await reset_customer_to_main_menu(message)
+        return
+
+    except Exception as e:
+        # fallback אחרון בלבד אם מסך הבית הרשמי נכשל.
+        # גם כאן לא משתמשים בתפריט הישן/הגדול.
         try:
-            asyncio.create_task(
-                _delete_message_safely(
-                    message.bot,
-                    message.chat.id,
-                    remove_msg.message_id
-                )
+            await message.answer(
+                rtl(
+                    "<b>⚠️ לא הצלחתי לפתוח את התפריט הראשי.</b>\n\n"
+                    "נסה לשלוח /start פעם אחת."
+                ),
+                parse_mode="HTML"
             )
         except Exception:
             pass
-
-    except Exception:
-        pass
-
-    await message.answer(
-        rtl("<b>💎 תפריט ראשי</b>\n\nבחר פעולה:"),
-        reply_markup=main_keyboard(uid),
-        parse_mode="HTML"
-    )
 
 
 @router.message(F.text == "🛡️ פאנל ניהול")
