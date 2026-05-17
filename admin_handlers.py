@@ -4149,6 +4149,77 @@ async def admin_coupon_flow(message: Message):
 
 
 
+
+@router.message(lambda message: is_admin(message.from_user.id) and (admin_states.get(message.from_user.id) or {}).get("step") in {"statistics_date_input", "statistics_date", "date_statistics", "stats_date_input"})
+async def admin_statistics_date_input_result_fix(message: Message):
+    # ADMIN_STATS_DATE_RESULT_FIX
+    uid = message.from_user.id
+    txt = clean_admin_text(message.text)
+
+    if txt == "⬅️ חזרה לניהול":
+        admin_states[uid] = {"step": "admin"}
+        await tracked_admin_answer(
+            message,
+            rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if txt == "⬅️ חזרה לסטטיסטיקה ודוחות":
+        admin_states[uid] = {"step": "reports_section"}
+        await tracked_admin_answer(
+            message,
+            rtl("<b>📊 סטטיסטיקה ודוחות</b>\n\nבחר פעולה:"),
+            reply_markup=admin_reports_back_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    try:
+        stats = get_statistics_by_date(txt)
+    except Exception as e:
+        try:
+            log_error(e, context="admin_statistics_date_input_result_fix")
+        except Exception:
+            pass
+
+        await tracked_admin_answer(
+            message,
+            rtl(
+                "<b>⚠️ לא הצלחתי לטעון סטטיסטיקה לתאריך הזה.</b>\n\n"
+                "בדוק שהפורמט הוא:\n"
+                "<code>YYYY-MM-DD</code>"
+            ),
+            reply_markup=admin_reports_back_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    admin_states[uid] = {"step": "reports_section"}
+
+    try:
+        result_text = rtl(
+            f"<b>📅 סטטיסטיקה לתאריך {h(txt)}</b>\n\n"
+            f"{field('הכנסות', money(stats.get('revenue', 0)))}\n"
+            f"{field('הזמנות', stats.get('orders', 0))}\n"
+            f"{field('לקוחות חדשים', stats.get('customers', 0))}\n"
+            f"{field('ממוצע להזמנה', money(stats.get('avg_order', 0)))}"
+        )
+    except Exception:
+        result_text = rtl(
+            f"<b>📅 סטטיסטיקה לתאריך {h(txt)}</b>\n\n"
+            "אין נתונים להצגה."
+        )
+
+    await tracked_admin_answer(
+        message,
+        result_text,
+        reply_markup=admin_reports_back_keyboard(),
+        parse_mode="HTML"
+    )
+
+
 @router.message(is_admin_active_step)
 async def admin_flow(message: Message):
     # PRIORITY CUSTOMER BROADCAST STATES
@@ -4159,11 +4230,11 @@ async def admin_flow(message: Message):
     state = admin_states.get(uid) or {}
     if state.get("step") == "statistics_date_input":
         if txt == "⬅️ חזרה לניהול":
-            admin_states[uid] = {"step": "admin"}
+            admin_states[uid] = {"step": "reports_section"}
             await tracked_admin_answer(
                 message,
                 rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
-                reply_markup=admin_keyboard(),
+                reply_markup=admin_reports_back_keyboard(),
                 parse_mode="HTML"
             )
             return
@@ -4597,7 +4668,7 @@ async def admin_flow(message: Message):
             return
 
         stats = get_statistics_by_date(date_value)
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "reports_section"}
 
         text = (
             "<b>📅 סטטיסטיקה לפי תאריך</b>\n\n"
@@ -4620,7 +4691,7 @@ async def admin_flow(message: Message):
 
         await tracked_admin_answer(message, 
             rtl(text),
-            reply_markup=admin_keyboard(),
+            reply_markup=admin_reports_back_keyboard(),
             parse_mode="HTML"
         )
         return
