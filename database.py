@@ -1,6 +1,7 @@
 import os
 import json
 import sqlite3
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -18,6 +19,24 @@ except Exception:
     DB_PATH = LOCAL_DB
 
 print(f"Using database: {DB_PATH}")
+
+
+# ================== PERFORMANCE V7 PRODUCT CACHE ==================
+# Cache קצר למוצרים פעילים כדי לפתוח חנות/קטגוריות מהר יותר.
+# מתנקה אוטומטית בכל שינוי מוצר/מלאי.
+ACTIVE_PRODUCTS_CACHE = {
+    "value": None,
+    "expires_at": 0,
+}
+ACTIVE_PRODUCTS_CACHE_TTL_SECONDS = 2.0
+
+
+def invalidate_products_cache():
+    try:
+        ACTIVE_PRODUCTS_CACHE["value"] = None
+        ACTIVE_PRODUCTS_CACHE["expires_at"] = 0
+    except Exception:
+        pass
 
 
 def get_connection():
@@ -198,9 +217,24 @@ def add_product(category, name, price, description="", max_qty=100, stock=0, sku
     """, (category, name, float(price), description, int(max_qty), int(stock), sku, image_file_id, int(active)))
     conn.commit()
     conn.close()
+    invalidate_products_cache()
 
 
 def get_active_products():
+    # PERFORMANCE_V7_PRODUCT_CACHE
+    # Cache קצר מאוד כדי להאיץ פתיחת חנות/קטגוריות.
+    # מתנקה אוטומטית בכל שינוי מוצר/מלאי.
+    now = time.monotonic()
+
+    try:
+        cached = ACTIVE_PRODUCTS_CACHE.get("value")
+        expires_at = float(ACTIVE_PRODUCTS_CACHE.get("expires_at") or 0)
+
+        if cached is not None and now < expires_at:
+            return cached
+    except Exception:
+        pass
+
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -224,6 +258,13 @@ def get_active_products():
             "sku": sku,
             "image_file_id": image_file_id
         })
+
+    try:
+        ACTIVE_PRODUCTS_CACHE["value"] = products
+        ACTIVE_PRODUCTS_CACHE["expires_at"] = time.monotonic() + ACTIVE_PRODUCTS_CACHE_TTL_SECONDS
+    except Exception:
+        pass
+
     return products
 
 
@@ -276,6 +317,10 @@ def set_product_price(name, price):
     conn.commit()
     changed = cur.rowcount
     conn.close()
+
+    if changed > 0:
+        invalidate_products_cache()
+
     return changed > 0
 
 
@@ -286,6 +331,10 @@ def set_product_description(name, description):
     conn.commit()
     changed = cur.rowcount
     conn.close()
+
+    if changed > 0:
+        invalidate_products_cache()
+
     return changed > 0
 
 
@@ -296,6 +345,10 @@ def set_product_stock(name, stock):
     conn.commit()
     changed = cur.rowcount
     conn.close()
+
+    if changed > 0:
+        invalidate_products_cache()
+
     return changed > 0
 
 
@@ -306,6 +359,10 @@ def add_stock(name, amount):
     conn.commit()
     changed = cur.rowcount
     conn.close()
+
+    if changed > 0:
+        invalidate_products_cache()
+
     return changed > 0
 
 
@@ -316,6 +373,10 @@ def set_product_image(name, image_file_id):
     conn.commit()
     changed = cur.rowcount
     conn.close()
+
+    if changed > 0:
+        invalidate_products_cache()
+
     return changed > 0
 
 
@@ -326,6 +387,10 @@ def set_product_active(name, active):
     conn.commit()
     changed = cur.rowcount
     conn.close()
+
+    if changed > 0:
+        invalidate_products_cache()
+
     return changed > 0
 
 
@@ -336,6 +401,10 @@ def delete_product(name):
     conn.commit()
     changed = cur.rowcount
     conn.close()
+
+    if changed > 0:
+        invalidate_products_cache()
+
     return changed > 0
 
 
@@ -360,6 +429,7 @@ def reduce_stock(cart):
 
     conn.commit()
     conn.close()
+    invalidate_products_cache()
     return True, None
 
 
