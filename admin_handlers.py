@@ -14,6 +14,7 @@ from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broa
 from backup_manager import create_db_backup, list_db_backups, format_backup_list
 from logger import log_admin_action, log_order_event, log_backup_event, log_error, list_log_files
 from audit_logger import write_audit_event
+from audit_logs_ui import audit_logs_menu_keyboard, send_audit_logs_list, send_latest_audit_log
 from maintenance_mode import is_maintenance_enabled, enable_maintenance, disable_maintenance
 from database import (
     add_product,
@@ -410,6 +411,9 @@ def is_valid_admin_button_text(text):
         "🔍 חיפוש פנייה",
         "↩️ השב ללקוח",
         "📄 ייצוא TXT",
+        "📜 Audit Logs",
+        "📜 רשימת Audit Logs",
+        "📥 הורד Audit אחרון",
         "✅ סגור פנייה",
         "⬅️ חזרה לפניות שירות",
         "▶️ חודש הבא",
@@ -2352,6 +2356,68 @@ async def admin_download_selected_log(message: Message):
         parse_mode="HTML"
     )
 
+
+
+
+@router.message(F.text == "📜 Audit Logs")
+async def admin_audit_logs_menu(message: Message):
+    # AUDIT_LOGS_UI_CONNECT_V1
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "audit_logs_menu"}
+
+    await message.answer(
+        rtl("<b>📜 Audit Logs</b>\n\nבחר פעולה:"),
+        reply_markup=audit_logs_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "📜 רשימת Audit Logs")
+async def admin_audit_logs_list(message: Message):
+    # AUDIT_LOGS_UI_CONNECT_V1
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "audit_logs_menu"}
+
+    log_admin_action(message.from_user.id, "audit_logs_list_viewed")
+    safe_write_audit_event(
+        message.from_user.id,
+        "audit_logs_list_viewed",
+        entity_type="audit_logs",
+        entity_id="list",
+    )
+
+    await send_audit_logs_list(message, rtl=rtl, parse_mode="HTML")
+
+
+@router.message(F.text == "📥 הורד Audit אחרון")
+async def admin_download_latest_audit_log(message: Message):
+    # AUDIT_LOGS_UI_CONNECT_V1
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "audit_logs_menu"}
+
+    latest = await send_latest_audit_log(message, rtl=rtl, parse_mode="HTML")
+
+    if latest:
+        filename = latest.get("filename")
+        log_admin_action(message.from_user.id, "download_latest_audit_log", f"file={filename}")
+        safe_write_audit_event(
+            message.from_user.id,
+            "download_latest_audit_log",
+            entity_type="audit_log_file",
+            entity_id=filename,
+        )
+
+    await message.answer(
+        rtl("<b>📜 Audit Logs</b>\n\nבחר פעולה נוספת."),
+        reply_markup=audit_logs_menu_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(F.text == "🛠️ מצב תחזוקה")
