@@ -508,16 +508,25 @@ async def send_recent_audit_events(message, rtl=None, parse_mode="HTML", limit=1
     return len(events)
 
 
-async def send_audit_search_results(message, mode, query, rtl=None, parse_mode="HTML", limit=10):
+async def send_audit_search_results(message, mode, query, rtl=None, parse_mode="HTML", limit=10, keep_select_keyboard=True):
+    # AUDIT_SELECT_LISTS_STAY_V1
+    # אחרי בחירה/חיפוש משאירים את רשימת הבחירה של אותו mode,
+    # כדי שאפשר יהיה לעבור מיד למוצר/אדמין/פעולה אחרים בלי לצאת ולחזור.
     await _cleanup_old(message)
 
     events = _read_events(20)
     filtered = [event for event in events if _matches(event, mode, query)]
 
+    reply_keyboard = (
+        audit_select_keyboard(mode)
+        if keep_select_keyboard and "audit_select_keyboard" in globals()
+        else audit_search_back_keyboard()
+    )
+
     if not filtered:
         sent = await message.answer(
             _rtl(_not_found(mode, query), rtl),
-            reply_markup=audit_search_back_keyboard(),
+            reply_markup=reply_keyboard,
             parse_mode=parse_mode
         )
         _remember(message.from_user.id, sent)
@@ -537,7 +546,7 @@ async def send_audit_search_results(message, mode, query, rtl=None, parse_mode="
 
     sent = await message.answer(
         _rtl(text, rtl),
-        reply_markup=audit_search_back_keyboard(),
+        reply_markup=reply_keyboard,
         parse_mode=parse_mode
     )
 
