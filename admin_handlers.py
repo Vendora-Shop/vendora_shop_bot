@@ -1,6 +1,5 @@
 import os
 import asyncio
-from performance_utils_v3 import schedule_delete_message, schedule_delete_messages, is_fast_duplicate_action
 from aiogram import Router, F, BaseMiddleware
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, ReplyKeyboardRemove
@@ -248,19 +247,40 @@ def remember_admin_screen_message(admin_id, message_obj):
 
 
 async def _delete_admin_message_safely(bot, chat_id, message_id):
-    # PERFORMANCE_V3_TELEGRAM_LOAD
-    # מחיקות אדמין עוברות דרך queue מבוקר כדי לא להציף Telegram API.
     try:
-        schedule_delete_message(bot, chat_id, message_id, urgent=True)
+        await bot.delete_message(chat_id, int(message_id))
     except Exception:
         pass
 
 
 async def _delete_admin_messages_safely(bot, chat_id, message_ids):
-    # PERFORMANCE_V3_TELEGRAM_LOAD
-    # מחיקה דרך queue מבוקר במקום gather מיידי.
+    clean_ids = []
+    seen = set()
+
+    for mid in message_ids or []:
+        try:
+            mid = int(mid)
+        except Exception:
+            continue
+
+        if mid in seen:
+            continue
+
+        seen.add(mid)
+        clean_ids.append(mid)
+
+    if not clean_ids:
+        return
+
     try:
-        schedule_delete_messages(bot, chat_id, message_ids, max_items=40, urgent=True)
+        for i in range(0, len(clean_ids), 8):
+            batch = clean_ids[i:i + 8]
+            await asyncio.gather(
+                *[_delete_admin_message_safely(bot, chat_id, mid) for mid in batch],
+                return_exceptions=True
+            )
+            if i + 8 < len(clean_ids):
+                await asyncio.sleep(0)
     except Exception:
         pass
 
@@ -303,24 +323,19 @@ class AdminPanelSafeCleanupMiddleware(BaseMiddleware):
                 text = getattr(event, "text", None)
 
                 if user and text and is_admin_cleanup_active(user.id, text):
-                    # PERFORMANCE_V3_TELEGRAM_LOAD
-                    # מונע עומס במקרה של לחיצה כפולה מהירה על אותו כפתור.
-                    if is_fast_duplicate_action(user.id, f"admin_text:{str(text).strip()}", seconds=0.45):
-                        schedule_delete_message(event.bot, event.chat.id, event.message_id, urgent=True)
-                        return await handler(event, data)
-
                     await cleanup_admin_previous_screen(
                         event.bot,
                         user.id,
                         event.chat.id
                     )
 
-                    # מוחקים את הודעת הכפתור/קשקוש של האדמין דרך queue מבוקר.
-                    schedule_delete_message(
-                        event.bot,
-                        event.chat.id,
-                        event.message_id,
-                        urgent=True
+                    # מוחקים את הודעת הכפתור/קשקוש של האדמין ברקע.
+                    asyncio.create_task(
+                        _delete_admin_message_safely(
+                            event.bot,
+                            event.chat.id,
+                            event.message_id
+                        )
                     )
 
         except Exception:
