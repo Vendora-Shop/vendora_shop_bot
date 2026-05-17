@@ -8,12 +8,12 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, FSInputFile
 from audit_logger import list_audit_files, format_audit_files
 
 
-# AUDIT_LOGS_UI_REAL_FIX_V1
-# יציב לחיפוש Audit:
-# - אין תוצאה = הודעת שגיאה נקייה, לא קריסה.
-# - הודעה קודמת נמחקת.
-# - כל טקסט מסונן ל-HTML בטוח.
-# - אין כפתור חילוץ במסך חיפוש רגיל.
+# AUDIT_LOGS_UI_REAL_FIX_V2
+# חיפוש Audit יציב:
+# - אין תוצאות = הודעה נקייה
+# - הקשקוש הבא מוחק את ההודעה הקודמת
+# - HTML בטוח
+# - בלי כפתור חילוץ במסך חיפוש רגיל
 
 AUDIT_SEARCH_MESSAGE_STORE_FILE = "audit_search_messages.json"
 MAX_TELEGRAM_TEXT = 3600
@@ -46,7 +46,7 @@ def audit_search_back_keyboard():
     )
 
 
-def _rtl_wrap(text, rtl=None):
+def _rtl(text, rtl=None):
     return rtl(text) if rtl else text
 
 
@@ -66,6 +66,7 @@ def _short_json(value, max_len=220):
         text = str(value)
 
     text = text.strip()
+
     if len(text) > max_len:
         text = text[:max_len] + "..."
 
@@ -148,6 +149,7 @@ async def _cleanup_old(message):
 
 def _read_events(limit_files=20):
     events = []
+
     try:
         files = list_audit_files(limit_files)
     except Exception:
@@ -164,10 +166,12 @@ def _read_events(limit_files=20):
                     line = (line or "").strip()
                     if not line:
                         continue
+
                     try:
                         event = json.loads(line)
                     except Exception:
                         continue
+
                     event["_file"] = item.get("filename") or Path(path).name
                     events.append(event)
         except Exception:
@@ -178,6 +182,7 @@ def _read_events(limit_files=20):
 
 def _matches(event, mode, query):
     q = str(query or "").strip().lower()
+
     if not q:
         return False
 
@@ -292,7 +297,7 @@ async def send_audit_logs_list(message, rtl=None, parse_mode="HTML"):
         )
 
     await message.answer(
-        _rtl_wrap(_fit(text), rtl),
+        _rtl(_fit(text), rtl),
         reply_markup=audit_logs_menu_keyboard(),
         parse_mode=parse_mode
     )
@@ -303,7 +308,7 @@ async def send_latest_audit_log(message, rtl=None, parse_mode="HTML"):
 
     if not files:
         await message.answer(
-            _rtl_wrap("<b>⚠️ אין עדיין Audit Logs.</b>", rtl),
+            _rtl("<b>⚠️ אין עדיין Audit Logs.</b>", rtl),
             reply_markup=audit_logs_menu_keyboard(),
             parse_mode=parse_mode
         )
@@ -315,7 +320,7 @@ async def send_latest_audit_log(message, rtl=None, parse_mode="HTML"):
 
     await message.answer_document(
         FSInputFile(path),
-        caption=_rtl_wrap(f"<b>📥 Audit Log אחרון</b>\n\n{_safe(filename)}", rtl),
+        caption=_rtl(f"<b>📥 Audit Log אחרון</b>\n\n{_safe(filename)}", rtl),
         parse_mode=parse_mode
     )
 
@@ -329,10 +334,11 @@ async def send_recent_audit_events(message, rtl=None, parse_mode="HTML", limit=1
     text = format_audit_events(events, title=f"📊 {limit} פעולות אחרונות", limit=limit)
 
     sent = await message.answer(
-        _rtl_wrap(text, rtl),
+        _rtl(text, rtl),
         reply_markup=audit_logs_menu_keyboard(),
         parse_mode=parse_mode
     )
+
     _remember(message.from_user.id, sent)
     return len(events)
 
@@ -345,7 +351,7 @@ async def send_audit_search_results(message, mode, query, rtl=None, parse_mode="
 
     if not filtered:
         sent = await message.answer(
-            _rtl_wrap(_not_found(mode, query), rtl),
+            _rtl(_not_found(mode, query), rtl),
             reply_markup=audit_search_back_keyboard(),
             parse_mode=parse_mode
         )
@@ -365,9 +371,10 @@ async def send_audit_search_results(message, mode, query, rtl=None, parse_mode="
     )
 
     sent = await message.answer(
-        _rtl_wrap(text, rtl),
+        _rtl(text, rtl),
         reply_markup=audit_search_back_keyboard(),
         parse_mode=parse_mode
     )
+
     _remember(message.from_user.id, sent)
     return len(filtered)
