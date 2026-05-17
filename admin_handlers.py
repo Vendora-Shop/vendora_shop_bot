@@ -15,7 +15,7 @@ from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broa
 from backup_manager import create_db_backup, list_db_backups, format_backup_list
 from logger import log_admin_action, log_order_event, log_backup_event, log_error, list_log_files
 from audit_logger import write_audit_event
-from audit_logs_ui import audit_logs_menu_keyboard, send_audit_logs_list, send_latest_audit_log
+from audit_logs_ui import audit_logs_menu_keyboard, audit_search_back_keyboard, send_audit_logs_list, send_latest_audit_log, send_recent_audit_events, send_audit_search_results
 from maintenance_mode import is_maintenance_enabled, enable_maintenance, disable_maintenance
 from database import (
     add_product,
@@ -105,6 +105,11 @@ def is_admin_known_panel_text(text):
         "📜 Audit Logs",
         "📜 רשימת Audit Logs",
         "📥 הורד Audit אחרון",
+        "📊 10 פעולות אחרונות",
+        "👤 חיפוש לפי אדמין",
+        "🛍️ חיפוש לפי מוצר",
+        "⚙️ חיפוש לפי פעולה",
+        "⬅️ חזרה ל־Audit Logs",
         "🛠️ מצב תחזוקה",
         "🟢 הפעל תחזוקה",
         "🔴 כבה תחזוקה",
@@ -2507,6 +2512,58 @@ async def admin_download_selected_log(message: Message):
     uid = message.from_user.id
     txt = clean_admin_text(message.text)
 
+    # AUDIT_LOGS_ADVANCED_UI_V1
+    state = admin_states.get(uid) or {}
+    step = state.get("step")
+
+    if step in {"audit_search_admin", "audit_search_product", "audit_search_action"}:
+        if txt in {"⬅️ חזרה ל־Audit Logs", "⬅️ חזרה להגדרות מערכת", "⬅️ חזרה לניהול"}:
+            # הכפתורים האלו מטופלים גם ב-handlers רגילים / global back.
+            if txt == "⬅️ חזרה ל־Audit Logs":
+                admin_states[uid] = {"step": "audit_logs_menu"}
+                await tracked_admin_answer(message,
+                    rtl("<b>📜 Audit Logs</b>\n\nבחר פעולה:"),
+                    reply_markup=audit_logs_menu_keyboard(),
+                    parse_mode="HTML"
+                )
+                return
+
+        if len(txt) < 2:
+            await tracked_admin_answer(message,
+                rtl(
+                    "<b>⚠️ חיפוש קצר מדי</b>\n\n"
+                    "שלח לפחות 2 תווים לחיפוש."
+                ),
+                reply_markup=audit_search_back_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        mode = {
+            "audit_search_admin": "admin",
+            "audit_search_product": "product",
+            "audit_search_action": "action",
+        }.get(step)
+
+        log_admin_action(uid, "audit_search_performed", f"mode={mode} | query={txt}")
+        safe_write_audit_event(
+            uid,
+            "audit_search_performed",
+            entity_type="audit_logs",
+            entity_id=mode,
+            new_value={"query": txt},
+        )
+
+        await send_audit_search_results(
+            message,
+            mode,
+            txt,
+            rtl=rtl,
+            parse_mode="HTML",
+            limit=10
+        )
+        return
+
     if txt == "⬅️ חזרה להגדרות מערכת":
         admin_states[uid] = {"step": "settings_section"}
         await tracked_admin_answer(message, 
@@ -2632,6 +2689,98 @@ async def admin_download_latest_audit_log(message: Message):
 
     await tracked_admin_answer(message, 
         rtl("<b>📜 Audit Logs</b>\n\nבחר פעולה נוספת."),
+        reply_markup=audit_logs_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+
+@router.message(F.text == "📊 10 פעולות אחרונות")
+async def admin_recent_audit_events(message: Message):
+    # AUDIT_LOGS_ADVANCED_UI_V1
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "audit_logs_menu"}
+
+    log_admin_action(message.from_user.id, "audit_recent_events_viewed")
+    safe_write_audit_event(
+        message.from_user.id,
+        "audit_recent_events_viewed",
+        entity_type="audit_logs",
+        entity_id="recent_10",
+    )
+
+    await send_recent_audit_events(message, rtl=rtl, parse_mode="HTML", limit=10)
+
+
+@router.message(F.text == "👤 חיפוש לפי אדמין")
+async def admin_audit_search_by_admin_start(message: Message):
+    # AUDIT_LOGS_ADVANCED_UI_V1
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "audit_search_admin"}
+
+    await tracked_admin_answer(message,
+        rtl(
+            "<b>👤 חיפוש Audit לפי אדמין</b>\n\n"
+            "שלח Telegram ID של האדמין שברצונך לבדוק."
+        ),
+        reply_markup=audit_search_back_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "🛍️ חיפוש לפי מוצר")
+async def admin_audit_search_by_product_start(message: Message):
+    # AUDIT_LOGS_ADVANCED_UI_V1
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "audit_search_product"}
+
+    await tracked_admin_answer(message,
+        rtl(
+            "<b>🛍️ חיפוש Audit לפי מוצר</b>\n\n"
+            "שלח שם מוצר או חלק משם מוצר."
+        ),
+        reply_markup=audit_search_back_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "⚙️ חיפוש לפי פעולה")
+async def admin_audit_search_by_action_start(message: Message):
+    # AUDIT_LOGS_ADVANCED_UI_V1
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "audit_search_action"}
+
+    await tracked_admin_answer(message,
+        rtl(
+            "<b>⚙️ חיפוש Audit לפי פעולה</b>\n\n"
+            "שלח שם פעולה, לדוגמה:\n"
+            "<code>product_price_changed</code>\n"
+            "<code>product_stock_changed</code>\n"
+            "<code>order_status_changed</code>"
+        ),
+        reply_markup=audit_search_back_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "⬅️ חזרה ל־Audit Logs")
+async def admin_back_to_audit_logs_menu(message: Message):
+    # AUDIT_LOGS_ADVANCED_UI_V1
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "audit_logs_menu"}
+
+    await tracked_admin_answer(message,
+        rtl("<b>📜 Audit Logs</b>\n\nבחר פעולה:"),
         reply_markup=audit_logs_menu_keyboard(),
         parse_mode="HTML"
     )
