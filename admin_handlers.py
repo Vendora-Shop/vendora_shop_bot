@@ -1,6 +1,6 @@
 import os
 import asyncio
-from performance_utils_v3_1 import schedule_delete_message, schedule_delete_messages, is_fast_duplicate_action
+from performance_utils_v3 import schedule_delete_message, schedule_delete_messages, is_fast_duplicate_action
 from aiogram import Router, F, BaseMiddleware
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, ReplyKeyboardRemove
