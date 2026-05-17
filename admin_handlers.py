@@ -1,6 +1,6 @@
 import os
 import asyncio
-from aiogram import Router, F
+from aiogram import Router, F, BaseMiddleware
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, ReplyKeyboardRemove
 from html import escape
@@ -79,15 +79,72 @@ router = Router()
 admin_states = {}
 
 
-# ================== ADMIN PANEL SAFE CLEANUP V2 ==================
+# ================== ADMIN PANEL SAFE CLEANUP FINAL V3 ==================
 # ניקוי זהיר לפאנל אדמין בלבד.
 # לא משנה לוגיקה עסקית, לא נוגע בצד לקוח, לא משנה Audit.
-# עובד כך:
-# 1. כל הודעת בוט שנשלחת דרך tracked_admin_answer נשמרת לניקוי עתידי.
-# 2. בפעולה הבאה של אדמין בפאנל — מוחקים את המסכים הקודמים ברקע.
-# 3. הודעת הכפתור/הטקסט של האדמין נמחקת ברקע.
-# 4. /start ופקודות לא נמחקות כדי לא לשבור כניסה לבוט.
+# מוחק:
+# - הודעות כפתור/טקסט שהאדמין שולח בתוך פאנל ניהול.
+# - מסכי אדמין קודמים של הבוט.
+# לא מוחק:
+# - /start
+# - פקודות
+# - פעולות לקוח
 ADMIN_SCREEN_STORE_FILE = "admin_screen_messages.json"
+
+
+def is_admin_known_panel_text(text):
+    txt = clean_admin_text(text)
+
+    if not txt or txt.startswith("/"):
+        return False
+
+    if is_valid_admin_button_text(txt):
+        return True
+
+    extra_buttons = {
+        "📜 Audit Logs",
+        "📜 רשימת Audit Logs",
+        "📥 הורד Audit אחרון",
+        "🛠️ מצב תחזוקה",
+        "🟢 הפעל תחזוקה",
+        "🔴 כבה תחזוקה",
+        "⬅️ חזרה להגדרות מערכת",
+        "📄 רשימת לוגים",
+        "💾 צור גיבוי DB",
+        "📦 רשימת גיבויים",
+        "📥 הורד לוג אחרון",
+    }
+
+    return txt in extra_buttons
+
+
+def is_admin_cleanup_active(admin_id, text):
+    try:
+        if not is_admin(admin_id):
+            return False
+
+        txt = clean_admin_text(text)
+
+        if not txt or txt.startswith("/"):
+            return False
+
+        # אם האדמין משתמש בצד לקוח — לא נותנים לניקוי אדמין לגעת בזה.
+        try:
+            if is_customer_navigation_button_for_admin_guard(txt):
+                return False
+        except Exception:
+            pass
+
+        state = admin_states.get(admin_id) or {}
+        step = state.get("step")
+
+        if step and step != "main":
+            return True
+
+        return is_admin_known_panel_text(txt)
+
+    except Exception:
+        return False
 
 
 def load_admin_screen_store():
@@ -113,22 +170,26 @@ def remember_admin_screen_message(admin_id, message_obj):
     try:
         if not message_obj:
             return
-        message_id = getattr(message_obj, "message_id", None)
-        if not message_id:
+
+        mid = getattr(message_obj, "message_id", None)
+        if not mid:
             return
 
         store = load_admin_screen_store()
         key = str(admin_id)
         ids = store.get(key, [])
+
         if not isinstance(ids, list):
             ids = []
 
-        mid = int(message_id)
+        mid = int(mid)
+
         if mid not in ids:
             ids.append(mid)
 
         store[key] = ids[-40:]
         save_admin_screen_store(store)
+
     except Exception:
         pass
 
@@ -149,8 +210,10 @@ async def _delete_admin_messages_safely(bot, chat_id, message_ids):
             mid = int(mid)
         except Exception:
             continue
+
         if mid in seen:
             continue
+
         seen.add(mid)
         clean_ids.append(mid)
 
@@ -177,63 +240,19 @@ async def cleanup_admin_previous_screen(bot, admin_id, chat_id):
         save_admin_screen_store(store)
 
         if ids:
-            asyncio.create_task(_delete_admin_messages_safely(bot, chat_id, ids[-40:]))
-    except Exception:
-        pass
-
-
-def delete_admin_incoming_background(message: Message):
-    try:
-        asyncio.create_task(
-            _delete_admin_message_safely(
-                message.bot,
-                message.chat.id,
-                message.message_id
+            asyncio.create_task(
+                _delete_admin_messages_safely(bot, chat_id, ids[-40:])
             )
-        )
-    except Exception:
-        pass
-
-
-async def prepare_admin_clean_screen(message: Message):
-    """
-    קוראים לזה בתחילת admin_flow בלבד.
-    זה לא משנה state ולא עוצר handler.
-    """
-    try:
-        if not is_admin(message.from_user.id):
-            return
-
-        txt = clean_admin_text(message.text)
-
-        # לא מוחקים פקודות כמו /start כדי לא לשבור כניסה/התאוששות.
-        if txt.startswith("/"):
-            return
-
-        # אם האדמין משתמש בצד הלקוח — לא מנקים דרך אדמין.
-        try:
-            if is_customer_navigation_button_for_admin_guard(txt):
-                return
-        except Exception:
-            pass
-
-        await cleanup_admin_previous_screen(
-            message.bot,
-            message.from_user.id,
-            message.chat.id
-        )
-
-        delete_admin_incoming_background(message)
     except Exception:
         pass
 
 
 async def tracked_admin_answer(message: Message, *args, **kwargs):
     """
-    שולח הודעה רגילה ושומר אותה לניקוי בפעולה הבאה.
-    אין כאן מחיקה לפני שליחה כדי לא לפגוע בלוגיקה קיימת.
+    שולח הודעת אדמין רגילה ושומר אותה לניקוי במסך הבא.
+    חשוב: הפונקציה הזאת קוראת ל-message.answer ולא לעצמה.
     """
-    sent = await tracked_admin_answer(message, *args, **kwargs)
+    sent = await message.answer(*args, **kwargs)
 
     try:
         if is_admin(message.from_user.id):
@@ -242,6 +261,38 @@ async def tracked_admin_answer(message: Message, *args, **kwargs):
         pass
 
     return sent
+
+
+class AdminPanelSafeCleanupMiddleware(BaseMiddleware):
+    async def __call__(self, handler, event, data):
+        try:
+            if isinstance(event, Message):
+                user = getattr(event, "from_user", None)
+                text = getattr(event, "text", None)
+
+                if user and text and is_admin_cleanup_active(user.id, text):
+                    await cleanup_admin_previous_screen(
+                        event.bot,
+                        user.id,
+                        event.chat.id
+                    )
+
+                    # מוחקים את הודעת הכפתור/קשקוש של האדמין ברקע.
+                    asyncio.create_task(
+                        _delete_admin_message_safely(
+                            event.bot,
+                            event.chat.id,
+                            event.message_id
+                        )
+                    )
+
+        except Exception:
+            pass
+
+        return await handler(event, data)
+
+
+router.message.middleware(AdminPanelSafeCleanupMiddleware())
 
 
 # ================== CUSTOMER STATUS MENU BOTTOM FIX V3 ==================
@@ -3969,11 +4020,6 @@ async def admin_flow(message: Message):
     # PRIORITY CUSTOMER BROADCAST STATES
     uid = message.from_user.id
     txt = clean_admin_text(message.text)
-
-    # ADMIN_PANEL_SAFE_CLEANUP_V2
-    # ניקוי רק אחרי שההודעה כבר הגיעה ל-admin_flow.
-    # לא חוסם את המשך הלוגיקה ולא מוחק פקודות /start.
-    await prepare_admin_clean_screen(message)
 
     # ADMIN_RESET_ORDERS_ROUTING_FINAL
     # איפוס הזמנות עובד מכל מצב אדמין, אבל הכפתור מוצג רק תחת ⚙️ הגדרות מערכת.
