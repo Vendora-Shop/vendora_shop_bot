@@ -513,21 +513,67 @@ def is_duplicate_customer_action(uid, action_key, seconds=CUSTOMER_ACTION_LOCK_S
 # כך admin_handlers יודע למחוק את התפריט הקודם לפני שליחת סטטוס חדש.
 CUSTOMER_MENU_STORE_FILE = "customer_menu_messages.json"
 
+# PERFORMANCE_V2_MEMORY_CACHE
+# Cache בזיכרון לקבצי JSON קטנים כדי להפחית עומס על Railway filesystem.
+CUSTOMER_MENU_STORE_MEMORY_CACHE = None
+CUSTOMER_MENU_STORE_SAVE_TASK = None
+
+
+async def _save_customer_menu_store_async(snapshot):
+    try:
+        await asyncio.sleep(0.25)
+        with open(CUSTOMER_MENU_STORE_FILE, "w", encoding="utf-8") as f:
+            json.dump(snapshot or {}, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"CUSTOMER_MENU_STORE_SAVE_ERROR: {type(e).__name__}: {e}")
+
+
+def _schedule_customer_menu_store_save(snapshot):
+    global CUSTOMER_MENU_STORE_SAVE_TASK
+
+    try:
+        if CUSTOMER_MENU_STORE_SAVE_TASK and not CUSTOMER_MENU_STORE_SAVE_TASK.done():
+            CUSTOMER_MENU_STORE_SAVE_TASK.cancel()
+    except Exception:
+        pass
+
+    try:
+        CUSTOMER_MENU_STORE_SAVE_TASK = asyncio.create_task(
+            _save_customer_menu_store_async(dict(snapshot or {}))
+        )
+    except Exception:
+        try:
+            with open(CUSTOMER_MENU_STORE_FILE, "w", encoding="utf-8") as f:
+                json.dump(snapshot or {}, f, ensure_ascii=False)
+        except Exception as e:
+            print(f"CUSTOMER_MENU_STORE_SAVE_ERROR: {type(e).__name__}: {e}")
+
 
 def load_customer_menu_store():
+    global CUSTOMER_MENU_STORE_MEMORY_CACHE
+
+    if CUSTOMER_MENU_STORE_MEMORY_CACHE is not None:
+        return CUSTOMER_MENU_STORE_MEMORY_CACHE
+
     try:
         if os.path.exists(CUSTOMER_MENU_STORE_FILE):
             with open(CUSTOMER_MENU_STORE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                CUSTOMER_MENU_STORE_MEMORY_CACHE = data if isinstance(data, dict) else {}
+                return CUSTOMER_MENU_STORE_MEMORY_CACHE
     except Exception:
         pass
-    return {}
+
+    CUSTOMER_MENU_STORE_MEMORY_CACHE = {}
+    return CUSTOMER_MENU_STORE_MEMORY_CACHE
 
 
 def save_customer_menu_store(store):
+    global CUSTOMER_MENU_STORE_MEMORY_CACHE
+
     try:
-        with open(CUSTOMER_MENU_STORE_FILE, "w", encoding="utf-8") as f:
-            json.dump(store, f, ensure_ascii=False)
+        CUSTOMER_MENU_STORE_MEMORY_CACHE = dict(store or {})
+        _schedule_customer_menu_store_save(CUSTOMER_MENU_STORE_MEMORY_CACHE)
     except Exception as e:
         print(f"CUSTOMER_MENU_STORE_SAVE_ERROR: {type(e).__name__}: {e}")
 
@@ -541,6 +587,7 @@ def remember_customer_main_menu_message(uid, message_id):
 
 BANNER_FILE_ID_CACHE_FILE = "customer_banner_file_ids.json"
 BANNER_FILE_ID_MEMORY_CACHE = None
+BANNER_FILE_ID_SAVE_TASK = None
 
 
 def load_banner_file_ids():
@@ -562,21 +609,33 @@ def load_banner_file_ids():
 
 
 def save_banner_file_ids(data):
-    global BANNER_FILE_ID_MEMORY_CACHE
+    global BANNER_FILE_ID_MEMORY_CACHE, BANNER_FILE_ID_SAVE_TASK
     BANNER_FILE_ID_MEMORY_CACHE = dict(data or {})
 
-    # שמירה לדיסק מתבצעת ברקע כדי לא לעכב פתיחת מסכים.
+    # PERFORMANCE_V2_MEMORY_CACHE
+    # Debounce לכתיבת file_id cache כדי שלא תהיה כתיבה לדיסק על כל מסך.
     async def _save_async(snapshot):
         try:
+            await asyncio.sleep(0.25)
             with open(BANNER_FILE_ID_CACHE_FILE, "w", encoding="utf-8") as f:
                 json.dump(snapshot, f, ensure_ascii=False)
         except Exception as e:
             print(f"BANNER_FILE_ID_CACHE_SAVE_ERROR: {type(e).__name__}: {e}")
 
     try:
-        asyncio.create_task(_save_async(dict(BANNER_FILE_ID_MEMORY_CACHE)))
+        if BANNER_FILE_ID_SAVE_TASK and not BANNER_FILE_ID_SAVE_TASK.done():
+            BANNER_FILE_ID_SAVE_TASK.cancel()
     except Exception:
         pass
+
+    try:
+        BANNER_FILE_ID_SAVE_TASK = asyncio.create_task(_save_async(dict(BANNER_FILE_ID_MEMORY_CACHE)))
+    except Exception:
+        try:
+            with open(BANNER_FILE_ID_CACHE_FILE, "w", encoding="utf-8") as f:
+                json.dump(BANNER_FILE_ID_MEMORY_CACHE, f, ensure_ascii=False)
+        except Exception:
+            pass
 
 
 async def answer_cached_banner_photo(message: Message, banner_key, caption=None, reply_markup=None, parse_mode="HTML"):
