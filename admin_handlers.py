@@ -4240,11 +4240,16 @@ async def admin_flow(message: Message):
                 return
 
             txt = selected_value
+
+            # AUDIT_SELECT_LISTS_STAY_V1
+            # נשארים באותו מצב בחירה כדי שהרשימה תישאר זמינה אחרי הצגת התוצאות.
             step = {
-                "admin": "audit_search_admin",
-                "product": "audit_search_product",
-                "action": "audit_search_action",
+                "admin": "audit_search_admin_select",
+                "product": "audit_search_product_select",
+                "action": "audit_search_action_select",
             }.get(select_mode)
+
+            admin_states[uid] = {"step": step}
 
         if len(txt) < 2:
             await tracked_admin_answer(
@@ -4259,6 +4264,9 @@ async def admin_flow(message: Message):
             "audit_search_admin": "admin",
             "audit_search_product": "product",
             "audit_search_action": "action",
+            "audit_search_admin_select": "admin",
+            "audit_search_product_select": "product",
+            "audit_search_action_select": "action",
         }.get(step)
 
         try:
