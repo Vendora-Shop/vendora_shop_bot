@@ -16,6 +16,8 @@ from audit_logger import list_audit_files, format_audit_files
 # - בלי כפתור חילוץ במסך חיפוש רגיל
 
 AUDIT_SEARCH_MESSAGE_STORE_FILE = "audit_search_messages.json"
+AUDIT_SEARCH_STORE_MEMORY_CACHE = None
+AUDIT_SEARCH_STORE_SAVE_TASK = None
 MAX_TELEGRAM_TEXT = 3600
 
 
@@ -81,23 +83,52 @@ def _fit(text):
 
 
 def _load_store():
+    global AUDIT_SEARCH_STORE_MEMORY_CACHE
+
+    if AUDIT_SEARCH_STORE_MEMORY_CACHE is not None:
+        return AUDIT_SEARCH_STORE_MEMORY_CACHE
+
     try:
         path = Path(AUDIT_SEARCH_MESSAGE_STORE_FILE)
         if path.exists():
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                return data if isinstance(data, dict) else {}
+                AUDIT_SEARCH_STORE_MEMORY_CACHE = data if isinstance(data, dict) else {}
+                return AUDIT_SEARCH_STORE_MEMORY_CACHE
     except Exception:
         pass
-    return {}
+
+    AUDIT_SEARCH_STORE_MEMORY_CACHE = {}
+    return AUDIT_SEARCH_STORE_MEMORY_CACHE
+
+
+async def _save_store_async(snapshot):
+    try:
+        await asyncio.sleep(0.25)
+        with open(AUDIT_SEARCH_MESSAGE_STORE_FILE, "w", encoding="utf-8") as f:
+            json.dump(snapshot or {}, f, ensure_ascii=False)
+    except Exception:
+        pass
 
 
 def _save_store(store):
+    global AUDIT_SEARCH_STORE_MEMORY_CACHE, AUDIT_SEARCH_STORE_SAVE_TASK
+
     try:
-        with open(AUDIT_SEARCH_MESSAGE_STORE_FILE, "w", encoding="utf-8") as f:
-            json.dump(store or {}, f, ensure_ascii=False)
+        AUDIT_SEARCH_STORE_MEMORY_CACHE = dict(store or {})
+
+        if AUDIT_SEARCH_STORE_SAVE_TASK and not AUDIT_SEARCH_STORE_SAVE_TASK.done():
+            AUDIT_SEARCH_STORE_SAVE_TASK.cancel()
+
+        AUDIT_SEARCH_STORE_SAVE_TASK = asyncio.create_task(
+            _save_store_async(dict(AUDIT_SEARCH_STORE_MEMORY_CACHE))
+        )
     except Exception:
-        pass
+        try:
+            with open(AUDIT_SEARCH_MESSAGE_STORE_FILE, "w", encoding="utf-8") as f:
+                json.dump(store or {}, f, ensure_ascii=False)
+        except Exception:
+            pass
 
 
 def _remember(user_id, message_obj):
