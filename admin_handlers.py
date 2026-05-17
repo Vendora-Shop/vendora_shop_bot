@@ -13,6 +13,7 @@ from config import ADMIN_ID
 from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard, customers_menu_keyboard, customer_actions_keyboard, customer_select_keyboard, support_tickets_menu_keyboard, support_ticket_actions_keyboard, closed_support_ticket_actions_keyboard, support_ticket_select_keyboard, admin_orders_menu_keyboard, admin_products_menu_keyboard, admin_stock_menu_keyboard, admin_customers_menu_root_keyboard, admin_coupons_root_keyboard, admin_marketing_menu_keyboard, admin_support_root_keyboard, admin_reports_menu_keyboard, admin_settings_menu_keyboard
 from backup_manager import create_db_backup, list_db_backups, format_backup_list
 from logger import log_admin_action, log_order_event, log_backup_event, log_error, list_log_files
+from audit_logger import write_audit_event
 from maintenance_mode import is_maintenance_enabled, enable_maintenance, disable_maintenance
 from database import (
     add_product,
@@ -51,6 +52,26 @@ from database import (
     get_coupons,
     set_coupon_active,
 )
+
+
+def safe_write_audit_event(admin_id, action, entity_type="system", entity_id="", old_value=None, new_value=None, details=""):
+    # ADMIN_AUDIT_LOGGER_CONNECT_V1
+    try:
+        write_audit_event(
+            admin_id=admin_id,
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            old_value=old_value,
+            new_value=new_value,
+            details=details,
+        )
+    except Exception as e:
+        try:
+            log_error(e, context=f"audit_event_failed action={action} entity={entity_type}:{entity_id}")
+        except Exception:
+            pass
+
 
 router = Router()
 admin_states = {}
@@ -1664,6 +1685,17 @@ async def order_notification_action(callback: CallbackQuery):
         return
 
     ok = update_order_status(order_number, new_status)
+    if ok:
+        log_order_event(order_number, "status_changed", f"admin_id={callback.from_user.id} | from={current_status} | to={new_status}")
+        safe_write_audit_event(
+            callback.from_user.id,
+            "order_status_changed",
+            entity_type="order",
+            entity_id=order_number,
+            old_value={"status": current_status},
+            new_value={"status": new_status},
+        )
+
     order = get_order_by_number(order_number)
 
     if not ok or not order:
@@ -2123,6 +2155,12 @@ async def admin_create_db_backup(message: Message):
 
     # ADMIN_ACTION_LOGGING_V1
     log_admin_action(message.from_user.id, "create_db_backup_clicked")
+    safe_write_audit_event(
+        message.from_user.id,
+        "create_db_backup_clicked",
+        entity_type="backup",
+        entity_id="manual",
+    )
     result = create_db_backup(reason="admin_manual")
 
     if not result.get("ok"):
@@ -2293,6 +2331,12 @@ async def admin_download_selected_log(message: Message):
         return
 
     log_admin_action(uid, "download_log_file", f"file={filename}")
+    safe_write_audit_event(
+        uid,
+        "download_log_file",
+        entity_type="log_file",
+        entity_id=filename,
+    )
 
     await message.answer_document(
         FSInputFile(path),
@@ -2339,11 +2383,21 @@ async def enable_maintenance_mode_handler(message: Message):
     if not is_admin(message.from_user.id):
         return
 
+    old_value = {"enabled": is_maintenance_enabled()}
     enable_maintenance()
+    new_value = {"enabled": is_maintenance_enabled()}
 
     log_admin_action(
         message.from_user.id,
         "maintenance_enabled"
+    )
+    safe_write_audit_event(
+        message.from_user.id,
+        "maintenance_enabled",
+        entity_type="system",
+        entity_id="maintenance_mode",
+        old_value=old_value,
+        new_value=new_value,
     )
 
     admin_states[message.from_user.id] = {"step": "maintenance_mode"}
@@ -2364,11 +2418,21 @@ async def disable_maintenance_mode_handler(message: Message):
     if not is_admin(message.from_user.id):
         return
 
+    old_value = {"enabled": is_maintenance_enabled()}
     disable_maintenance()
+    new_value = {"enabled": is_maintenance_enabled()}
 
     log_admin_action(
         message.from_user.id,
         "maintenance_disabled"
+    )
+    safe_write_audit_event(
+        message.from_user.id,
+        "maintenance_disabled",
+        entity_type="system",
+        entity_id="maintenance_mode",
+        old_value=old_value,
+        new_value=new_value,
     )
 
     admin_states[message.from_user.id] = {"step": "maintenance_mode"}
@@ -3424,9 +3488,18 @@ async def admin_coupon_flow(message: Message):
 
     if step == "coupon_disable_code":
         code = clean_coupon_code_from_selection(txt)
+        old_value = {"active": True}
         ok = set_coupon_active(code, False)
         if ok:
             log_admin_action(uid, "coupon_disabled", f"code={code}")
+            safe_write_audit_event(
+                uid,
+                "coupon_disabled",
+                entity_type="coupon",
+                entity_id=code,
+                old_value=old_value,
+                new_value={"active": False},
+            )
         else:
             log_admin_action(uid, "coupon_disable_failed", f"code={code}")
         admin_states[uid] = {"step": "coupons_menu"}
@@ -3442,9 +3515,18 @@ async def admin_coupon_flow(message: Message):
 
     if step == "coupon_enable_code":
         code = clean_coupon_code_from_selection(txt)
+        old_value = {"active": False}
         ok = set_coupon_active(code, True)
         if ok:
             log_admin_action(uid, "coupon_enabled", f"code={code}")
+            safe_write_audit_event(
+                uid,
+                "coupon_enabled",
+                entity_type="coupon",
+                entity_id=code,
+                old_value=old_value,
+                new_value={"active": True},
+            )
         else:
             log_admin_action(uid, "coupon_enable_failed", f"code={code}")
         admin_states[uid] = {"step": "coupons_menu"}
@@ -4628,9 +4710,21 @@ async def admin_flow(message: Message):
             await message.answer(rtl("<b>⚠️ נא לרשום מחיר תקין.</b>"), parse_mode="HTML")
             return
 
-        ok = set_product_price(state["product_name"], price)
+        product_name = state["product_name"]
+        before_product = get_product_by_name(product_name)
+        old_price = before_product.get("price") if before_product else None
+
+        ok = set_product_price(product_name, price)
         if ok:
-            log_admin_action(uid, "product_price_changed", f"product={state['product_name']} | price={price}")
+            log_admin_action(uid, "product_price_changed", f"product={product_name} | price={price}")
+            safe_write_audit_event(
+                uid,
+                "product_price_changed",
+                entity_type="product",
+                entity_id=product_name,
+                old_value={"price": old_price},
+                new_value={"price": price},
+            )
         admin_states[uid] = {"step": "products_section"}
 
         text = (
@@ -4669,9 +4763,21 @@ async def admin_flow(message: Message):
             )
             return
 
-        ok = set_product_description(state["product_name"], txt)
+        product_name = state["product_name"]
+        before_product = get_product_by_name(product_name)
+        old_description = before_product.get("description") if before_product else None
+
+        ok = set_product_description(product_name, txt)
         if ok:
-            log_admin_action(uid, "product_description_changed", f"product={state['product_name']}")
+            log_admin_action(uid, "product_description_changed", f"product={product_name}")
+            safe_write_audit_event(
+                uid,
+                "product_description_changed",
+                entity_type="product",
+                entity_id=product_name,
+                old_value={"description": old_description},
+                new_value={"description": txt},
+            )
         admin_states[uid] = {"step": "products_section"}
 
         text = (
@@ -4736,7 +4842,23 @@ async def admin_flow(message: Message):
             await message.answer(rtl("<b>⚠️ נא לרשום מספר חיובי.</b>"), parse_mode="HTML")
             return
 
-        ok = add_stock(state["product_name"], int(txt))
+        product_name = state["product_name"]
+        amount = int(txt)
+        before_product = get_product_by_name(product_name)
+        old_stock = before_product.get("stock") if before_product else None
+
+        ok = add_stock(product_name, amount)
+        new_stock = (int(old_stock) + amount) if old_stock is not None else None
+        if ok:
+            log_admin_action(uid, "product_stock_added", f"product={product_name} | amount={amount}")
+            safe_write_audit_event(
+                uid,
+                "product_stock_added",
+                entity_type="product",
+                entity_id=product_name,
+                old_value={"stock": old_stock},
+                new_value={"stock": new_stock, "added": amount},
+            )
         admin_states[uid] = {"step": "admin"}
 
         text = f"<b>✅ המלאי עודכן</b>\n\n{field('נוספו יחידות', txt)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
