@@ -1,5 +1,6 @@
 import json
 import asyncio
+import time
 from pathlib import Path
 from html import escape
 
@@ -19,6 +20,24 @@ AUDIT_SEARCH_MESSAGE_STORE_FILE = "audit_search_messages.json"
 AUDIT_SEARCH_STORE_MEMORY_CACHE = None
 AUDIT_SEARCH_STORE_SAVE_TASK = None
 MAX_TELEGRAM_TEXT = 3600
+
+# ================== PERFORMANCE V9 AUDIT CACHE ==================
+# Cache קצר לקריאת Audit JSONL מהדיסק.
+# לא משנה את הלוגים ולא מונע כתיבה.
+AUDIT_EVENTS_MEMORY_CACHE = {
+    "value": None,
+    "expires_at": 0,
+}
+AUDIT_EVENTS_CACHE_TTL_SECONDS = 1.5
+
+
+def invalidate_audit_events_cache():
+    try:
+        AUDIT_EVENTS_MEMORY_CACHE["value"] = None
+        AUDIT_EVENTS_MEMORY_CACHE["expires_at"] = 0
+    except Exception:
+        pass
+
 
 
 def audit_logs_menu_keyboard():
@@ -179,6 +198,18 @@ async def _cleanup_old(message):
 
 
 def _read_events(limit_files=20):
+    # PERFORMANCE_V9_AUDIT_CACHE
+    now = time.monotonic()
+
+    try:
+        cached = AUDIT_EVENTS_MEMORY_CACHE.get("value")
+        expires_at = float(AUDIT_EVENTS_MEMORY_CACHE.get("expires_at") or 0)
+
+        if cached is not None and now < expires_at:
+            return cached
+    except Exception:
+        pass
+
     events = []
 
     try:
@@ -207,6 +238,12 @@ def _read_events(limit_files=20):
                     events.append(event)
         except Exception:
             continue
+
+    try:
+        AUDIT_EVENTS_MEMORY_CACHE["value"] = events
+        AUDIT_EVENTS_MEMORY_CACHE["expires_at"] = time.monotonic() + AUDIT_EVENTS_CACHE_TTL_SECONDS
+    except Exception:
+        pass
 
     return events
 
