@@ -1832,38 +1832,34 @@ def clear_abandoned_cart(telegram_id):
 # ================== SAVED ADDRESSES ==================
 
 def create_performance_indexes():
-    # DB_PERFORMANCE_INDEXES_FIX
-    # אינדקסים בסיסיים לשיפור מהירות חיפוש בהזמנות, לקוחות, מוצרים, קופונים ופניות שירות.
+    # PERFORMANCE_V10_INDEXES
+    # אינדקסים בטוחים לשיפור חיפוש/סינון בלי שינוי מבנה עסקי.
     conn = get_connection()
     cur = conn.cursor()
 
     indexes = [
-        "CREATE INDEX IF NOT EXISTS idx_orders_telegram_id ON orders(telegram_id)",
-        "CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number)",
-        "CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)",
-        "CREATE INDEX IF NOT EXISTS idx_orders_phone ON orders(phone)",
-
-        "CREATE INDEX IF NOT EXISTS idx_customers_telegram_id ON customers(telegram_id)",
-
+        "CREATE INDEX IF NOT EXISTS idx_products_active_category_name ON products(active, category, name)",
         "CREATE INDEX IF NOT EXISTS idx_products_name ON products(name)",
-        "CREATE INDEX IF NOT EXISTS idx_products_active ON products(active)",
-
-        "CREATE INDEX IF NOT EXISTS idx_customer_addresses_telegram_id ON customer_addresses(telegram_id)",
-
-        "CREATE INDEX IF NOT EXISTS idx_coupons_code ON coupons(code)",
-        "CREATE INDEX IF NOT EXISTS idx_coupon_usages_code ON coupon_usages(code)",
-
-        "CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status)",
-        "CREATE INDEX IF NOT EXISTS idx_support_tickets_ticket_number ON support_tickets(ticket_number)",
-        "CREATE INDEX IF NOT EXISTS idx_support_messages_ticket_number ON support_messages(ticket_number)",
+        "CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number)",
+        "CREATE INDEX IF NOT EXISTS idx_orders_telegram_id_id ON orders(telegram_id, id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_orders_status_id ON orders(status, id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_orders_phone_id ON orders(phone, id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_customers_telegram_id ON customers(telegram_id)",
+        "CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone)",
+        "CREATE INDEX IF NOT EXISTS idx_support_tickets_status_id ON support_tickets(status, id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_support_tickets_telegram_id_status ON support_tickets(telegram_id, status)",
+        "CREATE INDEX IF NOT EXISTS idx_support_messages_ticket_number_id ON support_messages(ticket_number, id)",
     ]
 
-    for sql in indexes:
-        cur.execute(sql)
+    for query in indexes:
+        try:
+            cur.execute(query)
+        except Exception as e:
+            print(f"DB_INDEX_CREATE_ERROR: {type(e).__name__}: {e} | {query}")
 
     conn.commit()
     conn.close()
-    return True
 
 
 def create_customer_addresses_table():
