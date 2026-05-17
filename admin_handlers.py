@@ -15,7 +15,7 @@ from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broa
 from backup_manager import create_db_backup, list_db_backups, format_backup_list
 from logger import log_admin_action, log_order_event, log_backup_event, log_error, list_log_files
 from audit_logger import write_audit_event
-from audit_logs_ui import audit_logs_menu_keyboard, audit_search_back_keyboard, send_audit_logs_list, send_latest_audit_log, send_recent_audit_events, send_audit_search_results
+from audit_logs_ui import audit_logs_menu_keyboard, audit_search_back_keyboard, audit_select_keyboard, audit_select_prompt_text, audit_manual_input_text, parse_audit_selected_value, send_audit_logs_list, send_latest_audit_log, send_recent_audit_events, send_audit_search_results
 from maintenance_mode import is_maintenance_enabled, enable_maintenance, disable_maintenance
 from database import (
     add_product,
@@ -110,6 +110,7 @@ def is_admin_known_panel_text(text):
         "🛍️ חיפוש לפי מוצר",
         "⚙️ חיפוש לפי פעולה",
         "⬅️ חזרה ל־Audit Logs",
+        "✍️ הקלד ידנית",
         "🛠️ מצב תחזוקה",
         "🟢 הפעל תחזוקה",
         "🔴 כבה תחזוקה",
@@ -2657,11 +2658,11 @@ async def admin_audit_search_by_admin_start(message: Message):
     # AUDIT_REAL_FIX_V2
     if not is_admin(message.from_user.id):
         return
-    admin_states[message.from_user.id] = {"step": "audit_search_admin"}
+    admin_states[message.from_user.id] = {"step": "audit_search_admin_select"}
     await tracked_admin_answer(
         message,
-        rtl("<b>👤 חיפוש Audit לפי אדמין</b>\n\nשלח Telegram ID של האדמין שברצונך לבדוק."),
-        reply_markup=audit_search_back_keyboard(),
+        rtl(audit_select_prompt_text("admin")),
+        reply_markup=audit_select_keyboard("admin"),
         parse_mode="HTML"
     )
 
@@ -2671,11 +2672,11 @@ async def admin_audit_search_by_product_start(message: Message):
     # AUDIT_REAL_FIX_V2
     if not is_admin(message.from_user.id):
         return
-    admin_states[message.from_user.id] = {"step": "audit_search_product"}
+    admin_states[message.from_user.id] = {"step": "audit_search_product_select"}
     await tracked_admin_answer(
         message,
-        rtl("<b>🛍️ חיפוש Audit לפי מוצר</b>\n\nשלח שם מוצר או חלק משם מוצר."),
-        reply_markup=audit_search_back_keyboard(),
+        rtl(audit_select_prompt_text("product")),
+        reply_markup=audit_select_keyboard("product"),
         parse_mode="HTML"
     )
 
@@ -2685,17 +2686,11 @@ async def admin_audit_search_by_action_start(message: Message):
     # AUDIT_REAL_FIX_V2
     if not is_admin(message.from_user.id):
         return
-    admin_states[message.from_user.id] = {"step": "audit_search_action"}
+    admin_states[message.from_user.id] = {"step": "audit_search_action_select"}
     await tracked_admin_answer(
         message,
-        rtl(
-            "<b>⚙️ חיפוש Audit לפי פעולה</b>\n\n"
-            "שלח שם פעולה, לדוגמה:\n"
-            "<code>product_price_changed</code>\n"
-            "<code>product_stock_changed</code>\n"
-            "<code>order_status_changed</code>"
-        ),
-        reply_markup=audit_search_back_keyboard(),
+        rtl(audit_select_prompt_text("action")),
+        reply_markup=audit_select_keyboard("action"),
         parse_mode="HTML"
     )
 
@@ -4135,42 +4130,43 @@ async def admin_flow(message: Message):
         return
 
     if txt == "👤 חיפוש לפי אדמין":
-        admin_states[uid] = {"step": "audit_search_admin"}
+        admin_states[uid] = {"step": "audit_search_admin_select"}
         await tracked_admin_answer(
             message,
-            rtl("<b>👤 חיפוש Audit לפי אדמין</b>\n\nשלח Telegram ID של האדמין שברצונך לבדוק."),
-            reply_markup=audit_search_back_keyboard(),
+            rtl(audit_select_prompt_text("admin")),
+            reply_markup=audit_select_keyboard("admin"),
             parse_mode="HTML"
         )
         return
 
     if txt == "🛍️ חיפוש לפי מוצר":
-        admin_states[uid] = {"step": "audit_search_product"}
+        admin_states[uid] = {"step": "audit_search_product_select"}
         await tracked_admin_answer(
             message,
-            rtl("<b>🛍️ חיפוש Audit לפי מוצר</b>\n\nשלח שם מוצר או חלק משם מוצר."),
-            reply_markup=audit_search_back_keyboard(),
+            rtl(audit_select_prompt_text("product")),
+            reply_markup=audit_select_keyboard("product"),
             parse_mode="HTML"
         )
         return
 
     if txt == "⚙️ חיפוש לפי פעולה":
-        admin_states[uid] = {"step": "audit_search_action"}
+        admin_states[uid] = {"step": "audit_search_action_select"}
         await tracked_admin_answer(
             message,
-            rtl(
-                "<b>⚙️ חיפוש Audit לפי פעולה</b>\n\n"
-                "שלח שם פעולה, לדוגמה:\n"
-                "<code>product_price_changed</code>\n"
-                "<code>product_stock_changed</code>\n"
-                "<code>order_status_changed</code>"
-            ),
-            reply_markup=audit_search_back_keyboard(),
+            rtl(audit_select_prompt_text("action")),
+            reply_markup=audit_select_keyboard("action"),
             parse_mode="HTML"
         )
         return
 
-    if step in {"audit_search_admin", "audit_search_product", "audit_search_action"}:
+    if step in {
+        "audit_search_admin_select",
+        "audit_search_product_select",
+        "audit_search_action_select",
+        "audit_search_admin",
+        "audit_search_product",
+        "audit_search_action"
+    }:
         if txt == "⬅️ חזרה ל־Audit Logs":
             admin_states[uid] = {"step": "audit_logs_menu"}
             await tracked_admin_answer(
@@ -4200,6 +4196,55 @@ async def admin_flow(message: Message):
                 parse_mode="HTML"
             )
             return
+
+        select_mode = {
+            "audit_search_admin_select": "admin",
+            "audit_search_product_select": "product",
+            "audit_search_action_select": "action",
+        }.get(step)
+
+        if select_mode and txt == "✍️ הקלד ידנית":
+            manual_step = {
+                "admin": "audit_search_admin",
+                "product": "audit_search_product",
+                "action": "audit_search_action",
+            }.get(select_mode)
+
+            admin_states[uid] = {"step": manual_step}
+
+            await tracked_admin_answer(
+                message,
+                rtl(audit_manual_input_text(select_mode)),
+                reply_markup=audit_search_back_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        if select_mode:
+            selected_value = parse_audit_selected_value(select_mode, txt)
+
+            if selected_value == txt and not (
+                txt.startswith("👤 ")
+                or txt.startswith("🛍️ ")
+                or txt.startswith("⚙️ ")
+            ):
+                await tracked_admin_answer(
+                    message,
+                    rtl(
+                        "<b>⚠️ בחירה לא תקינה.</b>\n\n"
+                        "בחר ערך מהרשימה או לחץ ✍️ הקלד ידנית."
+                    ),
+                    reply_markup=audit_select_keyboard(select_mode),
+                    parse_mode="HTML"
+                )
+                return
+
+            txt = selected_value
+            step = {
+                "admin": "audit_search_admin",
+                "product": "audit_search_product",
+                "action": "audit_search_action",
+            }.get(select_mode)
 
         if len(txt) < 2:
             await tracked_admin_answer(
