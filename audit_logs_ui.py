@@ -8,18 +8,15 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, FSInputFile
 from audit_logger import list_audit_files, format_audit_files
 
 
-# AUDIT_LOGS_UI_V5_FINAL
-# Audit Logs מתקדם עם חיפוש יציב:
-# - חיפוש לפי אדמין
-# - חיפוש לפי מוצר
-# - חיפוש לפי פעולה
-# - אם אין תוצאות: הערה נקייה אחת, והקודמת נמחקת
-# - בלי כפתור חילוץ במסך חיפוש רגיל
-# - הגנה מאורך הודעה ו-HTML לא תקין
-
+# AUDIT_LOGS_UI_REAL_FIX_V1
+# יציב לחיפוש Audit:
+# - אין תוצאה = הודעת שגיאה נקייה, לא קריסה.
+# - הודעה קודמת נמחקת.
+# - כל טקסט מסונן ל-HTML בטוח.
+# - אין כפתור חילוץ במסך חיפוש רגיל.
 
 AUDIT_SEARCH_MESSAGE_STORE_FILE = "audit_search_messages.json"
-MAX_TELEGRAM_TEXT = 3800
+MAX_TELEGRAM_TEXT = 3600
 
 
 def audit_logs_menu_keyboard():
@@ -53,7 +50,7 @@ def _rtl_wrap(text, rtl=None):
     return rtl(text) if rtl else text
 
 
-def _safe_text(value):
+def _safe(value):
     if value is None:
         return "-"
     return escape(str(value))
@@ -69,14 +66,20 @@ def _short_json(value, max_len=220):
         text = str(value)
 
     text = text.strip()
-
     if len(text) > max_len:
         text = text[:max_len] + "..."
 
     return escape(text)
 
 
-def _load_search_store():
+def _fit(text):
+    text = str(text or "")
+    if len(text) <= MAX_TELEGRAM_TEXT:
+        return text
+    return text[:MAX_TELEGRAM_TEXT] + "\n\n<b>…התוצאה קוצרה כדי למנוע שגיאת Telegram.</b>"
+
+
+def _load_store():
     try:
         path = Path(AUDIT_SEARCH_MESSAGE_STORE_FILE)
         if path.exists():
@@ -88,7 +91,7 @@ def _load_search_store():
     return {}
 
 
-def _save_search_store(store):
+def _save_store(store):
     try:
         with open(AUDIT_SEARCH_MESSAGE_STORE_FILE, "w", encoding="utf-8") as f:
             json.dump(store or {}, f, ensure_ascii=False)
@@ -96,7 +99,7 @@ def _save_search_store(store):
         pass
 
 
-def _remember_search_message(user_id, message_obj):
+def _remember(user_id, message_obj):
     try:
         if not message_obj:
             return
@@ -104,7 +107,7 @@ def _remember_search_message(user_id, message_obj):
         if not mid:
             return
 
-        store = _load_search_store()
+        store = _load_store()
         key = str(user_id)
         ids = store.get(key, [])
         if not isinstance(ids, list):
@@ -115,39 +118,40 @@ def _remember_search_message(user_id, message_obj):
             ids.append(mid)
 
         store[key] = ids[-5:]
-        _save_search_store(store)
+        _save_store(store)
     except Exception:
         pass
 
 
-async def _delete_message_safely(bot, chat_id, message_id):
+async def _delete_safely(bot, chat_id, message_id):
     try:
         await bot.delete_message(chat_id, int(message_id))
     except Exception:
         pass
 
 
-async def _cleanup_previous_search_messages(message):
+async def _cleanup_old(message):
     try:
         user_id = message.from_user.id
-        store = _load_search_store()
+        store = _load_store()
         ids = store.pop(str(user_id), [])
-        _save_search_store(store)
+        _save_store(store)
 
-        if not ids:
-            return
-
-        await asyncio.gather(
-            *[_delete_message_safely(message.bot, message.chat.id, mid) for mid in ids[-5:]],
-            return_exceptions=True
-        )
+        if ids:
+            await asyncio.gather(
+                *[_delete_safely(message.bot, message.chat.id, mid) for mid in ids[-5:]],
+                return_exceptions=True
+            )
     except Exception:
         pass
 
 
-def _read_audit_events(limit_files=20):
+def _read_events(limit_files=20):
     events = []
-    files = list_audit_files(limit_files)
+    try:
+        files = list_audit_files(limit_files)
+    except Exception:
+        return events
 
     for item in files:
         path = item.get("path")
@@ -160,12 +164,10 @@ def _read_audit_events(limit_files=20):
                     line = (line or "").strip()
                     if not line:
                         continue
-
                     try:
                         event = json.loads(line)
                     except Exception:
                         continue
-
                     event["_file"] = item.get("filename") or Path(path).name
                     events.append(event)
         except Exception:
@@ -174,11 +176,15 @@ def _read_audit_events(limit_files=20):
     return events
 
 
-def _event_matches(event, mode, query):
+def _matches(event, mode, query):
     q = str(query or "").strip().lower()
-
     if not q:
         return False
+
+    try:
+        whole = json.dumps(event, ensure_ascii=False).lower()
+    except Exception:
+        whole = str(event).lower()
 
     if mode == "admin":
         return q in str(event.get("admin_id", "")).lower()
@@ -187,7 +193,6 @@ def _event_matches(event, mode, query):
         entity_id = str(event.get("entity_id", "")).lower()
         entity_type = str(event.get("entity_type", "")).lower()
         action = str(event.get("action", "")).lower()
-        whole = json.dumps(event, ensure_ascii=False).lower()
 
         return (
             q in entity_id
@@ -198,11 +203,18 @@ def _event_matches(event, mode, query):
     if mode == "action":
         return q in str(event.get("action", "")).lower()
 
-    return q in json.dumps(event, ensure_ascii=False).lower()
+    return q in whole
 
 
-def _not_found_text(mode, query):
-    q = _safe_text(query)
+def _not_found(mode, query):
+    q = _safe(query)
+
+    if mode == "admin":
+        return (
+            "<b>⚠️ לא נמצאו פעולות לאדמין הזה.</b>\n\n"
+            f"Admin ID ששלחת: <code>{q}</code>\n\n"
+            "בדוק את המספר ונסה שוב."
+        )
 
     if mode == "product":
         return (
@@ -212,18 +224,11 @@ def _not_found_text(mode, query):
             "אפשר לשלוח גם חלק משם המוצר."
         )
 
-    if mode == "admin":
-        return (
-            "<b>⚠️ לא נמצאו פעולות לאדמין הזה.</b>\n\n"
-            f"Admin ID ששלחת: <code>{q}</code>\n\n"
-            "בדוק את המספר ונסה שוב."
-        )
-
     if mode == "action":
         return (
             "<b>⚠️ לא נמצאה פעולה כזאת ב־Audit.</b>\n\n"
             f"הפעולה ששלחת: <code>{q}</code>\n\n"
-            "לדוגמה:\n"
+            "דוגמאות:\n"
             "<code>product_price_changed</code>\n"
             "<code>product_stock_changed</code>\n"
             "<code>order_status_changed</code>"
@@ -232,29 +237,22 @@ def _not_found_text(mode, query):
     return "<b>⚠️ לא נמצאו תוצאות.</b>\n\nנסה שוב עם טקסט אחר."
 
 
-def _fit_text(text):
-    text = str(text or "")
-    if len(text) <= MAX_TELEGRAM_TEXT:
-        return text
-    return text[:MAX_TELEGRAM_TEXT] + "\n\n<b>…התוצאה קוצרה כדי למנוע שגיאת Telegram.</b>"
-
-
 def format_audit_events(events, title="📊 Audit Logs", limit=10):
     if not events:
-        return f"<b>{escape(title)}</b>\n\nלא נמצאו פעולות להצגה."
+        return f"<b>{escape(str(title))}</b>\n\nלא נמצאו פעולות להצגה."
 
     events = list(events)[-int(limit):]
     events.reverse()
 
-    text = f"<b>{escape(title)}</b>\n\n"
+    text = f"<b>{escape(str(title))}</b>\n\n"
 
     for idx, event in enumerate(events, start=1):
         block = (
-            f"<b>{idx}. {_safe_text(event.get('action'))}</b>\n"
-            f"🕒 {_safe_text(event.get('timestamp'))}\n"
-            f"👤 Admin: <code>{_safe_text(event.get('admin_id'))}</code>\n"
-            f"📌 Type: {_safe_text(event.get('entity_type'))}\n"
-            f"🆔 Entity: {_safe_text(event.get('entity_id'))}\n"
+            f"<b>{idx}. {_safe(event.get('action'))}</b>\n"
+            f"🕒 {_safe(event.get('timestamp'))}\n"
+            f"👤 Admin: <code>{_safe(event.get('admin_id'))}</code>\n"
+            f"📌 Type: {_safe(event.get('entity_type'))}\n"
+            f"🆔 Entity: {_safe(event.get('entity_id'))}\n"
         )
 
         old_value = _short_json(event.get("old_value"))
@@ -268,17 +266,17 @@ def format_audit_events(events, title="📊 Audit Logs", limit=10):
 
         details = str(event.get("details") or "").strip()
         if details:
-            block += f"📝 Details: {_safe_text(details[:180])}\n"
+            block += f"📝 Details: {_safe(details[:160])}\n"
 
         block += "\n"
 
         if len(text) + len(block) > MAX_TELEGRAM_TEXT:
-            text += "<b>…יש עוד תוצאות. צמצם את החיפוש כדי לראות יותר.</b>"
+            text += "<b>…יש עוד תוצאות. צמצם את החיפוש.</b>"
             break
 
         text += block
 
-    return _fit_text(text.strip())
+    return _fit(text.strip())
 
 
 async def send_audit_logs_list(message, rtl=None, parse_mode="HTML"):
@@ -286,21 +284,15 @@ async def send_audit_logs_list(message, rtl=None, parse_mode="HTML"):
 
     if not files:
         text = "<b>📜 Audit Logs</b>\n\nאין עדיין קבצי Audit."
-        await message.answer(
-            _rtl_wrap(text, rtl),
-            reply_markup=audit_logs_menu_keyboard(),
-            parse_mode=parse_mode
+    else:
+        text = (
+            "<b>📜 רשימת Audit Logs</b>\n\n"
+            f"{escape(format_audit_files(files))}\n\n"
+            "כדי להוריד את הקובץ האחרון לחץ: 📥 הורד Audit אחרון"
         )
-        return
-
-    text = (
-        "<b>📜 רשימת Audit Logs</b>\n\n"
-        f"{escape(format_audit_files(files))}\n\n"
-        "כדי להוריד את הקובץ האחרון לחץ: 📥 הורד Audit אחרון"
-    )
 
     await message.answer(
-        _rtl_wrap(_fit_text(text), rtl),
+        _rtl_wrap(_fit(text), rtl),
         reply_markup=audit_logs_menu_keyboard(),
         parse_mode=parse_mode
     )
@@ -310,14 +302,11 @@ async def send_latest_audit_log(message, rtl=None, parse_mode="HTML"):
     files = list_audit_files(1)
 
     if not files:
-        text = "<b>⚠️ אין עדיין Audit Logs.</b>"
-
         await message.answer(
-            _rtl_wrap(text, rtl),
+            _rtl_wrap("<b>⚠️ אין עדיין Audit Logs.</b>", rtl),
             reply_markup=audit_logs_menu_keyboard(),
             parse_mode=parse_mode
         )
-
         return None
 
     latest = files[0]
@@ -326,7 +315,7 @@ async def send_latest_audit_log(message, rtl=None, parse_mode="HTML"):
 
     await message.answer_document(
         FSInputFile(path),
-        caption=_rtl_wrap(f"<b>📥 Audit Log אחרון</b>\n\n{_safe_text(filename)}", rtl),
+        caption=_rtl_wrap(f"<b>📥 Audit Log אחרון</b>\n\n{_safe(filename)}", rtl),
         parse_mode=parse_mode
     )
 
@@ -334,9 +323,9 @@ async def send_latest_audit_log(message, rtl=None, parse_mode="HTML"):
 
 
 async def send_recent_audit_events(message, rtl=None, parse_mode="HTML", limit=10):
-    await _cleanup_previous_search_messages(message)
+    await _cleanup_old(message)
 
-    events = _read_audit_events(limit_files=20)
+    events = _read_events(20)
     text = format_audit_events(events, title=f"📊 {limit} פעולות אחרונות", limit=limit)
 
     sent = await message.answer(
@@ -344,24 +333,23 @@ async def send_recent_audit_events(message, rtl=None, parse_mode="HTML", limit=1
         reply_markup=audit_logs_menu_keyboard(),
         parse_mode=parse_mode
     )
-
-    _remember_search_message(message.from_user.id, sent)
+    _remember(message.from_user.id, sent)
     return len(events)
 
 
 async def send_audit_search_results(message, mode, query, rtl=None, parse_mode="HTML", limit=10):
-    await _cleanup_previous_search_messages(message)
+    await _cleanup_old(message)
 
-    events = _read_audit_events(limit_files=20)
-    filtered = [event for event in events if _event_matches(event, mode, query)]
+    events = _read_events(20)
+    filtered = [event for event in events if _matches(event, mode, query)]
 
     if not filtered:
         sent = await message.answer(
-            _rtl_wrap(_not_found_text(mode, query), rtl),
+            _rtl_wrap(_not_found(mode, query), rtl),
             reply_markup=audit_search_back_keyboard(),
             parse_mode=parse_mode
         )
-        _remember_search_message(message.from_user.id, sent)
+        _remember(message.from_user.id, sent)
         return 0
 
     titles = {
@@ -381,6 +369,5 @@ async def send_audit_search_results(message, mode, query, rtl=None, parse_mode="
         reply_markup=audit_search_back_keyboard(),
         parse_mode=parse_mode
     )
-
-    _remember_search_message(message.from_user.id, sent)
+    _remember(message.from_user.id, sent)
     return len(filtered)
