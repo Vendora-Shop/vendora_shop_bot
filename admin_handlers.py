@@ -1,6 +1,6 @@
 import os
 import asyncio
-from performance_utils_v3 import schedule_delete_message, schedule_delete_messages, is_fast_duplicate_action
+from performance_utils_v3_1 import schedule_delete_message, schedule_delete_messages, is_fast_duplicate_action
 from aiogram import Router, F, BaseMiddleware
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, ReplyKeyboardRemove
@@ -251,7 +251,7 @@ async def _delete_admin_message_safely(bot, chat_id, message_id):
     # PERFORMANCE_V3_TELEGRAM_LOAD
     # מחיקות אדמין עוברות דרך queue מבוקר כדי לא להציף Telegram API.
     try:
-        schedule_delete_message(bot, chat_id, message_id)
+        schedule_delete_message(bot, chat_id, message_id, urgent=True)
     except Exception:
         pass
 
@@ -260,7 +260,7 @@ async def _delete_admin_messages_safely(bot, chat_id, message_ids):
     # PERFORMANCE_V3_TELEGRAM_LOAD
     # מחיקה דרך queue מבוקר במקום gather מיידי.
     try:
-        schedule_delete_messages(bot, chat_id, message_ids, max_items=40)
+        schedule_delete_messages(bot, chat_id, message_ids, max_items=40, urgent=True)
     except Exception:
         pass
 
@@ -306,7 +306,7 @@ class AdminPanelSafeCleanupMiddleware(BaseMiddleware):
                     # PERFORMANCE_V3_TELEGRAM_LOAD
                     # מונע עומס במקרה של לחיצה כפולה מהירה על אותו כפתור.
                     if is_fast_duplicate_action(user.id, f"admin_text:{str(text).strip()}", seconds=0.45):
-                        schedule_delete_message(event.bot, event.chat.id, event.message_id)
+                        schedule_delete_message(event.bot, event.chat.id, event.message_id, urgent=True)
                         return await handler(event, data)
 
                     await cleanup_admin_previous_screen(
@@ -319,7 +319,8 @@ class AdminPanelSafeCleanupMiddleware(BaseMiddleware):
                     schedule_delete_message(
                         event.bot,
                         event.chat.id,
-                        event.message_id
+                        event.message_id,
+                        urgent=True
                     )
 
         except Exception:
