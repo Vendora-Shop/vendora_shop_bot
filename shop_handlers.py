@@ -469,6 +469,39 @@ START_LAST_RUN = {}
 START_IN_PROGRESS_SECONDS = 90
 START_IN_PROGRESS = {}
 
+# ================== PERFORMANCE V6 START / MAIN MENU ==================
+# מונע פתיחה כפולה של תפריט ראשי בזמן קצר.
+# לא חוסם /start אמיתי — רק עוצר render כפול של אותו מסך.
+MAIN_MENU_RENDER_LOCK_SECONDS = 1.2
+MAIN_MENU_LAST_RENDER = {}
+
+
+def is_duplicate_main_menu_render(uid, seconds=MAIN_MENU_RENDER_LOCK_SECONDS):
+    try:
+        uid = int(uid)
+    except Exception:
+        return False
+
+    now = time.monotonic()
+    last = MAIN_MENU_LAST_RENDER.get(uid, 0)
+
+    if now - last < float(seconds):
+        return True
+
+    MAIN_MENU_LAST_RENDER[uid] = now
+
+    try:
+        if len(MAIN_MENU_LAST_RENDER) > 1000:
+            cutoff = now - 20
+            for old_uid, old_time in list(MAIN_MENU_LAST_RENDER.items()):
+                if old_time < cutoff:
+                    MAIN_MENU_LAST_RENDER.pop(old_uid, None)
+    except Exception:
+        pass
+
+    return False
+
+
 CUSTOMER_ACTION_LAST_RUN = {}
 CUSTOMER_ACTION_LOCK_SECONDS = 1.0
 
@@ -1662,6 +1695,14 @@ async def send_main_menu_greeting_banner_caption(message: Message, greeting_text
 
     old_ids = collect_customer_screen_message_ids(uid, data)
     new_ids = []
+
+    # PERFORMANCE_V6_START_MENU
+    # מתחילים מחיקת מסכים קודמים מוקדם ככל האפשר, במקביל לשליחת התפריט החדש.
+    if old_ids:
+        try:
+            asyncio.create_task(_delete_messages_safely(message.bot, uid, old_ids[-25:]))
+        except Exception:
+            pass
 
     if greeting_text:
         try:
@@ -4740,6 +4781,23 @@ async def emergency_open_admin_panel_button(message: Message):
 @router.message(CommandStart())
 async def start(message: Message):
     uid = message.from_user.id
+
+    # PERFORMANCE_V6_START_MENU
+    # לחיצה כפולה מהירה על /start לא תגרום לשני renders כבדים.
+    if is_duplicate_main_menu_render(uid):
+        try:
+            asyncio.create_task(_delete_message_safely(message.bot, message.chat.id, message.message_id))
+        except Exception:
+            pass
+        try:
+            sent_notice = await message.answer(rtl("<b>↻ התפריט כבר נפתח.</b>"), parse_mode="HTML")
+            try:
+                asyncio.create_task(_delete_message_safely(message.bot, message.chat.id, sent_notice.message_id))
+            except Exception:
+                pass
+        except Exception:
+            pass
+        return
 
     if await customer_blocked_by_maintenance(message):
         return
