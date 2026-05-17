@@ -2512,21 +2512,37 @@ async def admin_download_selected_log(message: Message):
     uid = message.from_user.id
     txt = clean_admin_text(message.text)
 
-    # AUDIT_LOGS_ADVANCED_UI_V1
+    # AUDIT_SEARCH_FINAL_V1
     state = admin_states.get(uid) or {}
     step = state.get("step")
 
     if step in {"audit_search_admin", "audit_search_product", "audit_search_action"}:
-        if txt in {"⬅️ חזרה ל־Audit Logs", "⬅️ חזרה להגדרות מערכת", "⬅️ חזרה לניהול"}:
-            # הכפתורים האלו מטופלים גם ב-handlers רגילים / global back.
-            if txt == "⬅️ חזרה ל־Audit Logs":
-                admin_states[uid] = {"step": "audit_logs_menu"}
-                await tracked_admin_answer(message,
-                    rtl("<b>📜 Audit Logs</b>\n\nבחר פעולה:"),
-                    reply_markup=audit_logs_menu_keyboard(),
-                    parse_mode="HTML"
-                )
-                return
+        if txt == "⬅️ חזרה ל־Audit Logs":
+            admin_states[uid] = {"step": "audit_logs_menu"}
+            await tracked_admin_answer(message,
+                rtl("<b>📜 Audit Logs</b>\n\nבחר פעולה:"),
+                reply_markup=audit_logs_menu_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        if txt == "⬅️ חזרה להגדרות מערכת":
+            admin_states[uid] = {"step": "settings_section"}
+            await tracked_admin_answer(message,
+                rtl("<b>⚙️ הגדרות מערכת</b>\n\nבחר פעולה:"),
+                reply_markup=admin_settings_menu_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        if txt == "⬅️ חזרה לניהול":
+            admin_states[uid] = {"step": "admin"}
+            await tracked_admin_answer(message,
+                rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
+                reply_markup=admin_keyboard(),
+                parse_mode="HTML"
+            )
+            return
 
         if len(txt) < 2:
             await tracked_admin_answer(message,
@@ -2697,7 +2713,7 @@ async def admin_download_latest_audit_log(message: Message):
 
 @router.message(F.text == "📊 10 פעולות אחרונות")
 async def admin_recent_audit_events(message: Message):
-    # AUDIT_LOGS_ADVANCED_UI_V1
+    # AUDIT_SEARCH_FINAL_V1
     if not is_admin(message.from_user.id):
         return
 
@@ -2716,7 +2732,7 @@ async def admin_recent_audit_events(message: Message):
 
 @router.message(F.text == "👤 חיפוש לפי אדמין")
 async def admin_audit_search_by_admin_start(message: Message):
-    # AUDIT_LOGS_ADVANCED_UI_V1
+    # AUDIT_SEARCH_FINAL_V1
     if not is_admin(message.from_user.id):
         return
 
@@ -2734,7 +2750,7 @@ async def admin_audit_search_by_admin_start(message: Message):
 
 @router.message(F.text == "🛍️ חיפוש לפי מוצר")
 async def admin_audit_search_by_product_start(message: Message):
-    # AUDIT_LOGS_ADVANCED_UI_V1
+    # AUDIT_SEARCH_FINAL_V1
     if not is_admin(message.from_user.id):
         return
 
@@ -2752,7 +2768,7 @@ async def admin_audit_search_by_product_start(message: Message):
 
 @router.message(F.text == "⚙️ חיפוש לפי פעולה")
 async def admin_audit_search_by_action_start(message: Message):
-    # AUDIT_LOGS_ADVANCED_UI_V1
+    # AUDIT_SEARCH_FINAL_V1
     if not is_admin(message.from_user.id):
         return
 
@@ -2773,7 +2789,7 @@ async def admin_audit_search_by_action_start(message: Message):
 
 @router.message(F.text == "⬅️ חזרה ל־Audit Logs")
 async def admin_back_to_audit_logs_menu(message: Message):
-    # AUDIT_LOGS_ADVANCED_UI_V1
+    # AUDIT_SEARCH_FINAL_V1
     if not is_admin(message.from_user.id):
         return
 
