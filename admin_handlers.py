@@ -4820,10 +4820,12 @@ async def admin_category_nav_stability(message: Message):
 
 
 
+
 async def admin_unknown_text_same_place(message: Message, step: str):
-    # NO_GENERIC_WARNING_FIX
-    # במסכים של כפתורים בלבד — קשקוש נמחק בשקט.
-    # התראות נשארות רק במסכים שמצפים לקלט ידני, כמו מספר הזמנה/טלפון.
+    # NO_GENERIC_WARNING_REOPEN_MENU_FIX
+    # במסכים של כפתורים בלבד:
+    # 1. מוחקים את הקשקוש בשקט
+    # 2. פותחים מחדש את אותה מקלדת, בלי הודעת שגיאה
     try:
         await delete_admin_message(message)
     except Exception:
@@ -4835,6 +4837,43 @@ async def admin_unknown_text_same_place(message: Message, step: str):
             )
         except Exception:
             pass
+
+    try:
+        uid = message.from_user.id
+        state = admin_states.get(uid, {})
+        current_step = str(step or state.get("step") or "")
+
+        if (
+            state.get("orders_last_section")
+            or current_step.startswith("orders")
+            or current_step.startswith("order_")
+            or current_step in {
+                "orders_select", "order_actions",
+                "search_order", "search_phone",
+                "status_order_number", "order_status_number",
+                "status_value", "order_status_value",
+            }
+        ):
+            keyboard = orders_main_keyboard()
+            text_to_send = rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:")
+
+        elif current_step == "admin":
+            keyboard = admin_keyboard()
+            text_to_send = rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:")
+
+        else:
+            keyboard = admin_section_keyboard_for_step(current_step)
+            text_to_send = rtl("<b>בחר פעולה:</b>")
+
+        await tracked_admin_answer(
+            message,
+            text_to_send,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+
+    except Exception:
+        pass
 
     return
 
