@@ -122,6 +122,29 @@ def safe_write_audit_event(admin_id, action, entity_type="system", entity_id="",
 router = Router()
 admin_states = {}
 
+# ================== INVALID INPUT SINGLE WARNING FIX ==================
+# שומר הודעת "פעולה לא תקינה" אחרונה, כדי שלא תהיה הצפה בצ׳אט.
+ADMIN_INVALID_WARNING_MESSAGES = {}
+
+
+async def delete_previous_invalid_warning(message: Message):
+    try:
+        uid = message.from_user.id
+        old_id = ADMIN_INVALID_WARNING_MESSAGES.pop(uid, None)
+        if old_id:
+            await _delete_admin_message_safely(message.bot, message.chat.id, old_id)
+    except Exception:
+        pass
+
+
+def remember_invalid_warning_message(message: Message, sent):
+    try:
+        if sent:
+            ADMIN_INVALID_WARNING_MESSAGES[message.from_user.id] = sent.message_id
+    except Exception:
+        pass
+
+
 
 # ================== ADMIN PANEL SAFE CLEANUP FINAL V3 ==================
 # ניקוי זהיר לפאנל אדמין בלבד.
@@ -430,6 +453,14 @@ class AdminPanelSafeCleanupMiddleware(BaseMiddleware):
                         pass
 
                     if should_touch_admin:
+                        # INVALID_INPUT_SINGLE_WARNING_FIX_CLEAR
+                        try:
+                            old_warn = ADMIN_INVALID_WARNING_MESSAGES.pop(user.id, None)
+                            if old_warn:
+                                asyncio.create_task(_delete_admin_message_safely(event.bot, event.chat.id, old_warn))
+                        except Exception:
+                            pass
+
                         if is_admin_cleanup_active(user.id, text):
                             # כפתור/פעולת אדמין אמיתית:
                             # מנקים מסך קודם וגם מוחקים את הודעת הכפתור.
@@ -4596,26 +4627,42 @@ async def admin_category_nav_stability(message: Message):
 
 
 async def admin_unknown_text_same_place(message: Message, step: str):
-    # INVALID_INPUT_REOPEN_KEYBOARD_FIX
-    # קלט לא מוכר באדמין: נשארים באותו מקום ומחזירים מקלדת אוטומטית.
+    # NEW_ORDERS_STAY_IN_ORDERS_FIX
+    # קלט לא מוכר באדמין: נשארים באותו מקום ולא מציפים.
     try:
-        step = str(step or "")
-        keyboard = admin_keyboard() if step == "admin" else admin_section_keyboard_for_step(step)
+        await delete_previous_invalid_warning(message)
 
-        await tracked_admin_answer(
+        uid = message.from_user.id
+        state = admin_states.get(uid) or {}
+        step = str(step or state.get("step") or "")
+
+        # הגנה מיוחדת: אם היינו בניהול הזמנות אבל step חזר בטעות ל-admin,
+        # לא מחזירים לפאנל הראשי אלא לניהול הזמנות.
+        if step == "admin" and state.get("orders_last_section"):
+            keyboard = orders_main_keyboard()
+        elif step == "admin":
+            keyboard = admin_keyboard()
+        else:
+            keyboard = admin_section_keyboard_for_step(step)
+
+        sent = await tracked_admin_answer(
             message,
             rtl("<b>⚠️ פעולה לא תקינה.</b>\n\nבחר פעולה מהתפריט למטה."),
             reply_markup=keyboard,
             parse_mode="HTML"
         )
+
+        remember_invalid_warning_message(message, sent)
         return
     except Exception:
         try:
-            await message.answer(
+            await delete_previous_invalid_warning(message)
+            sent = await message.answer(
                 rtl("<b>⚠️ פעולה לא תקינה.</b>\n\nבחר פעולה מהתפריט למטה."),
-                reply_markup=admin_keyboard(),
+                reply_markup=orders_main_keyboard(),
                 parse_mode="HTML"
             )
+            remember_invalid_warning_message(message, sent)
         except Exception:
             pass
 
@@ -4709,6 +4756,47 @@ async def admin_settings_menu_fix(message: Message):
         message,
         rtl("<b>⚙️ הגדרות מערכת</b>\n\nבחר פעולה:"),
         reply_markup=admin_settings_back_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+
+@router.message(F.text.in_({"🆕 הזמנות חדשות", "🆕 חדשות"}))
+async def admin_new_orders_stay_in_orders_fix(message: Message):
+    # NEW_ORDERS_STAY_IN_ORDERS_FIX
+    if not is_admin(message.from_user.id):
+        return
+
+    uid = message.from_user.id
+    orders = get_orders_for_section("new", 30)
+
+    admin_states[uid] = {
+        "step": "orders_section",
+        "orders_last_section": "new"
+    }
+
+    if not orders:
+        await tracked_admin_answer(
+            message,
+            rtl("<b>🆕 הזמנות חדשות</b>\n\nאין הזמנות חדשות כרגע."),
+            reply_markup=orders_main_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    admin_states[uid] = {
+        "step": "orders_select",
+        "orders_last_section": "new"
+    }
+
+    await tracked_admin_answer(
+        message,
+        rtl(
+            "<b>🆕 הזמנות חדשות</b>\n\n"
+            f"נמצאו {len(orders)} הזמנות.\n"
+            "בחר הזמנה מהרשימה."
+        ),
+        reply_markup=order_select_keyboard(orders),
         parse_mode="HTML"
     )
 
