@@ -302,26 +302,8 @@ async def cleanup_admin_previous_screen(bot, admin_id, chat_id):
 async def tracked_admin_answer(message: Message, *args, **kwargs):
     """
     שולח הודעת אדמין רגילה ושומר אותה לניקוי במסך הבא.
-    PERFORMANCE_V11_NAV_STABILITY:
-    אם מסך פנימי ניסה בטעות להחזיר admin_keyboard(),
-    מחליפים למקלדת של הקטגוריה הנוכחית כדי לא לקפוץ לפאנל הראשי.
+    חשוב: הפונקציה הזאת קוראת ל-message.answer ולא לעצמה.
     """
-    try:
-        uid = message.from_user.id
-        state = admin_states.get(uid) or {}
-        step = state.get("step")
-
-        if step and step != "admin" and kwargs.get("reply_markup") is not None:
-            try:
-                current_markup = kwargs.get("reply_markup")
-                main_markup = admin_keyboard()
-                if str(current_markup) == str(main_markup):
-                    kwargs["reply_markup"] = admin_section_keyboard_for_step(step)
-            except Exception:
-                pass
-    except Exception:
-        pass
-
     sent = await message.answer(*args, **kwargs)
 
     try:
@@ -585,136 +567,6 @@ def admin_reports_back_keyboard():
         ],
         resize_keyboard=True
     )
-
-
-def admin_orders_back_keyboard():
-    # PERFORMANCE_V11_NAV_STABILITY
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📋 הזמנות פתוחות")],
-            [KeyboardButton(text="🧾 הזמנות אחרונות"), KeyboardButton(text="🔎 חפש הזמנה")],
-            [KeyboardButton(text="📞 חפש לפי טלפון"), KeyboardButton(text="🔄 עדכן סטטוס הזמנה")],
-            [KeyboardButton(text="⬅️ חזרה לניהול")]
-        ],
-        resize_keyboard=True
-    )
-
-
-def admin_products_back_keyboard():
-    # PERFORMANCE_V11_NAV_STABILITY
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📦 רשימת מוצרים"), KeyboardButton(text="➕ הוסף מוצר")],
-            [KeyboardButton(text="✏️ שנה מחיר"), KeyboardButton(text="📝 שנה תיאור")],
-            [KeyboardButton(text="🖼️ עדכן תמונה")],
-            [KeyboardButton(text="🔴 כבה מוצר"), KeyboardButton(text="🟢 הפעל מוצר")],
-            [KeyboardButton(text="🗑️ מחק מוצר")],
-            [KeyboardButton(text="⬅️ חזרה לניהול")]
-        ],
-        resize_keyboard=True
-    )
-
-
-def admin_stock_back_keyboard():
-    # PERFORMANCE_V11_NAV_STABILITY
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="✏️ אפס והגדר מלאי חדש")],
-            [KeyboardButton(text="➕ הגדל מלאי קיים")],
-            [KeyboardButton(text="📦 רשימת מוצרים")],
-            [KeyboardButton(text="⬅️ חזרה לניהול")]
-        ],
-        resize_keyboard=True
-    )
-
-
-def admin_customers_back_keyboard():
-    # PERFORMANCE_V11_NAV_STABILITY
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📋 רשימת לקוחות")],
-            [KeyboardButton(text="🔎 חפש לקוח")],
-            [KeyboardButton(text="⬅️ חזרה לניהול")]
-        ],
-        resize_keyboard=True
-    )
-
-
-def admin_coupons_back_keyboard():
-    # PERFORMANCE_V11_NAV_STABILITY
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="➕ צור קופון")],
-            [KeyboardButton(text="📋 רשימת קופונים")],
-            [KeyboardButton(text="🔴 כבה קופון"), KeyboardButton(text="🟢 הפעל קופון")],
-            [KeyboardButton(text="⬅️ חזרה לניהול")]
-        ],
-        resize_keyboard=True
-    )
-
-
-def admin_support_back_keyboard():
-    # PERFORMANCE_V11_NAV_STABILITY
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📬 פניות פתוחות")],
-            [KeyboardButton(text="📁 פניות סגורות")],
-            [KeyboardButton(text="🔍 חיפוש פנייה")],
-            [KeyboardButton(text="⬅️ חזרה לניהול")]
-        ],
-        resize_keyboard=True
-    )
-
-
-def admin_marketing_back_keyboard():
-    # PERFORMANCE_V11_NAV_STABILITY
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📢 שלח הודעה ללקוחות")],
-            [KeyboardButton(text="⬅️ חזרה לניהול")]
-        ],
-        resize_keyboard=True
-    )
-
-
-def admin_section_keyboard_for_step(step):
-    # PERFORMANCE_V11_NAV_STABILITY
-    step = str(step or "")
-
-    if step.startswith("orders") or step in {"order_actions", "status_value"}:
-        return admin_orders_back_keyboard()
-
-    if step.startswith("products") or step in {
-        "product_select", "price_value", "description_value", "image_photo",
-        "product_active", "product_delete", "add_product_category",
-        "add_product_name", "add_product_price", "add_product_description",
-        "add_product_stock", "add_product_image"
-    }:
-        return admin_products_back_keyboard()
-
-    if step.startswith("stock") or step in {"stock_value", "stock_add_value"}:
-        return admin_stock_back_keyboard()
-
-    if step.startswith("customers") or step in {"customer_profile", "customers_search", "customers_select"}:
-        return admin_customers_back_keyboard()
-
-    if step.startswith("coupon") or step.startswith("coupons"):
-        return admin_coupons_back_keyboard()
-
-    if "support" in step or step.startswith("ticket"):
-        return admin_support_back_keyboard()
-
-    if step.startswith("broadcast") or step in {"marketing_section"}:
-        return admin_marketing_back_keyboard()
-
-    if step.startswith("reports") or step.startswith("statistics"):
-        try:
-            return admin_reports_back_keyboard()
-        except Exception:
-            return admin_reports_menu_keyboard()
-
-    return admin_keyboard()
-
 
 
 def support_reply_cancel_keyboard():
@@ -4364,47 +4216,6 @@ async def admin_statistics_date_input_result_fix(message: Message):
         message,
         result_text,
         reply_markup=admin_reports_back_keyboard(),
-        parse_mode="HTML"
-    )
-
-
-
-@router.message(F.text.in_({
-    "📦 ניהול הזמנות",
-    "🛍️ ניהול מוצרים",
-    "📊 ניהול מלאי",
-    "👥 ניהול לקוחות",
-    "🏷️ קופונים ומבצעים",
-    "🎧 שירות לקוחות",
-    "📢 שיווק והודעות",
-    "📊 סטטיסטיקה ודוחות",
-}))
-async def admin_category_nav_stability(message: Message):
-    # PERFORMANCE_V11_NAV_STABILITY
-    if not is_admin(message.from_user.id):
-        return
-
-    txt = clean_admin_text(message.text)
-    uid = message.from_user.id
-
-    mapping = {
-        "📦 ניהול הזמנות": ("orders_section", "<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:", admin_orders_back_keyboard()),
-        "🛍️ ניהול מוצרים": ("products_section", "<b>🛍️ ניהול מוצרים</b>\n\nבחר פעולה:", admin_products_back_keyboard()),
-        "📊 ניהול מלאי": ("stock_section", "<b>📊 ניהול מלאי</b>\n\nבחר פעולה:", admin_stock_back_keyboard()),
-        "👥 ניהול לקוחות": ("customers_menu", "<b>👥 ניהול לקוחות</b>\n\nבחר פעולה:", admin_customers_back_keyboard()),
-        "🏷️ קופונים ומבצעים": ("coupons_section", "<b>🏷️ קופונים ומבצעים</b>\n\nבחר פעולה:", admin_coupons_back_keyboard()),
-        "🎧 שירות לקוחות": ("support_section", "<b>🎧 שירות לקוחות</b>\n\nבחר פעולה:", admin_support_back_keyboard()),
-        "📢 שיווק והודעות": ("marketing_section", "<b>📢 שיווק והודעות</b>\n\nבחר פעולה:", admin_marketing_back_keyboard()),
-        "📊 סטטיסטיקה ודוחות": ("reports_section", "<b>📊 סטטיסטיקה ודוחות</b>\n\nבחר פעולה:", admin_reports_back_keyboard()),
-    }
-
-    step, title, keyboard = mapping.get(txt)
-    admin_states[uid] = {"step": step}
-
-    await tracked_admin_answer(
-        message,
-        rtl(title),
-        reply_markup=keyboard,
         parse_mode="HTML"
     )
 
