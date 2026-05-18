@@ -36,6 +36,53 @@ ACTIVE_PRODUCTS_CACHE_TTL_SECONDS = 2.0
 ORDER_STATS_CACHE = {}
 ORDER_STATS_CACHE_TTL_SECONDS = 1.5
 
+# ================== PERFORMANCE V13 CUSTOMER CACHE ==================
+# Cache קצר לאזור האישי: פרופיל, כתובות והזמנות לקוח.
+# מתנקה בכל עדכון פרופיל/כתובת/הזמנה.
+CUSTOMER_DATA_CACHE = {}
+CUSTOMER_DATA_CACHE_TTL_SECONDS = 1.5
+
+
+def _customer_cache_get(key):
+    try:
+        item = CUSTOMER_DATA_CACHE.get(str(key))
+        if not item:
+            return None
+
+        value, expires_at = item
+
+        if time.monotonic() < float(expires_at):
+            return value
+
+        CUSTOMER_DATA_CACHE.pop(str(key), None)
+    except Exception:
+        pass
+
+    return None
+
+
+def _customer_cache_set(key, value, ttl=CUSTOMER_DATA_CACHE_TTL_SECONDS):
+    try:
+        CUSTOMER_DATA_CACHE[str(key)] = (value, time.monotonic() + float(ttl))
+    except Exception:
+        pass
+
+    return value
+
+
+def invalidate_customer_cache(telegram_id=None):
+    try:
+        if telegram_id is None:
+            CUSTOMER_DATA_CACHE.clear()
+            return
+
+        prefix = f"{int(telegram_id)}:"
+        for key in list(CUSTOMER_DATA_CACHE.keys()):
+            if str(key).startswith(prefix):
+                CUSTOMER_DATA_CACHE.pop(key, None)
+    except Exception:
+        pass
+
 
 def _cache_get(key):
     try:
@@ -551,6 +598,7 @@ def create_order(
     conn.close()
 
     invalidate_order_stats_cache()
+    invalidate_customer_cache(telegram_id)
 
     return order_number
 
@@ -845,6 +893,7 @@ def save_customer_profile(
 
     conn.commit()
     conn.close()
+    invalidate_customer_cache(telegram_id)
     return True
 
 
@@ -1434,6 +1483,12 @@ def get_customer_by_id(customer_id):
 
 
 def get_orders_by_customer_telegram_id(telegram_id, limit=30):
+    # PERFORMANCE_V13_CUSTOMER_CACHE
+    cache_key = f"{int(telegram_id)}:orders:{int(limit)}"
+    cached = _customer_cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     conn = get_connection()
     cur = conn.cursor()
 
@@ -1451,7 +1506,7 @@ def get_orders_by_customer_telegram_id(telegram_id, limit=30):
     rows = cur.fetchall()
     conn.close()
 
-    return [order_row_to_dict(row) for row in rows]
+    return _customer_cache_set(cache_key, [order_row_to_dict(row) for row in rows])
 
 # ============================================================
 # CUSTOMER EXPERIENCE FEATURES
@@ -2047,6 +2102,7 @@ def set_default_customer_address(telegram_id, address_id):
 
     conn.commit()
     conn.close()
+    invalidate_customer_cache(telegram_id)
     return True
 
 
@@ -2192,6 +2248,7 @@ def create_support_ticket(telegram_id, telegram_name, phone, subject=""):
 
     conn.commit()
     conn.close()
+    invalidate_customer_cache(telegram_id)
 
     return ticket_number
 
