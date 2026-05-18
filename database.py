@@ -30,6 +30,47 @@ ACTIVE_PRODUCTS_CACHE = {
 }
 ACTIVE_PRODUCTS_CACHE_TTL_SECONDS = 2.0
 
+# ================== PERFORMANCE V15 PRODUCT DETAIL CACHE ==================
+# Cache קצר ל-get_product_by_name.
+# נקרא הרבה בבחירת מוצר / סל / הזמנה חוזרת.
+PRODUCT_DETAIL_CACHE = {}
+PRODUCT_DETAIL_CACHE_TTL_SECONDS = 2.0
+
+
+def _product_detail_cache_get(name):
+    try:
+        key = str(name or "").strip()
+        item = PRODUCT_DETAIL_CACHE.get(key)
+        if not item:
+            return None
+        value, expires_at = item
+        if time.monotonic() < float(expires_at):
+            return value
+        PRODUCT_DETAIL_CACHE.pop(key, None)
+    except Exception:
+        pass
+    return None
+
+
+def _product_detail_cache_set(name, value, ttl=PRODUCT_DETAIL_CACHE_TTL_SECONDS):
+    try:
+        key = str(name or "").strip()
+        PRODUCT_DETAIL_CACHE[key] = (value, time.monotonic() + float(ttl))
+    except Exception:
+        pass
+    return value
+
+
+def invalidate_product_detail_cache(name=None):
+    try:
+        if name is None:
+            PRODUCT_DETAIL_CACHE.clear()
+            return
+        PRODUCT_DETAIL_CACHE.pop(str(name or "").strip(), None)
+    except Exception:
+        pass
+
+
 # ================== PERFORMANCE V8 ORDER / STATS CACHE ==================
 # Cache קצר מאוד לפאנל אדמין: סטטיסטיקות/רשימות הזמנות.
 # מתנקה בכל יצירת הזמנה או שינוי סטטוס.
@@ -122,6 +163,11 @@ def invalidate_products_cache():
     try:
         ACTIVE_PRODUCTS_CACHE["value"] = None
         ACTIVE_PRODUCTS_CACHE["expires_at"] = 0
+    except Exception:
+        pass
+
+    try:
+        invalidate_product_detail_cache()
     except Exception:
         pass
 
@@ -305,6 +351,7 @@ def add_product(category, name, price, description="", max_qty=100, stock=0, sku
     conn.commit()
     conn.close()
     invalidate_products_cache()
+    invalidate_product_detail_cache(name)
 
 
 def get_active_products():
@@ -369,6 +416,11 @@ def get_all_products():
 
 
 def get_product_by_name(name):
+    # PERFORMANCE_V15_PRODUCT_DETAIL_CACHE
+    cached = _product_detail_cache_get(name)
+    if cached is not None:
+        return cached
+
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -380,10 +432,10 @@ def get_product_by_name(name):
     conn.close()
 
     if not row:
-        return None
+        return _product_detail_cache_set(name, None)
 
     product_id, category, name, price, description, max_qty, stock, sku, image_file_id, active = row
-    return {
+    result = {
         "id": product_id,
         "category": category,
         "name": name,
@@ -396,6 +448,8 @@ def get_product_by_name(name):
         "active": active
     }
 
+    return _product_detail_cache_set(name, result)
+
 
 def set_product_price(name, price):
     conn = get_connection()
@@ -407,6 +461,7 @@ def set_product_price(name, price):
 
     if changed > 0:
         invalidate_products_cache()
+        invalidate_product_detail_cache(name)
 
     return changed > 0
 
@@ -421,6 +476,7 @@ def set_product_description(name, description):
 
     if changed > 0:
         invalidate_products_cache()
+        invalidate_product_detail_cache(name)
 
     return changed > 0
 
@@ -435,6 +491,7 @@ def set_product_stock(name, stock):
 
     if changed > 0:
         invalidate_products_cache()
+        invalidate_product_detail_cache(name)
 
     return changed > 0
 
@@ -449,6 +506,7 @@ def add_stock(name, amount):
 
     if changed > 0:
         invalidate_products_cache()
+        invalidate_product_detail_cache(name)
 
     return changed > 0
 
@@ -463,6 +521,7 @@ def set_product_image(name, image_file_id):
 
     if changed > 0:
         invalidate_products_cache()
+        invalidate_product_detail_cache(name)
 
     return changed > 0
 
@@ -477,6 +536,7 @@ def set_product_active(name, active):
 
     if changed > 0:
         invalidate_products_cache()
+        invalidate_product_detail_cache(name)
 
     return changed > 0
 
@@ -491,6 +551,7 @@ def delete_product(name):
 
     if changed > 0:
         invalidate_products_cache()
+        invalidate_product_detail_cache(name)
 
     return changed > 0
 
@@ -517,6 +578,7 @@ def reduce_stock(cart):
     conn.commit()
     conn.close()
     invalidate_products_cache()
+    invalidate_product_detail_cache()
     return True, None
 
 
