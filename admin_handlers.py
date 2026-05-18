@@ -301,9 +301,29 @@ async def cleanup_admin_previous_screen(bot, admin_id, chat_id):
 
 async def tracked_admin_answer(message: Message, *args, **kwargs):
     """
-    שולח הודעת אדמין רגילה ושומר אותה לניקוי במסך הבא.
-    חשוב: הפונקציה הזאת קוראת ל-message.answer ולא לעצמה.
+    STABLE_ADMIN_LOGIC_FINAL
+    כל הודעת אדמין מקבלת מקלדת לפי ה-state הנוכחי אם לא הוגדרה מקלדת.
+    זה מונע נפילה ל-Start / פאנל ראשי / תפריט ישן.
     """
+    try:
+        uid = message.from_user.id
+        state = admin_states.get(uid) or {}
+        step = str(state.get("step") or "")
+
+        if step and step != "admin":
+            current_markup = kwargs.get("reply_markup")
+
+            if current_markup is None:
+                kwargs["reply_markup"] = admin_safe_keyboard_for_step(step)
+            else:
+                try:
+                    if str(current_markup) == str(admin_keyboard()):
+                        kwargs["reply_markup"] = admin_safe_keyboard_for_step(step)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     sent = await message.answer(*args, **kwargs)
 
     try:
@@ -314,42 +334,6 @@ async def tracked_admin_answer(message: Message, *args, **kwargs):
 
     return sent
 
-
-class AdminPanelSafeCleanupMiddleware(BaseMiddleware):
-    async def __call__(self, handler, event, data):
-        try:
-            if isinstance(event, Message):
-                user = getattr(event, "from_user", None)
-                text = getattr(event, "text", None)
-
-                if user and text and is_admin_cleanup_active(user.id, text):
-                    await cleanup_admin_previous_screen(
-                        event.bot,
-                        user.id,
-                        event.chat.id
-                    )
-
-                    # מוחקים את הודעת הכפתור/קשקוש של האדמין ברקע.
-                    asyncio.create_task(
-                        _delete_admin_message_safely(
-                            event.bot,
-                            event.chat.id,
-                            event.message_id
-                        )
-                    )
-
-        except Exception:
-            pass
-
-        return await handler(event, data)
-
-
-router.message.middleware(AdminPanelSafeCleanupMiddleware())
-
-
-# ================== CUSTOMER STATUS MENU BOTTOM FIX V3 ==================
-# שומר ומוחק את תפריט הלקוח האחרון גם אם הוא נשלח מ-shop_handlers.
-CUSTOMER_MENU_STORE_FILE = "customer_menu_messages.json"
 
 
 def load_customer_menu_store():
@@ -550,6 +534,222 @@ async def send_customer_status_with_menu(bot, customer_telegram_id, status_text)
 
     await send_customer_main_menu_bottom(bot, customer_telegram_id)
 
+
+
+
+# ================== STABLE_ADMIN_LOGIC_FINAL ==================
+# כללים:
+# 1. אדמין לא נופל ל-Start בגלל טקסט לא תקין.
+# 2. קשקוש נשאר באותו אזור ומקבל מקלדת נכונה.
+# 3. לכל אזור יש חזרה לוגית.
+# 4. אין כפתור חירום בתוך flow רגיל.
+
+
+def admin_orders_safe_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📋 הזמנות פתוחות")],
+            [KeyboardButton(text="🆕 הזמנות חדשות"), KeyboardButton(text="🧾 הזמנות אחרונות")],
+            [KeyboardButton(text="🔎 חפש הזמנה"), KeyboardButton(text="📞 חפש לפי טלפון")],
+            [KeyboardButton(text="🔄 עדכן סטטוס הזמנה")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def admin_products_safe_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📦 רשימת מוצרים"), KeyboardButton(text="➕ הוסף מוצר")],
+            [KeyboardButton(text="✏️ שנה מחיר"), KeyboardButton(text="📝 שנה תיאור")],
+            [KeyboardButton(text="🖼️ עדכן תמונה")],
+            [KeyboardButton(text="🔴 כבה מוצר"), KeyboardButton(text="🟢 הפעל מוצר")],
+            [KeyboardButton(text="🗑️ מחק מוצר")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def admin_stock_safe_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📦 רשימת מוצרים")],
+            [KeyboardButton(text="✏️ אפס והגדר מלאי חדש")],
+            [KeyboardButton(text="➕ הגדל מלאי קיים")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def admin_customers_safe_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📋 רשימת לקוחות")],
+            [KeyboardButton(text="🔎 חפש לקוח")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def admin_reports_safe_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📊 מצב העסק")],
+            [KeyboardButton(text="📅 סטטיסטיקה לפי תאריך")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def admin_coupons_safe_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="➕ צור קופון")],
+            [KeyboardButton(text="📋 רשימת קופונים")],
+            [KeyboardButton(text="🔴 כבה קופון"), KeyboardButton(text="🟢 הפעל קופון")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def admin_support_safe_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📬 פניות פתוחות")],
+            [KeyboardButton(text="📁 פניות סגורות")],
+            [KeyboardButton(text="🔍 חיפוש פנייה")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def admin_marketing_safe_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📢 שלח הודעה ללקוחות")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def admin_settings_safe_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🛠 מצב תחזוקה")],
+            [KeyboardButton(text="📜 לוגים")],
+            [KeyboardButton(text="📜 Audit Logs")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
+
+
+def admin_safe_keyboard_for_step(step):
+    step = str(step or "")
+
+    if step.startswith("orders") or step in {"search_order", "search_phone", "order_status_number", "status_order_number", "status_value", "order_status_value"}:
+        return admin_orders_safe_keyboard()
+
+    if step.startswith("products") or step in {
+        "price_name", "price_value", "description_name", "description_value",
+        "image_name", "image_photo", "delete_name", "on_name", "off_name",
+        "add_category", "add_name", "add_price", "add_description",
+        "add_stock", "add_image"
+    }:
+        return admin_products_safe_keyboard()
+
+    if step.startswith("stock") or step in {"stock_name", "stock_value", "add_stock_name", "add_stock_value"}:
+        return admin_stock_safe_keyboard()
+
+    if step.startswith("customers") or step in {"customers_menu", "customers_root", "customers_search", "customer_profile"}:
+        return admin_customers_safe_keyboard()
+
+    if step.startswith("reports") or step.startswith("statistics") or step in {"statistics_date_input", "statistics_date", "date_statistics", "stats_date_input"}:
+        return admin_reports_safe_keyboard()
+
+    if step.startswith("coupon") or step.startswith("coupons"):
+        return admin_coupons_safe_keyboard()
+
+    if "support" in step or step.startswith("ticket"):
+        return admin_support_safe_keyboard()
+
+    if step.startswith("broadcast") or step in {"marketing_section"}:
+        return admin_marketing_safe_keyboard()
+
+    if step.startswith("settings") or step in {"maintenance_mode", "audit_logs_menu"}:
+        return admin_settings_safe_keyboard()
+
+    return admin_keyboard()
+
+
+def admin_is_free_input_step(step):
+    step = str(step or "")
+    return step in {
+        "search_order", "search_phone",
+        "order_status_number", "status_order_number", "status_value", "order_status_value",
+        "price_name", "price_value", "description_name", "description_value",
+        "image_name", "image_photo", "delete_name", "on_name", "off_name",
+        "stock_name", "stock_value", "add_stock_name", "add_stock_value",
+        "add_category", "add_name", "add_price", "add_description", "add_stock", "add_image",
+        "customers_search", "support_ticket_search",
+        "statistics_date_input", "statistics_date", "date_statistics", "stats_date_input",
+        "coupon_code", "coupon_disable_code", "coupon_enable_code",
+        "broadcast_text",
+    }
+
+
+def admin_known_button_texts():
+    return {
+        "⬅️ חזרה לניהול",
+        "⬅️ חזרה לניהול הזמנות",
+        "⬅️ חזרה לניהול מוצרים",
+        "⬅️ חזרה לניהול קופונים",
+        "⬅️ חזרה להגדרות מערכת",
+        "📦 ניהול הזמנות",
+        "🛍️ ניהול מוצרים",
+        "📊 ניהול מלאי",
+        "👥 ניהול לקוחות",
+        "🏷️ קופונים ומבצעים",
+        "🎧 שירות לקוחות",
+        "📢 שיווק והודעות",
+        "📊 סטטיסטיקה ודוחות",
+        "⚙️ הגדרות מערכת",
+        "📋 הזמנות פתוחות",
+        "🆕 הזמנות חדשות",
+        "🆕 חדשות",
+        "🧾 הזמנות אחרונות",
+        "✅ אושרו",
+        "📦 בטיפול",
+        "🚚 במשלוח",
+        "🧾 הושלמו",
+        "❌ בוטלו",
+        "🔎 חפש הזמנה",
+        "📞 חפש לפי טלפון",
+        "🔄 עדכן סטטוס הזמנה",
+        "📦 רשימת מוצרים",
+        "➕ הוסף מוצר",
+        "✏️ שנה מחיר",
+        "📝 שנה תיאור",
+        "🖼️ עדכן תמונה",
+        "🔴 כבה מוצר",
+        "🟢 הפעל מוצר",
+        "🗑️ מחק מוצר",
+        "📊 מצב העסק",
+        "📅 סטטיסטיקה לפי תאריך",
+        "📜 Audit Logs",
+        "📥 הורד Audit אחרון",
+        "👤 חיפוש לפי אדמין",
+        "🛍️ חיפוש לפי מוצר",
+        "⚙️ חיפוש לפי פעולה",
+    }
 
 
 
@@ -1591,16 +1791,8 @@ def format_date_he(date_text):
 
 
 def orders_main_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📋 הזמנות פתוחות")],
-            [KeyboardButton(text="🆕 חדשות"), KeyboardButton(text="✅ אושרו")],
-            [KeyboardButton(text="📦 בטיפול"), KeyboardButton(text="🚚 במשלוח")],
-            [KeyboardButton(text="🧾 הושלמו"), KeyboardButton(text="❌ בוטלו")],
-            [KeyboardButton(text="⬅️ חזרה לניהול")]
-        ],
-        resize_keyboard=True
-    )
+    # STABLE_ADMIN_LOGIC_FINAL alias
+    return admin_orders_safe_keyboard()
 
 
 def order_select_keyboard(orders, back_text="⬅️ חזרה לניהול הזמנות"):
@@ -2882,7 +3074,7 @@ async def exit_admin(message: Message):
     # ואז להציג ללקוח את התפריט הראשי החדש עם באנר וכפתורי Inline.
     await tracked_admin_answer(message, 
         rtl("<b>✅ יצאת מפאנל הניהול.</b>"),
-        reply_markup=ReplyKeyboardRemove(),
+        reply_markup=admin_safe_keyboard_for_step((admin_states.get(message.from_user.id) or {}).get('step')),
         parse_mode="HTML"
     )
 
@@ -4132,6 +4324,75 @@ async def admin_coupon_flow(message: Message):
         return
 
 
+
+
+@router.message(lambda message: is_admin(message.from_user.id) and bool(admin_states.get(message.from_user.id)) and not (message.text or "").startswith("/"))
+async def admin_global_logic_guard(message: Message):
+    # STABLE_ADMIN_LOGIC_FINAL
+    # מגן כללי לכל הפאנל:
+    # קשקוש = נשארים באותו state עם אותה מקלדת.
+    # כפתורים ידועים = עוברים ל-admin_flow המקורי.
+    uid = message.from_user.id
+    txt = clean_admin_text(message.text)
+    state = admin_states.get(uid) or {}
+    step = str(state.get("step") or "admin")
+
+    if txt == "⬅️ חזרה לניהול":
+        admin_states[uid] = {"step": "admin"}
+        await tracked_admin_answer(
+            message,
+            rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if txt in {"⬅️ חזרה לניהול הזמנות"}:
+        admin_states[uid] = {"step": "orders_section"}
+        await tracked_admin_answer(
+            message,
+            rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"),
+            reply_markup=admin_orders_safe_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if txt in {"⬅️ חזרה לניהול מוצרים"}:
+        admin_states[uid] = {"step": "products_section"}
+        await tracked_admin_answer(
+            message,
+            rtl("<b>🛍️ ניהול מוצרים</b>\n\nבחר פעולה:"),
+            reply_markup=admin_products_safe_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if txt in {"⬅️ חזרה לניהול קופונים"}:
+        admin_states[uid] = {"step": "coupons_menu"}
+        await tracked_admin_answer(
+            message,
+            rtl("<b>🏷️ קופונים ומבצעים</b>\n\nבחר פעולה:"),
+            reply_markup=admin_coupons_safe_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    # כפתור אמיתי מתוך התפריט — נותנים ל-admin_flow המקורי לטפל.
+    if txt in admin_known_button_texts():
+        return await admin_flow(message)
+
+    # שלבים שמצפים לקלט חופשי — נותנים ללוגיקה המקורית לטפל.
+    # אם הקלט לא תקין, tracked_admin_answer ידאג להשאיר מקלדת נכונה.
+    if admin_is_free_input_step(step):
+        return await admin_flow(message)
+
+    # כל קשקוש אחר: לא מעבירים מקום, לא פותחים Start, לא פאנל ראשי.
+    await tracked_admin_answer(
+        message,
+        rtl("<b>⚠️ פעולה לא תקינה.</b>\n\nבחר פעולה מהתפריט למטה."),
+        reply_markup=admin_safe_keyboard_for_step(step),
+        parse_mode="HTML"
+    )
 
 @router.message(is_admin_active_step)
 async def admin_flow(message: Message):
