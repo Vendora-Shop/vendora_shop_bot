@@ -761,6 +761,22 @@ def admin_section_keyboard_for_step(step):
 
 
 
+def admin_order_status_input_keyboard():
+    # ORDER_STATUS_NAV_FIX
+    # מקלדת בטוחה לשלבי עדכון סטטוס הזמנה.
+    # לא משאירה את האדמין בלי דרך חזרה.
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="⬅️ חזרה לניהול הזמנות")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")],
+            [KeyboardButton(text="🔄 פתח תפריט מחדש")]
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="רשום מספר הזמנה או בחר פעולה..."
+    )
+
+
+
 def support_reply_cancel_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -3090,7 +3106,7 @@ async def exit_admin(message: Message):
     # ואז להציג ללקוח את התפריט הראשי החדש עם באנר וכפתורי Inline.
     await tracked_admin_answer(message, 
         rtl("<b>✅ יצאת מפאנל הניהול.</b>"),
-        reply_markup=ReplyKeyboardRemove(),
+        reply_markup=admin_order_status_input_keyboard(),
         parse_mode="HTML"
     )
 
@@ -3695,6 +3711,7 @@ async def update_order_start(message: Message):
 
     await tracked_admin_answer(message, 
         rtl("<b>🔄 עדכון סטטוס הזמנה</b>\n\nרשום מספר הזמנה לעדכון.\nלדוגמה: V1001"),
+        reply_markup=admin_order_status_input_keyboard(),
         parse_mode="HTML"
     )
 
@@ -4453,11 +4470,53 @@ async def admin_category_nav_stability(message: Message):
     )
 
 
+
+@router.message(F.text == "⬅️ חזרה לניהול הזמנות")
+async def admin_back_to_orders_section_from_status(message: Message):
+    # ORDER_STATUS_NAV_FIX
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "orders_section"}
+
+    await tracked_admin_answer(
+        message,
+        rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"),
+        reply_markup=admin_orders_back_keyboard() if "admin_orders_back_keyboard" in globals() else admin_keyboard(),
+        parse_mode="HTML"
+    )
+
+
 @router.message(is_admin_active_step)
 async def admin_flow(message: Message):
     # PRIORITY CUSTOMER BROADCAST STATES
     uid = message.from_user.id
     txt = clean_admin_text(message.text)
+
+    # ORDER_STATUS_NAV_FIX — לא משאירים את האדמין בלי תפריט בשלב עדכון סטטוס.
+    state = admin_states.get(uid) or {}
+    step = state.get("step")
+
+    if step in {"order_status_number", "order_status_value", "status_order_number", "status_value", "update_order_status", "order_status_update"}:
+        if txt == "⬅️ חזרה לניהול הזמנות":
+            admin_states[uid] = {"step": "orders_section"}
+            await tracked_admin_answer(
+                message,
+                rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"),
+                reply_markup=admin_orders_back_keyboard() if "admin_orders_back_keyboard" in globals() else admin_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        if txt == "⬅️ חזרה לניהול":
+            admin_states[uid] = {"step": "admin"}
+            await tracked_admin_answer(
+                message,
+                rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
+                reply_markup=admin_keyboard(),
+                parse_mode="HTML"
+            )
+            return
 
     # ADMIN_STATS_NAV_FIX — טיפול בקלט תאריך בלי לצאת מהקטגוריה.
     state = admin_states.get(uid) or {}
