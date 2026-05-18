@@ -672,16 +672,9 @@ def admin_reports_back_keyboard():
 
 
 def admin_orders_back_keyboard():
-    # PERFORMANCE_V11_NAV_STABILITY
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📋 הזמנות פתוחות")],
-            [KeyboardButton(text="🧾 הזמנות אחרונות"), KeyboardButton(text="🔎 חפש הזמנה")],
-            [KeyboardButton(text="📞 חפש לפי טלפון"), KeyboardButton(text="🔄 עדכן סטטוס הזמנה")],
-            [KeyboardButton(text="⬅️ חזרה לניהול")]
-        ],
-        resize_keyboard=True
-    )
+    # ORDERS_NEW_UI_FIX
+    # אותה מקלדת חדשה גם למסכים פנימיים של הזמנות.
+    return orders_main_keyboard()
 
 
 def admin_products_back_keyboard():
@@ -1843,6 +1836,7 @@ def format_date_he(date_text):
 
 
 def admin_order_result_back_keyboard():
+    # ORDERS_NEW_UI_FIX
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="⬅️ חזרה לרשימת הזמנות")],
@@ -1853,14 +1847,15 @@ def admin_order_result_back_keyboard():
     )
 
 
-
 def orders_main_keyboard():
+    # ORDERS_NEW_UI_FIX
+    # עיצוב חדש לניהול הזמנות — בלי לשנות לוגיקה.
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📋 הזמנות פתוחות")],
-            [KeyboardButton(text="🆕 חדשות"), KeyboardButton(text="✅ אושרו")],
-            [KeyboardButton(text="📦 בטיפול"), KeyboardButton(text="🚚 במשלוח")],
-            [KeyboardButton(text="🧾 הושלמו"), KeyboardButton(text="❌ בוטלו")],
+            [KeyboardButton(text="🆕 הזמנות חדשות"), KeyboardButton(text="🧾 הזמנות אחרונות")],
+            [KeyboardButton(text="🔎 חפש הזמנה"), KeyboardButton(text="📞 חפש לפי טלפון")],
+            [KeyboardButton(text="🔄 עדכן סטטוס הזמנה")],
             [KeyboardButton(text="⬅️ חזרה לניהול")]
         ],
         resize_keyboard=True
@@ -1928,10 +1923,13 @@ def order_action_keyboard(order_status, pickup=False):
 ORDER_SECTION_BY_BUTTON = {
     "📋 הזמנות פתוחות": "open",
     "🆕 חדשות": "new",
+    "🆕 הזמנות חדשות": "new",
     "✅ אושרו": "approved",
+    "✅ הזמנות שאושרו": "approved",
     "📦 בטיפול": "processing",
     "🚚 במשלוח": "shipping",
     "🧾 הושלמו": "done",
+    "🧾 הזמנות אחרונות": "recent",
     "❌ בוטלו": "cancelled",
 }
 
@@ -1964,6 +1962,9 @@ def get_orders_for_section(section, limit=30):
     if section == "open":
         return get_open_orders(limit)
 
+    if section == "recent":
+        return get_recent_orders(limit)
+
     if section == "done":
         return get_done_orders(limit)
 
@@ -1977,6 +1978,7 @@ def section_title(section):
     titles = {
         "open": "📋 הזמנות פתוחות",
         "new": "🆕 הזמנות חדשות",
+        "recent": "🧾 הזמנות אחרונות",
         "approved": "✅ הזמנות שאושרו",
         "processing": "📦 הזמנות בטיפול",
         "shipping": "🚚 הזמנות במשלוח",
@@ -4575,6 +4577,42 @@ async def admin_back_to_orders_list_fix(message: Message):
         message,
         rtl(
             f"<b>{section_title(last_section)}</b>\n\n"
+            f"נמצאו {len(orders)} הזמנות.\n"
+            "בחר הזמנה מהרשימה."
+        ),
+        reply_markup=order_select_keyboard(orders),
+        parse_mode="HTML"
+    )
+
+
+
+@router.message(F.text == "🧾 הזמנות אחרונות")
+async def admin_recent_orders_new_ui_fix(message: Message):
+    # ORDERS_NEW_UI_FIX
+    if not is_admin(message.from_user.id):
+        return
+
+    uid = message.from_user.id
+    orders = get_recent_orders(30)
+
+    admin_states[uid] = {
+        "step": "orders_select",
+        "orders_last_section": "recent"
+    }
+
+    if not orders:
+        await tracked_admin_answer(
+            message,
+            rtl("<b>🧾 הזמנות אחרונות</b>\n\nאין הזמנות להצגה."),
+            reply_markup=orders_main_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    await tracked_admin_answer(
+        message,
+        rtl(
+            "<b>🧾 הזמנות אחרונות</b>\n\n"
             f"נמצאו {len(orders)} הזמנות.\n"
             "בחר הזמנה מהרשימה."
         ),
