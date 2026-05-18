@@ -205,6 +205,9 @@ def is_admin_known_panel_text(text):
 
 
 def is_admin_cleanup_active(admin_id, text):
+    # ADMIN_INPUT_NO_SCREEN_DELETE_FIX
+    # ניקוי מסכי אדמין קודמים מתבצע רק בכפתורי אדמין אמיתיים.
+    # קשקוש/טקסט לא מוכר לא מנקה את המסך הקיים — רק הודעת המשתמש תימחק ב-middleware.
     try:
         if not is_admin(admin_id):
             return False
@@ -214,19 +217,14 @@ def is_admin_cleanup_active(admin_id, text):
         if not txt or txt.startswith("/"):
             return False
 
-        # אם האדמין משתמש בצד לקוח — לא נותנים לניקוי אדמין לגעת בזה.
         try:
             if is_customer_navigation_button_for_admin_guard(txt):
                 return False
         except Exception:
             pass
 
-        state = admin_states.get(admin_id) or {}
-        step = state.get("step")
-
-        if step and step != "main":
-            return True
-
+        # רק כפתורי אדמין מוכרים מנקים את המסך הקודם.
+        # טקסט חופשי לא מוכר לא אמור למחוק את כל המסך.
         return is_admin_known_panel_text(txt)
 
     except Exception:
@@ -376,6 +374,16 @@ async def tracked_admin_answer(message: Message, *args, **kwargs):
     except Exception:
         pass
 
+    # ADMIN_INPUT_NO_SCREEN_DELETE_FIX_REPLYMARKUP
+    try:
+        uid = message.from_user.id
+        state = admin_states.get(uid) or {}
+        step = state.get("step")
+        if kwargs.get("reply_markup") is None and step and step != "admin":
+            kwargs["reply_markup"] = admin_section_keyboard_for_step(step)
+    except Exception:
+        pass
+
     sent = await message.answer(*args, **kwargs)
 
     try:
@@ -394,26 +402,45 @@ class AdminPanelSafeCleanupMiddleware(BaseMiddleware):
                 user = getattr(event, "from_user", None)
                 text = getattr(event, "text", None)
 
-                if user and text and is_admin_cleanup_active(user.id, text):
-                    await cleanup_admin_previous_screen(
-                        event.bot,
-                        user.id,
-                        event.chat.id
+                if user and text and is_admin(user.id):
+                    txt = clean_admin_text(text)
+
+                    should_touch_admin = (
+                        txt
+                        and not txt.startswith("/")
                     )
 
-                    # מוחקים את הודעת הכפתור/קשקוש של האדמין ברקע.
-                    asyncio.create_task(
-                        _delete_admin_message_safely(
-                            event.bot,
-                            event.chat.id,
-                            event.message_id
+                    try:
+                        if should_touch_admin and is_customer_navigation_button_for_admin_guard(txt):
+                            should_touch_admin = False
+                    except Exception:
+                        pass
+
+                    if should_touch_admin:
+                        if is_admin_cleanup_active(user.id, text):
+                            # כפתור/פעולת אדמין אמיתית:
+                            # מנקים מסך קודם וגם מוחקים את הודעת הכפתור.
+                            await cleanup_admin_previous_screen(
+                                event.bot,
+                                user.id,
+                                event.chat.id
+                            )
+
+                        # בכל מקרה בתוך אדמין מוחקים את הודעת המשתמש/הקשקוש,
+                        # אבל בלי למחוק את המסך הקיים אם זה לא כפתור אמיתי.
+                        asyncio.create_task(
+                            _delete_admin_message_safely(
+                                event.bot,
+                                event.chat.id,
+                                event.message_id
+                            )
                         )
-                    )
 
         except Exception:
             pass
 
         return await handler(event, data)
+
 
 
 router.message.middleware(AdminPanelSafeCleanupMiddleware())
