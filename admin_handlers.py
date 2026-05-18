@@ -366,6 +366,64 @@ async def tracked_admin_answer(message: Message, *args, **kwargs):
     except Exception:
         pass
 
+    # ORDERS_BACK_FULL_FIX
+    # כל מסך פנימי של ניהול הזמנות חייב להישאר עם כפתורי חזרה.
+    try:
+        uid = message.from_user.id
+        state = admin_states.get(uid) or {}
+        step = str(state.get("step") or "")
+
+        is_orders_step = (
+            step.startswith("orders")
+            or step.startswith("order_")
+            or step in {"status_value", "order_status_number", "order_status_value"}
+        )
+
+        if is_orders_step:
+            current_markup = kwargs.get("reply_markup")
+            if current_markup is None:
+                kwargs["reply_markup"] = admin_orders_back_keyboard()
+            else:
+                try:
+                    if str(current_markup) == str(admin_keyboard()):
+                        kwargs["reply_markup"] = admin_orders_back_keyboard()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # FULL_ADMIN_AUDIT_FIX — orders keyboard guard
+    try:
+        uid = message.from_user.id
+        state = admin_states.get(uid) or {}
+        step = str(state.get("step") or "")
+
+        is_orders_step = (
+            step.startswith("orders")
+            or step.startswith("order_")
+            or step in {
+                "search_order",
+                "search_phone",
+                "status_value",
+                "status_order_number",
+                "order_status_number",
+                "order_status_value",
+            }
+        )
+
+        if is_orders_step:
+            current_markup = kwargs.get("reply_markup")
+            if current_markup is None:
+                kwargs["reply_markup"] = admin_orders_back_keyboard()
+            else:
+                try:
+                    if str(current_markup) == str(admin_keyboard()):
+                        kwargs["reply_markup"] = admin_orders_back_keyboard()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     sent = await message.answer(*args, **kwargs)
 
     try:
@@ -632,8 +690,8 @@ def admin_reports_back_keyboard():
 
 
 def admin_orders_back_keyboard():
-    # ORDER_STATUS_LOGIC_FINAL_FIX
-    # תפריט ניהול הזמנות מלא ויציב.
+    # FULL_ADMIN_AUDIT_FIX
+    # מקלדת קבועה ומלאה לכל מסכי ניהול הזמנות.
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📋 הזמנות פתוחות")],
@@ -764,9 +822,9 @@ def admin_section_keyboard_for_step(step):
 
 
 def admin_order_status_input_keyboard():
-    # ORDER_STATUS_LOGIC_FINAL_FIX
-    # מקלדת תקינה לשלבי עדכון סטטוס הזמנה.
-    # בלי כפתור חירום "פתח תפריט מחדש" — הוא לא שייך ל-flow תקין.
+    # FULL_ADMIN_AUDIT_FIX
+    # מקלדת בטוחה לקלט מספר הזמנה / סטטוס.
+    # בלי כפתור חירום. רק חזרה לוגית.
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="⬅️ חזרה לניהול הזמנות")],
@@ -775,6 +833,14 @@ def admin_order_status_input_keyboard():
         resize_keyboard=True,
         input_field_placeholder="רשום מספר הזמנה או בחר פעולה..."
     )
+
+
+def force_orders_reply_markup(kwargs=None):
+    # ORDERS_BACK_FULL_FIX
+    kwargs = dict(kwargs or {})
+    kwargs["reply_markup"] = admin_orders_back_keyboard()
+    return kwargs
+
 
 
 def support_reply_cancel_keyboard():
@@ -1815,32 +1881,14 @@ def format_date_he(date_text):
 
 
 def orders_main_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📋 הזמנות פתוחות")],
-            [KeyboardButton(text="🆕 חדשות"), KeyboardButton(text="✅ אושרו")],
-            [KeyboardButton(text="📦 בטיפול"), KeyboardButton(text="🚚 במשלוח")],
-            [KeyboardButton(text="🧾 הושלמו"), KeyboardButton(text="❌ בוטלו")],
-            [KeyboardButton(text="⬅️ חזרה לניהול")]
-        ],
-        resize_keyboard=True
-    )
+    # FULL_ADMIN_AUDIT_FIX
+    # שומר תאימות לשם הישן, אבל מחזיר את אותה מקלדת יציבה.
+    return admin_orders_back_keyboard()
 
 
-def order_select_keyboard(orders, back_text="⬅️ חזרה לניהול הזמנות"):
-    keyboard = []
-
-    for order in orders:
-        order_number = order.get("order_number", "")
-        customer_name = order.get("customer_name", "")
-        final_total = money(order.get("final_total", 0))
-        status = status_label(order.get("status", ""))
-        keyboard.append([KeyboardButton(text=f"🧾 {order_number} | {final_total} | {customer_name} | {status}")])
-
-    keyboard.append([KeyboardButton(text=back_text)])
-    keyboard.append([KeyboardButton(text="⬅️ חזרה לניהול")])
-
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+def order_select_keyboard():
+    # FULL_ADMIN_AUDIT_FIX
+    return admin_orders_back_keyboard()
 
 
 def order_action_keyboard(order_status, pickup=False):
@@ -2429,7 +2477,7 @@ async def broadcast_start(message: Message):
                 "אין כרגע לקוחות שמורים לשליחה.\n"
                 "לאחר שלקוחות יבצעו הזמנות, הם יופיעו ברשימת השליחה."
             ),
-            reply_markup=admin_keyboard(),
+            reply_markup=admin_orders_back_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -2472,7 +2520,7 @@ async def show_admin_root_menu(message: Message):
     admin_states[message.from_user.id] = {"step": "admin"}
     await tracked_admin_answer(message, 
         rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
-        reply_markup=admin_keyboard(),
+        reply_markup=admin_orders_back_keyboard(),
         parse_mode="HTML"
     )
 
@@ -3492,7 +3540,7 @@ async def cancel_clear_all_orders(message: Message):
 
     await tracked_admin_answer(message, 
         rtl("<b>✅ המחיקה בוטלה.</b>"),
-        reply_markup=admin_keyboard(),
+        reply_markup=admin_orders_back_keyboard(),
         parse_mode="HTML"
     )
 
@@ -3507,7 +3555,7 @@ async def confirm_clear_all_orders(message: Message):
     if state.get("step") != "confirm_clear_all_orders":
         await tracked_admin_answer(message, 
             rtl("<b>⚠️ כדי למחוק הזמנות יש להתחיל מהכפתור: 🧹 מחק את כל ההזמנות.</b>"),
-            reply_markup=admin_keyboard(),
+            reply_markup=admin_orders_back_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -3573,20 +3621,21 @@ async def recent_orders(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    admin_states[message.from_user.id] = {"step": "admin"}
+    admin_states[message.from_user.id] = {"step": "orders_section"}
     orders = get_recent_orders(10)
 
     if not orders:
-        await tracked_admin_answer(message, rtl("<b>🧾 הזמנות אחרונות</b>\n\nאין הזמנות במערכת."), parse_mode="HTML")
+        await tracked_admin_answer(message, rtl("<b>🧾 הזמנות אחרונות</b>\n\nאין הזמנות במערכת."), reply_markup=admin_orders_back_keyboard(), parse_mode="HTML")
         return
 
     await tracked_admin_answer(message, 
         rtl(f"<b>🧾 הזמנות אחרונות</b>\n\nנמצאו {len(orders)} הזמנות אחרונות."),
+        reply_markup=admin_orders_back_keyboard(),
         parse_mode="HTML"
     )
 
     for order in reversed(orders):
-        await tracked_admin_answer(message, format_order(order), parse_mode="HTML")
+        await tracked_admin_answer(message, format_order(order), reply_markup=admin_orders_back_keyboard(), parse_mode="HTML")
 
 
 @router.message(F.text == "🆕 הזמנות חדשות")
@@ -3594,20 +3643,21 @@ async def new_orders(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    admin_states[message.from_user.id] = {"step": "admin"}
+    admin_states[message.from_user.id] = {"step": "orders_section"}
     orders = get_orders_by_status("new", 20)
 
     if not orders:
-        await tracked_admin_answer(message, rtl("<b>🆕 הזמנות חדשות</b>\n\nאין הזמנות חדשות כרגע."), parse_mode="HTML")
+        await tracked_admin_answer(message, rtl("<b>🆕 הזמנות חדשות</b>\n\nאין הזמנות חדשות כרגע."), reply_markup=admin_orders_back_keyboard(), parse_mode="HTML")
         return
 
     await tracked_admin_answer(message, 
         rtl(f"<b>🆕 הזמנות חדשות</b>\n\nנמצאו {len(orders)} הזמנות חדשות."),
+        reply_markup=admin_orders_back_keyboard(),
         parse_mode="HTML"
     )
 
     for order in reversed(orders):
-        await tracked_admin_answer(message, format_order(order), parse_mode="HTML")
+        await tracked_admin_answer(message, format_order(order), reply_markup=admin_orders_back_keyboard(), parse_mode="HTML")
 
 
 @router.message(F.text == "🔎 חפש הזמנה")
@@ -3619,6 +3669,7 @@ async def search_order_start(message: Message):
 
     await tracked_admin_answer(message, 
         rtl("<b>🔎 חיפוש הזמנה</b>\n\nרשום מספר הזמנה.\nלדוגמה: V1001"),
+        reply_markup=admin_orders_back_keyboard(),
         parse_mode="HTML"
     )
 
@@ -3632,6 +3683,7 @@ async def search_by_phone_start(message: Message):
 
     await tracked_admin_answer(message, 
         rtl("<b>📞 חיפוש לפי טלפון</b>\n\nרשום מספר טלפון לחיפוש.\nלדוגמה: 0547937503"),
+        reply_markup=admin_orders_back_keyboard(),
         parse_mode="HTML"
     )
 
@@ -3896,7 +3948,7 @@ async def handle_photo(message: Message):
     else:
         text = "<b>⚠️ המוצר לא נמצא.</b>"
 
-    await tracked_admin_answer(message, rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
+    await tracked_admin_answer(message, rtl(text), reply_markup=admin_orders_back_keyboard(), parse_mode="HTML")
 
 
 
@@ -4126,7 +4178,7 @@ async def admin_coupon_flow(message: Message):
         admin_states[uid] = {"step": "admin"}
         await tracked_admin_answer(message, 
             rtl("<b>🔐 פאנל ניהול</b>\n\nבחר פעולה:"),
-            reply_markup=admin_keyboard(),
+            reply_markup=admin_orders_back_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -4370,7 +4422,7 @@ async def admin_statistics_date_input_result_fix(message: Message):
         await tracked_admin_answer(
             message,
             rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
-            reply_markup=admin_keyboard(),
+            reply_markup=admin_orders_back_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -4517,7 +4569,7 @@ async def admin_order_status_input_safe_flow(message: Message):
         await tracked_admin_answer(
             message,
             rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
-            reply_markup=admin_keyboard(),
+            reply_markup=admin_orders_back_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -4527,7 +4579,7 @@ async def admin_order_status_input_safe_flow(message: Message):
         await tracked_admin_answer(
             message,
             rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
-            reply_markup=admin_keyboard(),
+            reply_markup=admin_orders_back_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -4618,7 +4670,7 @@ async def admin_order_status_number_safe_final(message: Message):
         await tracked_admin_answer(
             message,
             rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"),
-            reply_markup=admin_orders_back_keyboard(),
+            reply_markup=admin_order_status_input_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -4628,7 +4680,7 @@ async def admin_order_status_number_safe_final(message: Message):
         await tracked_admin_answer(
             message,
             rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
-            reply_markup=admin_keyboard(),
+            reply_markup=admin_orders_back_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -4684,7 +4736,7 @@ async def admin_order_status_value_back_safe_final(message: Message):
         await tracked_admin_answer(
             message,
             rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"),
-            reply_markup=admin_orders_back_keyboard(),
+            reply_markup=admin_order_status_input_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -4694,13 +4746,133 @@ async def admin_order_status_value_back_safe_final(message: Message):
         await tracked_admin_answer(
             message,
             rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
-            reply_markup=admin_keyboard(),
+            reply_markup=admin_orders_back_keyboard(),
             parse_mode="HTML"
         )
         return
 
     # לא מטפלים כאן בסטטוס עצמו כדי לא לשבור את הלוגיקה הקיימת.
     return
+
+
+
+@router.message(F.text == "⬅️ חזרה לניהול הזמנות")
+async def admin_back_to_orders_full_fix(message: Message):
+    # ORDERS_BACK_FULL_FIX
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "orders_section"}
+
+    await tracked_admin_answer(
+        message,
+        rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"),
+        reply_markup=admin_orders_back_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+
+@router.message(F.text == "📦 ניהול הזמנות")
+async def admin_orders_menu_full_fix(message: Message):
+    # ORDERS_BACK_FULL_FIX
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "orders_section"}
+
+    await tracked_admin_answer(
+        message,
+        rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"),
+        reply_markup=admin_orders_back_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+
+@router.message(F.text == "⬅️ חזרה לניהול הזמנות")
+async def admin_back_to_orders_full_audit_fix(message: Message):
+    # FULL_ADMIN_AUDIT_FIX
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "orders_section"}
+
+    await tracked_admin_answer(
+        message,
+        rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"),
+        reply_markup=admin_orders_back_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "📦 ניהול הזמנות")
+async def admin_orders_menu_full_audit_fix(message: Message):
+    # FULL_ADMIN_AUDIT_FIX
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "orders_section"}
+
+    await tracked_admin_answer(
+        message,
+        rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"),
+        reply_markup=admin_orders_back_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "🔎 חפש הזמנה")
+async def admin_search_order_start_full_audit_fix(message: Message):
+    # FULL_ADMIN_AUDIT_FIX
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "search_order"}
+
+    await tracked_admin_answer(
+        message,
+        rtl("<b>🔎 חיפוש הזמנה</b>\n\nרשום מספר הזמנה.\nלדוגמה: <code>V1001</code>"),
+        reply_markup=admin_orders_back_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "📞 חפש לפי טלפון")
+async def admin_search_phone_start_full_audit_fix(message: Message):
+    # FULL_ADMIN_AUDIT_FIX
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "search_phone"}
+
+    await tracked_admin_answer(
+        message,
+        rtl("<b>📞 חיפוש לפי טלפון</b>\n\nרשום מספר טלפון לחיפוש."),
+        reply_markup=admin_orders_back_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text == "🔄 עדכן סטטוס הזמנה")
+async def admin_order_status_start_full_audit_fix(message: Message):
+    # FULL_ADMIN_AUDIT_FIX
+    if not is_admin(message.from_user.id):
+        return
+
+    uid = message.from_user.id
+    admin_states[uid] = {"step": "order_status_number"}
+
+    await tracked_admin_answer(
+        message,
+        rtl(
+            "<b>🔄 עדכון סטטוס הזמנה</b>\n\n"
+            "רשום מספר הזמנה לעדכון.\n"
+            "לדוגמה: <code>V1001</code>"
+        ),
+        reply_markup=admin_order_status_input_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(is_admin_active_step)
@@ -4719,7 +4891,7 @@ async def admin_flow(message: Message):
             await tracked_admin_answer(
                 message,
                 rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"),
-                reply_markup=admin_orders_back_keyboard(),
+                reply_markup=admin_order_status_input_keyboard(),
                 parse_mode="HTML"
             )
             return
@@ -4729,7 +4901,7 @@ async def admin_flow(message: Message):
             await tracked_admin_answer(
                 message,
                 rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
-                reply_markup=admin_keyboard(),
+                reply_markup=admin_orders_back_keyboard(),
                 parse_mode="HTML"
             )
             return
@@ -5037,7 +5209,7 @@ async def admin_flow(message: Message):
                 "<b>✅ מערכת ההזמנות אופסה בהצלחה.</b>\n\n"
                 f"{field('הזמנות שנמחקו', deleted_count)}"
             ),
-            reply_markup=admin_keyboard(),
+            reply_markup=admin_orders_back_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -5058,16 +5230,17 @@ async def admin_flow(message: Message):
         orders = get_recent_orders(20)
 
         if not orders:
-            await tracked_admin_answer(message, rtl("<b>🧾 הזמנות אחרונות</b>\n\nאין הזמנות במערכת."), parse_mode="HTML")
+            await tracked_admin_answer(message, rtl("<b>🧾 הזמנות אחרונות</b>\n\nאין הזמנות במערכת."), reply_markup=admin_orders_back_keyboard(), parse_mode="HTML")
             return
 
         await tracked_admin_answer(message, 
             rtl(f"<b>🧾 הזמנות אחרונות</b>\n\nנמצאו {len(orders)} הזמנות אחרונות."),
-            parse_mode="HTML"
+            reply_markup=admin_orders_back_keyboard(),
+        parse_mode="HTML"
         )
 
         for order in reversed(orders):
-            await tracked_admin_answer(message, format_order(order), parse_mode="HTML")
+            await tracked_admin_answer(message, format_order(order), reply_markup=admin_orders_back_keyboard(), parse_mode="HTML")
         return
 
     if txt == "🆕 הזמנות חדשות":
@@ -5075,16 +5248,17 @@ async def admin_flow(message: Message):
         orders = get_orders_by_status("new", 30)
 
         if not orders:
-            await tracked_admin_answer(message, rtl("<b>🆕 הזמנות חדשות</b>\n\nאין הזמנות חדשות כרגע."), parse_mode="HTML")
+            await tracked_admin_answer(message, rtl("<b>🆕 הזמנות חדשות</b>\n\nאין הזמנות חדשות כרגע."), reply_markup=admin_orders_back_keyboard(), parse_mode="HTML")
             return
 
         await tracked_admin_answer(message, 
             rtl(f"<b>🆕 הזמנות חדשות</b>\n\nנמצאו {len(orders)} הזמנות חדשות."),
-            parse_mode="HTML"
+            reply_markup=admin_orders_back_keyboard(),
+        parse_mode="HTML"
         )
 
         for order in reversed(orders):
-            await tracked_admin_answer(message, format_order(order), parse_mode="HTML")
+            await tracked_admin_answer(message, format_order(order), reply_markup=admin_orders_back_keyboard(), parse_mode="HTML")
         return
 
     state = admin_states.get(uid) or {}
@@ -5244,7 +5418,8 @@ async def admin_flow(message: Message):
                     "<b>🔎 חיפוש לקוח</b>\n\n"
                     "רשום שם, טלפון או שם Telegram לחיפוש."
                 ),
-                parse_mode="HTML"
+                reply_markup=admin_orders_back_keyboard(),
+        parse_mode="HTML"
             )
             return
 
@@ -5486,7 +5661,7 @@ async def admin_flow(message: Message):
                     "ההודעה כבר נשלחה ללקוחות.\n"
                     "אין צורך לאשר שוב."
                 ),
-                reply_markup=admin_keyboard(),
+                reply_markup=admin_orders_back_keyboard(),
                 parse_mode="HTML"
             )
             admin_states[uid] = {"step": "admin"}
@@ -5533,7 +5708,7 @@ async def admin_flow(message: Message):
                 f"{field('נכשלו', failed)}\n"
                 f"{field('סה״כ לקוחות', len(customer_ids))}"
             ),
-            reply_markup=admin_keyboard(),
+            reply_markup=admin_orders_back_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -5672,7 +5847,7 @@ async def admin_flow(message: Message):
         if not order_before:
             await tracked_admin_answer(message, 
                 rtl("<b>⚠️ ההזמנה לא נמצאה במערכת.</b>"),
-                reply_markup=admin_keyboard(),
+                reply_markup=admin_orders_back_keyboard(),
                 parse_mode="HTML"
             )
             admin_states[uid] = {"step": "admin"}
@@ -5710,7 +5885,7 @@ async def admin_flow(message: Message):
         if not ok or not order:
             await tracked_admin_answer(message, 
                 rtl("<b>⚠️ לא הצלחתי לעדכן את ההזמנה.</b>"),
-                reply_markup=admin_keyboard(),
+                reply_markup=admin_orders_back_keyboard(),
                 parse_mode="HTML"
             )
             admin_states[uid] = {"step": "admin"}
@@ -5733,7 +5908,8 @@ async def admin_flow(message: Message):
                 f"{field('מספר הזמנה', order_number)}\n"
                 f"{field('סטטוס חדש', status_label(new_status))}"
             ),
-            parse_mode="HTML"
+            reply_markup=admin_orders_back_keyboard(),
+        parse_mode="HTML"
         )
 
         if new_status in FINAL_ORDER_STATUSES:
@@ -5770,7 +5946,7 @@ async def admin_flow(message: Message):
             )
             return
 
-        await tracked_admin_answer(message, format_order(order), reply_markup=admin_keyboard(), parse_mode="HTML")
+        await tracked_admin_answer(message, format_order(order), reply_markup=admin_orders_back_keyboard(), parse_mode="HTML")
         return
 
     if step == "search_phone":
@@ -5788,12 +5964,12 @@ async def admin_flow(message: Message):
 
         await tracked_admin_answer(message, 
             rtl(f"<b>📞 תוצאות חיפוש</b>\n\nנמצאו {len(orders)} הזמנות למספר {h(txt)}."),
-            reply_markup=admin_keyboard(),
+            reply_markup=admin_orders_back_keyboard(),
             parse_mode="HTML"
         )
 
         for order in orders:
-            await tracked_admin_answer(message, format_order(order), parse_mode="HTML")
+            await tracked_admin_answer(message, format_order(order), reply_markup=admin_orders_back_keyboard(), parse_mode="HTML")
 
         return
 
@@ -5899,7 +6075,7 @@ async def admin_flow(message: Message):
                 f"{field('מספר הזמנה', order_number)}\n"
                 f"{field('סטטוס חדש', status_label(new_status))}"
             ),
-            reply_markup=admin_keyboard(),
+            reply_markup=admin_orders_back_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -5941,7 +6117,8 @@ async def admin_flow(message: Message):
     if step == "add_description":
         state["description"] = txt
         state["step"] = "add_max_qty"
-        await tracked_admin_answer(message, rtl("<b>🔢 כמות מקסימלית</b>\n\nרשום כמות מקסימלית להזמנה אחת.\nלדוגמה: 10"), parse_mode="HTML")
+        await tracked_admin_answer(message, rtl("<b>🔢 כמות מקסימלית</b>\n\nרשום כמות מקסימלית להזמנה אחת.\nלדוגמה: 10"), reply_markup=admin_orders_back_keyboard(),
+        parse_mode="HTML")
         return
 
     if step == "add_max_qty":
@@ -6011,7 +6188,7 @@ async def admin_flow(message: Message):
             "כדי להוסיף תמונה לחץ על: 🖼️ עדכן תמונה"
         )
 
-        await tracked_admin_answer(message, rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
+        await tracked_admin_answer(message, rtl(text), reply_markup=admin_orders_back_keyboard(), parse_mode="HTML")
         return
 
     if step == "price_name":
@@ -6171,7 +6348,7 @@ async def admin_flow(message: Message):
         admin_states[uid] = {"step": "admin"}
 
         text = f"<b>✅ המלאי עודכן</b>\n\n{field('מלאי חדש', txt)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
-        await tracked_admin_answer(message, rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
+        await tracked_admin_answer(message, rtl(text), reply_markup=admin_orders_back_keyboard(), parse_mode="HTML")
         return
 
     if step == "add_stock_name":
@@ -6218,7 +6395,7 @@ async def admin_flow(message: Message):
         admin_states[uid] = {"step": "admin"}
 
         text = f"<b>✅ המלאי עודכן</b>\n\n{field('נוספו יחידות', txt)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
-        await tracked_admin_answer(message, rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
+        await tracked_admin_answer(message, rtl(text), reply_markup=admin_orders_back_keyboard(), parse_mode="HTML")
         return
 
     if step == "image_name":
@@ -6259,7 +6436,7 @@ async def admin_flow(message: Message):
         admin_states[uid] = {"step": "admin"}
 
         text = f"<b>🔴 המוצר כובה</b>\n\n{field('מוצר', product_name)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
-        await tracked_admin_answer(message, rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
+        await tracked_admin_answer(message, rtl(text), reply_markup=admin_orders_back_keyboard(), parse_mode="HTML")
         return
 
     if step == "on_name":
@@ -6281,7 +6458,7 @@ async def admin_flow(message: Message):
         admin_states[uid] = {"step": "admin"}
 
         text = f"<b>🟢 המוצר הופעל</b>\n\n{field('מוצר', product_name)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
-        await tracked_admin_answer(message, rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
+        await tracked_admin_answer(message, rtl(text), reply_markup=admin_orders_back_keyboard(), parse_mode="HTML")
         return
 
     if step == "delete_name":
@@ -6303,5 +6480,5 @@ async def admin_flow(message: Message):
         admin_states[uid] = {"step": "admin"}
 
         text = f"<b>🗑️ המוצר נמחק</b>\n\n{field('מוצר', product_name)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
-        await tracked_admin_answer(message, rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
+        await tracked_admin_answer(message, rtl(text), reply_markup=admin_orders_back_keyboard(), parse_mode="HTML")
         return
