@@ -124,18 +124,17 @@ router = Router()
 
 # ================== ADMIN_STATES_NAMEERROR_FIX ==================
 def get_admin_states_store():
+    # CLEAN_ADMIN_LOGIC_FIX
     global admin_states
     try:
         admin_states
     except NameError:
         admin_states = {}
-
-# ================== REOPEN MENU SINGLE INSTANCE FIX ==================
-# שומר את הודעת פתיחת התפריט האחרונה, כדי שתהיה רק אחת.
-ADMIN_REOPEN_MENU_MESSAGES = {}
+    return admin_states
 
 
 async def delete_previous_reopen_menu(message: Message):
+    # CLEAN_ADMIN_LOGIC_FIX
     try:
         uid = message.from_user.id
         old_id = ADMIN_REOPEN_MENU_MESSAGES.pop(uid, None)
@@ -146,16 +145,13 @@ async def delete_previous_reopen_menu(message: Message):
 
 
 def remember_reopen_menu(message: Message, sent):
+    # CLEAN_ADMIN_LOGIC_FIX
     try:
         if sent:
             ADMIN_REOPEN_MENU_MESSAGES[message.from_user.id] = sent.message_id
     except Exception:
         pass
 
-
-
-# ================== DUPLICATE HANDLER CLEAN FIX ==================
-LAST_INVALID_WARNING = {}
 
 async def send_single_invalid_warning(message: Message, keyboard):
     try:
@@ -182,10 +178,6 @@ async def send_single_invalid_warning(message: Message, keyboard):
         pass
 
 
-    return admin_states
-
-
-
 # ADMIN_STATES_NAMEERROR_FIX
 admin_states = {}
 
@@ -202,59 +194,52 @@ admin_states = {}
     "🔎 חפש הזמנה",
     "📞 חפש לפי טלפון",
     "🔄 עדכן סטטוס הזמנה",
-}))
-@router.message(F.text.in_({
-    "📋 הזמנות פתוחות",
-    "🆕 הזמנות חדשות",
-    "🆕 חדשות",
-    "🧾 הזמנות אחרונות",
-    "🔎 חפש הזמנה",
-    "📞 חפש לפי טלפון",
-    "🔄 עדכן סטטוס הזמנה",
     "⬅️ חזרה לניהול הזמנות",
 }))
 async def admin_orders_area_lock_router(message: Message):
-    # ORDERS_FULL_LOGIC_AUDIT_FIX
+    # CLEAN_ADMIN_LOGIC_FIX
     if not is_admin(message.from_user.id):
         return
 
     uid = message.from_user.id
     txt = clean_admin_text(message.text)
 
+    await delete_previous_reopen_menu(message)
+
     if txt == "⬅️ חזרה לניהול הזמנות":
-        admin_states[uid] = {"step": "orders_section", "orders_last_section": "menu"}
+        get_admin_states_store()[uid] = {"step": "orders_section", "orders_last_section": "menu"}
         await tracked_admin_answer(
             message,
             rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"),
-            reply_markup=orders_main_keyboard(),
+            reply_markup=admin_orders_menu_keyboard(),
             parse_mode="HTML"
         )
         return
 
     if txt == "📋 הזמנות פתוחות":
-        admin_states[uid] = {"step": "orders_section", "orders_last_section": "open"}
+        get_admin_states_store()[uid] = {"step": "orders_section", "orders_last_section": "open"}
         await tracked_admin_answer(
             message,
             rtl(orders_summary_text()),
-            reply_markup=orders_main_keyboard(),
+            reply_markup=admin_orders_menu_keyboard(),
             parse_mode="HTML"
         )
         return
 
     if txt in {"🆕 הזמנות חדשות", "🆕 חדשות"}:
-        admin_states[uid] = {"step": "orders_section", "orders_last_section": "new"}
+        get_admin_states_store()[uid] = {"step": "orders_section", "orders_last_section": "new"}
         orders = get_orders_for_section("new", 30)
 
         if not orders:
             await tracked_admin_answer(
                 message,
                 rtl("<b>🆕 הזמנות חדשות</b>\n\nאין הזמנות חדשות כרגע."),
-                reply_markup=orders_main_keyboard(),
+                reply_markup=admin_orders_menu_keyboard(),
                 parse_mode="HTML"
             )
             return
 
-        admin_states[uid] = {"step": "orders_select", "orders_last_section": "new"}
+        get_admin_states_store()[uid] = {"step": "orders_select", "orders_last_section": "new"}
         await tracked_admin_answer(
             message,
             rtl(
@@ -268,19 +253,19 @@ async def admin_orders_area_lock_router(message: Message):
         return
 
     if txt == "🧾 הזמנות אחרונות":
-        admin_states[uid] = {"step": "orders_section", "orders_last_section": "recent"}
+        get_admin_states_store()[uid] = {"step": "orders_section", "orders_last_section": "recent"}
         orders = get_orders_for_section("recent", 30)
 
         if not orders:
             await tracked_admin_answer(
                 message,
                 rtl("<b>🧾 הזמנות אחרונות</b>\n\nאין הזמנות להצגה."),
-                reply_markup=orders_main_keyboard(),
+                reply_markup=admin_orders_menu_keyboard(),
                 parse_mode="HTML"
             )
             return
 
-        admin_states[uid] = {"step": "orders_select", "orders_last_section": "recent"}
+        get_admin_states_store()[uid] = {"step": "orders_select", "orders_last_section": "recent"}
         await tracked_admin_answer(
             message,
             rtl(
@@ -294,31 +279,31 @@ async def admin_orders_area_lock_router(message: Message):
         return
 
     if txt == "🔎 חפש הזמנה":
-        admin_states[uid] = {"step": "search_order", "orders_last_section": "search"}
+        get_admin_states_store()[uid] = {"step": "search_order", "orders_last_section": "search"}
         await tracked_admin_answer(
             message,
             rtl("<b>🔎 חיפוש הזמנה</b>\n\nרשום מספר הזמנה.\nלדוגמה: <code>V1001</code>"),
-            reply_markup=orders_main_keyboard(),
+            reply_markup=admin_orders_menu_keyboard(),
             parse_mode="HTML"
         )
         return
 
     if txt == "📞 חפש לפי טלפון":
-        admin_states[uid] = {"step": "search_phone", "orders_last_section": "phone"}
+        get_admin_states_store()[uid] = {"step": "search_phone", "orders_last_section": "phone"}
         await tracked_admin_answer(
             message,
             rtl("<b>📞 חיפוש לפי טלפון</b>\n\nרשום מספר טלפון לחיפוש.\nלדוגמה: <code>0547937503</code>"),
-            reply_markup=orders_main_keyboard(),
+            reply_markup=admin_orders_menu_keyboard(),
             parse_mode="HTML"
         )
         return
 
     if txt == "🔄 עדכן סטטוס הזמנה":
-        admin_states[uid] = {"step": "status_order_number", "orders_last_section": "status"}
+        get_admin_states_store()[uid] = {"step": "status_order_number", "orders_last_section": "status"}
         await tracked_admin_answer(
             message,
             rtl("<b>🔄 עדכון סטטוס הזמנה</b>\n\nרשום מספר הזמנה לעדכון.\nלדוגמה: <code>V1001</code>"),
-            reply_markup=orders_main_keyboard(),
+            reply_markup=admin_orders_menu_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -646,6 +631,7 @@ async def tracked_admin_answer(message: Message, *args, **kwargs):
 
 class AdminPanelSafeCleanupMiddleware(BaseMiddleware):
     async def __call__(self, handler, event, data):
+        # CLEAN_ADMIN_LOGIC_FIX
         try:
             if isinstance(event, Message):
                 user = getattr(event, "from_user", None)
@@ -654,66 +640,32 @@ class AdminPanelSafeCleanupMiddleware(BaseMiddleware):
                 if user and text and is_admin(user.id):
                     txt = clean_admin_text(text)
 
-                    should_touch_admin = (
-                        txt
-                        and not txt.startswith("/")
-                    )
-
-                    try:
-                        if should_touch_admin and is_customer_navigation_button_for_admin_guard(txt):
-                            should_touch_admin = False
-                    except Exception:
-                        pass
-
-                    if should_touch_admin:
-                        # INVALID_INPUT_SINGLE_WARNING_FIX_CLEAR
+                    if txt and not txt.startswith("/"):
                         try:
-                            old_warn = ADMIN_INVALID_WARNING_MESSAGES.pop(user.id, None)
-                            if old_warn:
-                                asyncio.create_task(_delete_admin_message_safely(event.bot, event.chat.id, old_warn))
+                            if is_customer_navigation_button_for_admin_guard(txt):
+                                return await handler(event, data)
                         except Exception:
                             pass
 
-                        # SINGLE_WARNING_RESTORED_FIX_CLEAR
-                        try:
-                            old_warn = ADMIN_INVALID_WARNING_MESSAGES.pop(user.id, None)
-                            if old_warn:
-                                asyncio.create_task(_delete_admin_message_safely(event.bot, event.chat.id, old_warn))
-                        except Exception:
-                            pass
-
-                        # REOPEN_MENU_SINGLE_INSTANCE_FIX_CLEAR
-                        try:
-                            old_reopen = ADMIN_REOPEN_MENU_MESSAGES.pop(user.id, None)
-                            if old_reopen:
-                                asyncio.create_task(_delete_admin_message_safely(event.bot, event.chat.id, old_reopen))
-                        except Exception:
-                            pass
-
+                        # If this is a real admin button, clean the previous bot admin screen once.
                         if is_admin_cleanup_active(user.id, text):
-                            # כפתור/פעולת אדמין אמיתית:
-                            # מנקים מסך קודם וגם מוחקים את הודעת הכפתור.
-                            await cleanup_admin_previous_screen(
-                                event.bot,
-                                user.id,
-                                event.chat.id
-                            )
+                            await cleanup_admin_previous_screen(event.bot, user.id, event.chat.id)
+                            try:
+                                old_reopen = ADMIN_REOPEN_MENU_MESSAGES.pop(user.id, None)
+                                if old_reopen:
+                                    asyncio.create_task(_delete_admin_message_safely(event.bot, event.chat.id, old_reopen))
+                            except Exception:
+                                pass
 
-                        # בכל מקרה בתוך אדמין מוחקים את הודעת המשתמש/הקשקוש,
-                        # אבל בלי למחוק את המסך הקיים אם זה לא כפתור אמיתי.
+                        # Always delete the user's admin button/garbage message in background.
                         asyncio.create_task(
-                            _delete_admin_message_safely(
-                                event.bot,
-                                event.chat.id,
-                                event.message_id
-                            )
+                            _delete_admin_message_safely(event.bot, event.chat.id, event.message_id)
                         )
 
         except Exception:
             pass
 
         return await handler(event, data)
-
 
 
 router.message.middleware(AdminPanelSafeCleanupMiddleware())
@@ -942,8 +894,8 @@ def admin_reports_back_keyboard():
 
 
 def admin_orders_back_keyboard():
-    # ORDERS_FULL_LOGIC_AUDIT_FIX
-    return orders_main_keyboard()
+    # CLEAN_ADMIN_LOGIC_FIX
+    return admin_orders_menu_keyboard()
 
 
 def admin_products_back_keyboard():
@@ -1024,11 +976,9 @@ def admin_marketing_back_keyboard():
 
 
 def admin_section_keyboard_for_step(step):
-    # SETTINGS_AND_INVALID_INPUT_FIX
-    # מחזיר מקלדת לפי האזור הנוכחי, כדי שקלט לא תקין לא יחזיר לפאנל הראשי.
+    # CLEAN_ADMIN_LOGIC_FIX
     step = str(step or "")
 
-    # ORDERS_FULL_LOGIC_AUDIT_FIX_EARLY_ORDERS
     if (
         step.startswith("orders")
         or step.startswith("order_")
@@ -1039,61 +989,45 @@ def admin_section_keyboard_for_step(step):
             "status_value", "order_status_value", "update_order_status",
         }
     ):
-        return orders_main_keyboard()
-
-    if step.startswith("orders") or step in {
-        "orders_select", "order_actions", "status_value",
-        "search_order", "search_phone", "order_status_number",
-        "status_order_number", "order_status_value",
-    }:
-        return admin_orders_back_keyboard()
+        return admin_orders_menu_keyboard()
 
     if step.startswith("products") or step in {
-        "product_select", "price_value", "description_value", "image_photo",
-        "product_active", "product_delete", "add_product_category",
-        "add_product_name", "add_product_price", "add_product_description",
-        "add_product_stock", "add_product_image"
+        "products_section", "product_select", "price_name", "price_value",
+        "description_name", "description_value", "image_name", "image_photo",
+        "product_active", "product_delete", "off_name", "on_name", "delete_name",
+        "add_product_category", "add_product_name", "add_product_price",
+        "add_product_description", "add_product_stock", "add_product_image",
+        "add_category", "add_name", "add_price", "add_description",
+        "add_max_qty", "add_stock"
     }:
-        return admin_products_back_keyboard()
+        return admin_products_menu_keyboard()
 
-    if step.startswith("stock") or step in {"stock_value", "stock_add_value"}:
-        return admin_stock_back_keyboard()
+    if step.startswith("stock") or step in {"stock_section", "stock_name", "stock_value", "stock_add_value", "add_stock_name", "add_stock_value"}:
+        return admin_stock_menu_keyboard()
 
-    if step.startswith("customers") or step in {"customer_profile", "customers_search", "customers_select"}:
-        return admin_customers_back_keyboard()
+    if step.startswith("customers") or step in {"customers_menu", "customers_root", "customer_profile", "customers_search", "customers_select"}:
+        return admin_customers_menu_root_keyboard()
 
     if step.startswith("coupon") or step.startswith("coupons"):
-        return admin_coupons_back_keyboard()
+        return admin_coupons_root_keyboard()
 
     if "support" in step or step.startswith("ticket"):
-        return admin_support_back_keyboard()
+        return admin_support_root_keyboard()
 
     if step.startswith("broadcast") or step in {"marketing_section", "broadcast_text", "broadcast_confirm"}:
-        return admin_marketing_back_keyboard()
+        return admin_marketing_menu_keyboard()
 
     if step.startswith("reports") or step.startswith("statistics") or step in {
-        "statistics_date_input", "statistics_date", "date_statistics", "stats_date_input"
+        "reports_section", "statistics_date_input", "statistics_date", "date_statistics", "stats_date_input"
     }:
-        try:
-            return admin_reports_back_keyboard()
-        except Exception:
-            return admin_reports_menu_keyboard()
+        return admin_reports_menu_keyboard()
 
     if step.startswith("settings") or step in {
-        "settings_section",
-        "settings_menu",
-        "maintenance_mode",
-        "logs_menu",
-        "backup_menu",
-        "audit_logs_menu",
-        "audit_search_admin_select",
-        "audit_search_product_select",
-        "audit_search_action_select",
+        "settings_section", "settings_menu", "maintenance_mode", "logs_menu",
+        "backup_menu", "audit_logs_menu", "audit_search_admin_select",
+        "audit_search_product_select", "audit_search_action_select",
     }:
-        try:
-            return admin_settings_back_keyboard()
-        except Exception:
-            return admin_settings_menu_keyboard()
+        return admin_settings_menu_keyboard()
 
     return admin_keyboard()
 
@@ -1143,48 +1077,28 @@ async def delete_admin_message(message: Message):
 
 
 def is_admin_button_only_step(step):
-    # INVALID_INPUT_REOPEN_KEYBOARD_FIX
-    return step in {
+    # CLEAN_ADMIN_LOGIC_FIX
+    return str(step or "") in {
         "admin",
 
-        "orders_section",
-        "orders_select",
-        "order_actions",
-        "status_value",
+        "orders_section", "orders_select", "order_actions", "status_value",
 
-        "products_section",
-        "product_select",
-        "product_active",
-        "product_delete",
-        "image_photo",
+        "products_section", "product_select", "product_active", "product_delete",
 
         "stock_section",
 
-        "customers_menu",
-        "customers_root",
-        "customers_select",
-        "customer_profile",
+        "customers_menu", "customers_root", "customers_select", "customer_profile",
 
-        "coupons_menu",
-        "coupons_section",
+        "coupons_menu", "coupons_section",
 
-        "support_menu",
-        "support_section",
-        "support_ticket",
-        "ticket_actions",
+        "support_menu", "support_section", "support_ticket", "ticket_actions",
 
-        "reports_section",
-        "statistics_section",
+        "reports_section", "statistics_section",
 
-        "settings_section",
-        "settings_menu",
-        "maintenance_mode",
-        "logs_menu",
-        "backup_menu",
-        "audit_logs_menu",
+        "settings_section", "settings_menu", "maintenance_mode", "logs_menu",
+        "backup_menu", "audit_logs_menu",
 
-        "broadcast_confirm",
-        "marketing_section",
+        "broadcast_confirm", "marketing_section",
     }
 
 
@@ -2203,17 +2117,8 @@ def admin_order_result_back_keyboard():
 
 
 def orders_main_keyboard():
-    # ORDERS_FULL_LOGIC_AUDIT_FIX
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📋 הזמנות פתוחות")],
-            [KeyboardButton(text="🆕 הזמנות חדשות"), KeyboardButton(text="🧾 הזמנות אחרונות")],
-            [KeyboardButton(text="🔎 חפש הזמנה"), KeyboardButton(text="📞 חפש לפי טלפון")],
-            [KeyboardButton(text="🔄 עדכן סטטוס הזמנה")],
-            [KeyboardButton(text="⬅️ חזרה לניהול")]
-        ],
-        resize_keyboard=True
-    )
+    # CLEAN_ADMIN_LOGIC_FIX — single orders menu UI
+    return admin_orders_menu_keyboard()
 
 
 def order_select_keyboard(orders, back_text="⬅️ חזרה לניהול הזמנות"):
@@ -4872,10 +4777,9 @@ async def admin_category_nav_stability(message: Message):
 
 
 async def admin_unknown_text_same_place(message: Message, step: str):
-    # ORDERS_SUBSECTION_REOPEN_FIX
-    # קשקוש במסכי כפתורים:
-    # מוחקים את הקשקוש, מוחקים את התפריט/מסך fallback הקודם,
-    # ומחזירים את אותו תת-מסך שבו המשתמש נמצא.
+    # CLEAN_ADMIN_LOGIC_FIX
+    # Generic garbage in button-only admin screens:
+    # delete typed message, remove previous reopen message, reopen same screen once.
     try:
         await delete_admin_message(message)
     except Exception:
@@ -4891,12 +4795,11 @@ async def admin_unknown_text_same_place(message: Message, step: str):
 
     try:
         uid = message.from_user.id
-        state = admin_states.get(uid, {})
+        state = get_admin_states_store().get(uid, {}) or {}
         current_step = str(step or state.get("step") or "")
         last_section = state.get("orders_last_section")
 
-        # אם נמצאים בתת-קטגוריה של הזמנות — מחזירים את אותה קטגוריה,
-        # לא את תפריט ניהול ההזמנות הראשי.
+        # Orders list subsections: reopen the same subsection, not the main orders menu.
         if last_section in {"recent", "new", "open", "approved", "processing", "shipping", "done", "cancelled"}:
             try:
                 orders = get_orders_for_section(last_section, 30)
@@ -4904,11 +4807,10 @@ async def admin_unknown_text_same_place(message: Message, step: str):
                 orders = []
 
             if orders:
-                admin_states[uid] = {
+                get_admin_states_store()[uid] = {
                     "step": "orders_select",
                     "orders_last_section": last_section
                 }
-
                 sent = await tracked_admin_answer(
                     message,
                     rtl(
@@ -4920,22 +4822,21 @@ async def admin_unknown_text_same_place(message: Message, step: str):
                     parse_mode="HTML"
                 )
             else:
-                admin_states[uid] = {
+                get_admin_states_store()[uid] = {
                     "step": "orders_section",
                     "orders_last_section": last_section
                 }
-
                 sent = await tracked_admin_answer(
                     message,
                     rtl(f"<b>{section_title(last_section)}</b>\n\nאין הזמנות להצגה."),
-                    reply_markup=orders_main_keyboard(),
+                    reply_markup=admin_orders_menu_keyboard(),
                     parse_mode="HTML"
                 )
 
             remember_reopen_menu(message, sent)
             return
 
-        # במסכי חיפוש/סטטוס נשארים באותו מסך קלט.
+        # Manual input orders screens: do NOT validate here. Their own handlers do exact validation.
         if current_step in {"search_order", "search_phone", "status_order_number", "order_status_number"}:
             if current_step == "search_order":
                 text_to_send = rtl("<b>🔎 חיפוש הזמנה</b>\n\nרשום מספר הזמנה.\nלדוגמה: <code>V1001</code>")
@@ -4947,36 +4848,28 @@ async def admin_unknown_text_same_place(message: Message, step: str):
             sent = await tracked_admin_answer(
                 message,
                 text_to_send,
-                reply_markup=orders_main_keyboard(),
+                reply_markup=admin_orders_menu_keyboard(),
                 parse_mode="HTML"
             )
             remember_reopen_menu(message, sent)
             return
 
-        if (
-            state.get("orders_last_section")
-            or current_step.startswith("orders")
-            or current_step.startswith("order_")
-            or current_step in {"orders_select", "order_actions", "status_value", "order_status_value"}
-        ):
-            keyboard = orders_main_keyboard()
-            text_to_send = rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:")
-
-        elif current_step == "admin":
-            keyboard = admin_keyboard()
-            text_to_send = rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:")
-
-        else:
-            keyboard = admin_section_keyboard_for_step(current_step)
-            text_to_send = rtl("<b>בחר פעולה:</b>")
+        if current_step == "admin":
+            sent = await tracked_admin_answer(
+                message,
+                rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
+                reply_markup=admin_keyboard(),
+                parse_mode="HTML"
+            )
+            remember_reopen_menu(message, sent)
+            return
 
         sent = await tracked_admin_answer(
             message,
-            text_to_send,
-            reply_markup=keyboard,
+            rtl("<b>בחר פעולה:</b>"),
+            reply_markup=admin_section_keyboard_for_step(current_step),
             parse_mode="HTML"
         )
-
         remember_reopen_menu(message, sent)
 
     except Exception:
@@ -5131,64 +5024,57 @@ async def admin_new_orders_stay_in_orders_fix(message: Message):
 
 @router.message(lambda message: is_admin(message.from_user.id) and (admin_states.get(message.from_user.id) or {}).get("step") == "search_phone")
 @router.message(lambda message: is_admin(message.from_user.id) and (admin_states.get(message.from_user.id) or {}).get("step") == "search_phone")
+@router.message(lambda message: is_admin(message.from_user.id) and (get_admin_states_store().get(message.from_user.id) or {}).get("step") == "search_phone")
 async def admin_search_phone_input_stay_fix(message: Message):
-    # ORDERS_FULL_LOGIC_AUDIT_FIX
+    # CLEAN_ADMIN_LOGIC_FIX
     uid = message.from_user.id
     txt = clean_admin_text(message.text)
 
     if txt == "⬅️ חזרה לניהול":
-        admin_states[uid] = {"step": "admin"}
+        get_admin_states_store()[uid] = {"step": "admin"}
         await tracked_admin_answer(message, rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"), reply_markup=admin_keyboard(), parse_mode="HTML")
         return
 
     if txt == "⬅️ חזרה לניהול הזמנות":
-        admin_states[uid] = {"step": "orders_section", "orders_last_section": "phone"}
-        await tracked_admin_answer(message, rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"), reply_markup=orders_main_keyboard(), parse_mode="HTML")
+        get_admin_states_store()[uid] = {"step": "orders_section", "orders_last_section": "phone"}
+        await tracked_admin_answer(message, rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"), reply_markup=admin_orders_menu_keyboard(), parse_mode="HTML")
         return
 
     digits = re.sub(r"\D+", "", txt or "")
     if len(digits) < 7:
-        admin_states[uid] = {"step": "search_phone", "orders_last_section": "phone"}
-        try:
-            await delete_previous_invalid_warning(message)
-        except Exception:
-            pass
+        get_admin_states_store()[uid] = {"step": "search_phone", "orders_last_section": "phone"}
+        await delete_previous_reopen_menu(message)
         sent = await tracked_admin_answer(
             message,
             rtl("<b>⚠️ מספר טלפון לא תקין.</b>\n\nרשום מספר טלפון מלא לחיפוש.\nלדוגמה: <code>0547937503</code>"),
-            reply_markup=orders_main_keyboard(),
+            reply_markup=admin_orders_menu_keyboard(),
             parse_mode="HTML"
         )
-        try:
-            remember_invalid_warning_message(message, sent)
-        except Exception:
-            pass
+        remember_reopen_menu(message, sent)
         return
 
-    orders = get_orders_by_phone(digits, 30)
-
+    orders = get_orders_by_phone(digits, 20)
     if not orders:
-        admin_states[uid] = {"step": "search_phone", "orders_last_section": "phone"}
-        try:
-            await delete_previous_invalid_warning(message)
-        except Exception:
-            pass
+        get_admin_states_store()[uid] = {"step": "search_phone", "orders_last_section": "phone"}
+        await delete_previous_reopen_menu(message)
         sent = await tracked_admin_answer(
             message,
             rtl("<b>⚠️ לא נמצאו הזמנות למספר הזה.</b>\n\nנסה מספר טלפון אחר."),
-            reply_markup=orders_main_keyboard(),
+            reply_markup=admin_orders_menu_keyboard(),
             parse_mode="HTML"
         )
-        try:
-            remember_invalid_warning_message(message, sent)
-        except Exception:
-            pass
+        remember_reopen_menu(message, sent)
         return
 
-    admin_states[uid] = {"step": "orders_select", "orders_last_section": "phone", "orders_last_phone": digits}
+    await delete_previous_reopen_menu(message)
+    get_admin_states_store()[uid] = {"step": "orders_select", "orders_last_section": "phone", "orders_last_phone": digits}
     await tracked_admin_answer(
         message,
-        rtl("<b>📞 תוצאות חיפוש לפי טלפון</b>\n\n" f"נמצאו {len(orders)} הזמנות.\n" "בחר הזמנה מהרשימה."),
+        rtl(
+            "<b>📞 תוצאות חיפוש לפי טלפון</b>\n\n"
+            f"נמצאו {len(orders)} הזמנות.\n"
+            "בחר הזמנה מהרשימה."
+        ),
         reply_markup=order_select_keyboard(orders),
         parse_mode="HTML"
     )
@@ -5196,61 +5082,50 @@ async def admin_search_phone_input_stay_fix(message: Message):
 
 @router.message(lambda message: is_admin(message.from_user.id) and (admin_states.get(message.from_user.id) or {}).get("step") == "search_order")
 @router.message(lambda message: is_admin(message.from_user.id) and (admin_states.get(message.from_user.id) or {}).get("step") == "search_order")
+@router.message(lambda message: is_admin(message.from_user.id) and (get_admin_states_store().get(message.from_user.id) or {}).get("step") == "search_order")
 async def admin_search_order_input_stay_fix(message: Message):
-    # ORDERS_FULL_LOGIC_AUDIT_FIX
+    # CLEAN_ADMIN_LOGIC_FIX
     uid = message.from_user.id
     txt = clean_admin_text(message.text)
     order_number = (txt or "").strip().upper()
 
     if txt == "⬅️ חזרה לניהול":
-        admin_states[uid] = {"step": "admin"}
+        get_admin_states_store()[uid] = {"step": "admin"}
         await tracked_admin_answer(message, rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"), reply_markup=admin_keyboard(), parse_mode="HTML")
         return
 
     if txt == "⬅️ חזרה לניהול הזמנות":
-        admin_states[uid] = {"step": "orders_section", "orders_last_section": "search"}
-        await tracked_admin_answer(message, rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"), reply_markup=orders_main_keyboard(), parse_mode="HTML")
+        get_admin_states_store()[uid] = {"step": "orders_section", "orders_last_section": "search"}
+        await tracked_admin_answer(message, rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"), reply_markup=admin_orders_menu_keyboard(), parse_mode="HTML")
         return
 
     if not order_number or len(order_number) < 2:
-        admin_states[uid] = {"step": "search_order", "orders_last_section": "search"}
-        try:
-            await delete_previous_invalid_warning(message)
-        except Exception:
-            pass
+        get_admin_states_store()[uid] = {"step": "search_order", "orders_last_section": "search"}
+        await delete_previous_reopen_menu(message)
         sent = await tracked_admin_answer(
             message,
             rtl("<b>⚠️ מספר הזמנה לא תקין.</b>\n\nרשום מספר הזמנה מלא לחיפוש.\nלדוגמה: <code>V1001</code>"),
-            reply_markup=orders_main_keyboard(),
+            reply_markup=admin_orders_menu_keyboard(),
             parse_mode="HTML"
         )
-        try:
-            remember_invalid_warning_message(message, sent)
-        except Exception:
-            pass
+        remember_reopen_menu(message, sent)
         return
 
     order = get_order_by_number(order_number)
-
     if not order:
-        admin_states[uid] = {"step": "search_order", "orders_last_section": "search"}
-        try:
-            await delete_previous_invalid_warning(message)
-        except Exception:
-            pass
+        get_admin_states_store()[uid] = {"step": "search_order", "orders_last_section": "search"}
+        await delete_previous_reopen_menu(message)
         sent = await tracked_admin_answer(
             message,
             rtl("<b>⚠️ ההזמנה לא נמצאה.</b>\n\nנסה מספר הזמנה אחר.\nלדוגמה: <code>V1001</code>"),
-            reply_markup=orders_main_keyboard(),
+            reply_markup=admin_orders_menu_keyboard(),
             parse_mode="HTML"
         )
-        try:
-            remember_invalid_warning_message(message, sent)
-        except Exception:
-            pass
+        remember_reopen_menu(message, sent)
         return
 
-    admin_states[uid] = {"step": "order_actions", "orders_last_section": "search", "selected_order": order_number}
+    await delete_previous_reopen_menu(message)
+    get_admin_states_store()[uid] = {"step": "order_actions", "orders_last_section": "search", "selected_order": order_number}
     await tracked_admin_answer(
         message,
         format_order(order),
@@ -5259,70 +5134,58 @@ async def admin_search_order_input_stay_fix(message: Message):
     )
 
 
-
-
 @router.message(lambda message: is_admin(message.from_user.id) and (admin_states.get(message.from_user.id) or {}).get("step") in {"status_order_number", "order_status_number"})
+@router.message(lambda message: is_admin(message.from_user.id) and (get_admin_states_store().get(message.from_user.id) or {}).get("step") in {"status_order_number", "order_status_number"})
 async def admin_status_order_number_stay_fix(message: Message):
-    # ORDERS_FULL_LOGIC_AUDIT_FIX
+    # CLEAN_ADMIN_LOGIC_FIX
     uid = message.from_user.id
     txt = clean_admin_text(message.text)
     order_number = (txt or "").strip().upper()
 
     if txt == "⬅️ חזרה לניהול":
-        admin_states[uid] = {"step": "admin"}
+        get_admin_states_store()[uid] = {"step": "admin"}
         await tracked_admin_answer(message, rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"), reply_markup=admin_keyboard(), parse_mode="HTML")
         return
 
     if txt == "⬅️ חזרה לניהול הזמנות":
-        admin_states[uid] = {"step": "orders_section", "orders_last_section": "status"}
-        await tracked_admin_answer(message, rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"), reply_markup=orders_main_keyboard(), parse_mode="HTML")
+        get_admin_states_store()[uid] = {"step": "orders_section", "orders_last_section": "status"}
+        await tracked_admin_answer(message, rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"), reply_markup=admin_orders_menu_keyboard(), parse_mode="HTML")
         return
 
     if not order_number or len(order_number) < 2:
-        admin_states[uid] = {"step": "status_order_number", "orders_last_section": "status"}
-        try:
-            await delete_previous_invalid_warning(message)
-        except Exception:
-            pass
+        get_admin_states_store()[uid] = {"step": "status_order_number", "orders_last_section": "status"}
+        await delete_previous_reopen_menu(message)
         sent = await tracked_admin_answer(
             message,
             rtl("<b>⚠️ מספר הזמנה לא תקין.</b>\n\nרשום מספר הזמנה מלא לעדכון.\nלדוגמה: <code>V1001</code>"),
-            reply_markup=orders_main_keyboard(),
+            reply_markup=admin_orders_menu_keyboard(),
             parse_mode="HTML"
         )
-        try:
-            remember_invalid_warning_message(message, sent)
-        except Exception:
-            pass
+        remember_reopen_menu(message, sent)
         return
 
     order = get_order_by_number(order_number)
-
     if not order:
-        admin_states[uid] = {"step": "status_order_number", "orders_last_section": "status"}
-        try:
-            await delete_previous_invalid_warning(message)
-        except Exception:
-            pass
+        get_admin_states_store()[uid] = {"step": "status_order_number", "orders_last_section": "status"}
+        await delete_previous_reopen_menu(message)
         sent = await tracked_admin_answer(
             message,
             rtl("<b>⚠️ ההזמנה לא נמצאה.</b>\n\nנסה מספר הזמנה אחר.\nלדוגמה: <code>V1001</code>"),
-            reply_markup=orders_main_keyboard(),
+            reply_markup=admin_orders_menu_keyboard(),
             parse_mode="HTML"
         )
-        try:
-            remember_invalid_warning_message(message, sent)
-        except Exception:
-            pass
+        remember_reopen_menu(message, sent)
         return
 
-    admin_states[uid] = {"step": "status_value", "orders_last_section": "status", "selected_order": order_number}
+    await delete_previous_reopen_menu(message)
+    get_admin_states_store()[uid] = {"step": "status_value", "orders_last_section": "status", "selected_order": order_number}
     await tracked_admin_answer(
         message,
-        rtl("<b>🔄 בחר סטטוס חדש להזמנה</b>\n\n" + format_order(order)),
+        rtl("<b>🔄 בחר סטטוס חדש להזמנה</b>\n\n") + format_order(order),
         reply_markup=order_action_keyboard(order.get("status"), is_order_pickup(order)),
         parse_mode="HTML"
     )
+
 
 @router.message(is_admin_active_step)
 async def admin_flow(message: Message):
@@ -6361,46 +6224,32 @@ async def admin_flow(message: Message):
         return
 
     if step == "search_order":
-        # ORDERS_FULL_LOGIC_AUDIT_FIX_FINAL
+        # CLEAN_ADMIN_LOGIC_FIX — legacy branch delegates to canonical handler logic through same validation
         order_number = (txt or "").strip().upper()
-
         if not order_number or len(order_number) < 2:
-            admin_states[uid] = {"step": "search_order", "orders_last_section": "search"}
-            try:
-                await delete_previous_invalid_warning(message)
-            except Exception:
-                pass
-            sent = await tracked_admin_answer(message,
+            get_admin_states_store()[uid] = {"step": "search_order", "orders_last_section": "search"}
+            await delete_previous_reopen_menu(message)
+            sent = await tracked_admin_answer(
+                message,
                 rtl("<b>⚠️ מספר הזמנה לא תקין.</b>\n\nרשום מספר הזמנה מלא לחיפוש.\nלדוגמה: <code>V1001</code>"),
-                reply_markup=orders_main_keyboard(),
+                reply_markup=admin_orders_menu_keyboard(),
                 parse_mode="HTML"
             )
-            try:
-                remember_invalid_warning_message(message, sent)
-            except Exception:
-                pass
+            remember_reopen_menu(message, sent)
             return
-
         order = get_order_by_number(order_number)
-
         if not order:
-            admin_states[uid] = {"step": "search_order", "orders_last_section": "search"}
-            try:
-                await delete_previous_invalid_warning(message)
-            except Exception:
-                pass
-            sent = await tracked_admin_answer(message,
+            get_admin_states_store()[uid] = {"step": "search_order", "orders_last_section": "search"}
+            await delete_previous_reopen_menu(message)
+            sent = await tracked_admin_answer(
+                message,
                 rtl("<b>⚠️ ההזמנה לא נמצאה.</b>\n\nנסה מספר הזמנה אחר.\nלדוגמה: <code>V1001</code>"),
-                reply_markup=orders_main_keyboard(),
+                reply_markup=admin_orders_menu_keyboard(),
                 parse_mode="HTML"
             )
-            try:
-                remember_invalid_warning_message(message, sent)
-            except Exception:
-                pass
+            remember_reopen_menu(message, sent)
             return
-
-        admin_states[uid] = {"step": "order_actions", "orders_last_section": "search", "selected_order": order_number}
+        get_admin_states_store()[uid] = {"step": "order_actions", "orders_last_section": "search", "selected_order": order_number}
         await tracked_admin_answer(
             message,
             format_order(order),
@@ -6410,47 +6259,34 @@ async def admin_flow(message: Message):
         return
 
     if step == "search_phone":
-        # ORDERS_FULL_LOGIC_AUDIT_FIX_FINAL
-        digits = re.sub(r"\\D+", "", txt or "")
-
+        # CLEAN_ADMIN_LOGIC_FIX
+        digits = re.sub(r"\D+", "", txt or "")
         if len(digits) < 7:
-            admin_states[uid] = {"step": "search_phone", "orders_last_section": "phone"}
-            try:
-                await delete_previous_invalid_warning(message)
-            except Exception:
-                pass
-            sent = await tracked_admin_answer(message,
+            get_admin_states_store()[uid] = {"step": "search_phone", "orders_last_section": "phone"}
+            await delete_previous_reopen_menu(message)
+            sent = await tracked_admin_answer(
+                message,
                 rtl("<b>⚠️ מספר טלפון לא תקין.</b>\n\nרשום מספר טלפון מלא לחיפוש.\nלדוגמה: <code>0547937503</code>"),
-                reply_markup=orders_main_keyboard(),
+                reply_markup=admin_orders_menu_keyboard(),
                 parse_mode="HTML"
             )
-            try:
-                remember_invalid_warning_message(message, sent)
-            except Exception:
-                pass
+            remember_reopen_menu(message, sent)
             return
-
         orders = get_orders_by_phone(digits, 20)
-
         if not orders:
-            admin_states[uid] = {"step": "search_phone", "orders_last_section": "phone"}
-            try:
-                await delete_previous_invalid_warning(message)
-            except Exception:
-                pass
-            sent = await tracked_admin_answer(message,
+            get_admin_states_store()[uid] = {"step": "search_phone", "orders_last_section": "phone"}
+            await delete_previous_reopen_menu(message)
+            sent = await tracked_admin_answer(
+                message,
                 rtl("<b>⚠️ לא נמצאו הזמנות למספר הזה.</b>\n\nנסה מספר טלפון אחר."),
-                reply_markup=orders_main_keyboard(),
+                reply_markup=admin_orders_menu_keyboard(),
                 parse_mode="HTML"
             )
-            try:
-                remember_invalid_warning_message(message, sent)
-            except Exception:
-                pass
+            remember_reopen_menu(message, sent)
             return
-
-        admin_states[uid] = {"step": "orders_select", "orders_last_section": "phone", "orders_last_phone": digits}
-        await tracked_admin_answer(message,
+        get_admin_states_store()[uid] = {"step": "orders_select", "orders_last_section": "phone", "orders_last_phone": digits}
+        await tracked_admin_answer(
+            message,
             rtl("<b>📞 תוצאות חיפוש לפי טלפון</b>\n\n" f"נמצאו {len(orders)} הזמנות.\n" "בחר הזמנה מהרשימה."),
             reply_markup=order_select_keyboard(orders),
             parse_mode="HTML"
