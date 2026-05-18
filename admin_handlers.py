@@ -605,6 +605,14 @@ class AdminPanelSafeCleanupMiddleware(BaseMiddleware):
                         except Exception:
                             pass
 
+                        # SINGLE_WARNING_RESTORED_FIX_CLEAR
+                        try:
+                            old_warn = ADMIN_INVALID_WARNING_MESSAGES.pop(user.id, None)
+                            if old_warn:
+                                asyncio.create_task(_delete_admin_message_safely(event.bot, event.chat.id, old_warn))
+                        except Exception:
+                            pass
+
                         if is_admin_cleanup_active(user.id, text):
                             # כפתור/פעולת אדמין אמיתית:
                             # מנקים מסך קודם וגם מוחקים את הודעת הכפתור.
@@ -4782,12 +4790,14 @@ async def admin_category_nav_stability(message: Message):
 
 
 async def admin_unknown_text_same_place(message: Message, step: str):
-    # ORDERS_FULL_LOGIC_AUDIT_FIX
+    # SINGLE_WARNING_RESTORED_FIX
+    # כל קלט לא תקין מוחק קודם את האזהרה הקודמת, כדי שתישאר רק אחת.
     try:
         await delete_previous_invalid_warning(message)
 
         uid = message.from_user.id
-        state = admin_states.get(uid) or {}
+        state = get_admin_states_store().get(uid) if "get_admin_states_store" in globals() else (admin_states.get(uid) or {})
+        state = state or {}
         step = str(step or state.get("step") or "")
 
         if (
@@ -4813,8 +4823,10 @@ async def admin_unknown_text_same_place(message: Message, step: str):
             reply_markup=keyboard,
             parse_mode="HTML"
         )
+
         remember_invalid_warning_message(message, sent)
         return
+
     except Exception:
         try:
             await delete_previous_invalid_warning(message)
