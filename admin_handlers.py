@@ -4684,7 +4684,7 @@ async def admin_statistics_date_input_result_fix(message: Message):
         await tracked_admin_answer(
             message,
             rtl("<b>📊 סטטיסטיקה ודוחות</b>\n\nבחר פעולה:"),
-            reply_markup=admin_reports_back_keyboard(),
+            reply_markup=admin_orders_back_keyboard(),
             parse_mode="HTML"
         )
         return
@@ -4946,6 +4946,70 @@ async def admin_new_orders_stay_in_orders_fix(message: Message):
         message,
         rtl(
             "<b>🆕 הזמנות חדשות</b>\n\n"
+            f"נמצאו {len(orders)} הזמנות.\n"
+            "בחר הזמנה מהרשימה."
+        ),
+        reply_markup=order_select_keyboard(orders),
+        parse_mode="HTML"
+    )
+
+
+
+@router.message(lambda message: is_admin(message.from_user.id) and (admin_states.get(message.from_user.id) or {}).get("step") == "search_phone")
+async def admin_search_phone_input_stay_fix(message: Message):
+    # ORDER_PHONE_SEARCH_STAY_FIX
+    # כל קלט בתוך חיפוש לפי טלפון נשאר בניהול הזמנות.
+    uid = message.from_user.id
+    txt = clean_admin_text(message.text)
+
+    if txt == "⬅️ חזרה לניהול":
+        admin_states[uid] = {"step": "admin"}
+        await tracked_admin_answer(
+            message,
+            rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if txt == "⬅️ חזרה לניהול הזמנות":
+        admin_states[uid] = {"step": "orders_section", "orders_last_section": "phone"}
+        await tracked_admin_answer(
+            message,
+            rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"),
+            reply_markup=orders_main_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    # קלט לא תקין / קצר / קשקוש — לא מעבירים לסטטיסטיקה או פאנל ראשי.
+    digits = re.sub(r"\D+", "", txt or "")
+    if len(digits) < 7:
+        admin_states[uid] = {"step": "search_phone", "orders_last_section": "phone"}
+        await admin_unknown_text_same_place(message, "search_phone")
+        return
+
+    orders = get_orders_by_phone(digits, 30)
+
+    admin_states[uid] = {
+        "step": "orders_select",
+        "orders_last_section": "phone",
+        "orders_last_phone": digits,
+    }
+
+    if not orders:
+        await tracked_admin_answer(
+            message,
+            rtl("<b>⚠️ לא נמצאו הזמנות למספר הזה.</b>"),
+            reply_markup=admin_orders_back_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    await tracked_admin_answer(
+        message,
+        rtl(
+            "<b>📞 תוצאות חיפוש לפי טלפון</b>\n\n"
             f"נמצאו {len(orders)} הזמנות.\n"
             "בחר הזמנה מהרשימה."
         ),
