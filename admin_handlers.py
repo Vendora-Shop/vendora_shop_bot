@@ -129,6 +129,35 @@ def get_admin_states_store():
         admin_states
     except NameError:
         admin_states = {}
+
+# ================== DUPLICATE HANDLER CLEAN FIX ==================
+LAST_INVALID_WARNING = {}
+
+async def send_single_invalid_warning(message: Message, keyboard):
+    try:
+        uid = message.from_user.id
+
+        old_msg = LAST_INVALID_WARNING.get(uid)
+
+        if old_msg:
+            try:
+                await message.bot.delete_message(message.chat.id, old_msg)
+            except Exception:
+                pass
+
+        sent = await tracked_admin_answer(
+            message,
+            rtl("<b>⚠️ פעולה לא תקינה.</b>\n\nבחר פעולה מהתפריט למטה."),
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+
+        LAST_INVALID_WARNING[uid] = sent.message_id
+
+    except Exception:
+        pass
+
+
     return admin_states
 
 
@@ -4789,55 +4818,28 @@ async def admin_category_nav_stability(message: Message):
 
 
 
+
 async def admin_unknown_text_same_place(message: Message, step: str):
-    # SINGLE_WARNING_RESTORED_FIX
-    # כל קלט לא תקין מוחק קודם את האזהרה הקודמת, כדי שתישאר רק אחת.
-    try:
-        await delete_previous_invalid_warning(message)
+    uid = message.from_user.id
 
-        uid = message.from_user.id
-        state = get_admin_states_store().get(uid) if "get_admin_states_store" in globals() else (admin_states.get(uid) or {})
-        state = state or {}
-        step = str(step or state.get("step") or "")
+    state = admin_states.get(uid, {})
+    current_step = str(step or state.get("step") or "")
 
-        if (
-            state.get("orders_last_section")
-            or step.startswith("orders")
-            or step.startswith("order_")
-            or step in {
-                "orders_select", "order_actions",
-                "search_order", "search_phone",
-                "status_order_number", "order_status_number",
-                "status_value", "order_status_value",
-            }
-        ):
-            keyboard = orders_main_keyboard()
-        elif step == "admin":
-            keyboard = admin_keyboard()
-        else:
-            keyboard = admin_section_keyboard_for_step(step)
+    if (
+        state.get("orders_last_section")
+        or current_step.startswith("orders")
+        or current_step.startswith("order_")
+    ):
+        keyboard = orders_main_keyboard()
 
-        sent = await tracked_admin_answer(
-            message,
-            rtl("<b>⚠️ פעולה לא תקינה.</b>\n\nבחר פעולה מהתפריט למטה."),
-            reply_markup=keyboard,
-            parse_mode="HTML"
-        )
+    elif current_step == "admin":
+        keyboard = admin_keyboard()
 
-        remember_invalid_warning_message(message, sent)
-        return
+    else:
+        keyboard = admin_section_keyboard_for_step(current_step)
 
-    except Exception:
-        try:
-            await delete_previous_invalid_warning(message)
-            sent = await message.answer(
-                rtl("<b>⚠️ פעולה לא תקינה.</b>\n\nבחר פעולה מהתפריט למטה."),
-                reply_markup=orders_main_keyboard(),
-                parse_mode="HTML"
-            )
-            remember_invalid_warning_message(message, sent)
-        except Exception:
-            pass
+    await send_single_invalid_warning(message, keyboard)
+    return
 
 
 @router.message(F.text == "⬅️ חזרה לרשימת הזמנות")
