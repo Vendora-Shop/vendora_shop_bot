@@ -4819,26 +4819,23 @@ async def admin_category_nav_stability(message: Message):
 
 
 
+
 async def admin_unknown_text_same_place(message: Message, step: str):
-    uid = message.from_user.id
+    # NO_GENERIC_WARNING_FIX
+    # במסכים של כפתורים בלבד — קשקוש נמחק בשקט.
+    # התראות נשארות רק במסכים שמצפים לקלט ידני, כמו מספר הזמנה/טלפון.
+    try:
+        await delete_admin_message(message)
+    except Exception:
+        try:
+            await _delete_admin_message_safely(
+                message.bot,
+                message.chat.id,
+                message.message_id
+            )
+        except Exception:
+            pass
 
-    state = admin_states.get(uid, {})
-    current_step = str(step or state.get("step") or "")
-
-    if (
-        state.get("orders_last_section")
-        or current_step.startswith("orders")
-        or current_step.startswith("order_")
-    ):
-        keyboard = orders_main_keyboard()
-
-    elif current_step == "admin":
-        keyboard = admin_keyboard()
-
-    else:
-        keyboard = admin_section_keyboard_for_step(current_step)
-
-    await send_single_invalid_warning(message, keyboard)
     return
 
 
