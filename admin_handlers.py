@@ -370,7 +370,10 @@ async def tracked_admin_answer(message: Message, *args, **kwargs):
         state = admin_states.get(uid) or {}
         step = state.get("step")
         if kwargs.get("reply_markup") is None and step and step != "admin":
-            kwargs["reply_markup"] = admin_section_keyboard_for_step(step)
+            if str(step).startswith("orders") or step in {"orders_select", "order_actions", "status_value"}:
+                kwargs["reply_markup"] = admin_order_result_back_keyboard()
+            else:
+                kwargs["reply_markup"] = admin_section_keyboard_for_step(step)
     except Exception:
         pass
 
@@ -1835,6 +1838,19 @@ def format_date_he(date_text):
         return datetime.strptime(date_text, "%Y-%m-%d").strftime("%d.%m.%Y")
     except Exception:
         return date_text
+
+
+
+
+def admin_order_result_back_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="⬅️ חזרה לרשימת הזמנות")],
+            [KeyboardButton(text="⬅️ חזרה לניהול הזמנות")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
 
 
 
@@ -3610,7 +3626,7 @@ async def recent_orders(message: Message):
     )
 
     for order in reversed(orders):
-        await tracked_admin_answer(message, format_order(order), parse_mode="HTML")
+        await tracked_admin_answer(message, format_order(order), reply_markup=order_action_keyboard(order.get("status"), is_order_pickup(order)), parse_mode="HTML")
 
 
 @router.message(F.text == "🆕 הזמנות חדשות")
@@ -3631,7 +3647,7 @@ async def new_orders(message: Message):
     )
 
     for order in reversed(orders):
-        await tracked_admin_answer(message, format_order(order), parse_mode="HTML")
+        await tracked_admin_answer(message, format_order(order), reply_markup=order_action_keyboard(order.get("status"), is_order_pickup(order)), parse_mode="HTML")
 
 
 @router.message(F.text == "🔎 חפש הזמנה")
@@ -4526,6 +4542,47 @@ async def admin_unknown_text_same_place(message: Message, step: str):
             pass
 
 
+
+@router.message(F.text == "⬅️ חזרה לרשימת הזמנות")
+async def admin_back_to_orders_list_fix(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    uid = message.from_user.id
+    state = admin_states.get(uid) or {}
+    last_section = state.get("orders_last_section") or "open"
+
+    admin_states[uid] = {
+        "step": "orders_section",
+        "orders_last_section": last_section
+    }
+
+    try:
+        orders = get_orders_for_section(last_section, 30)
+    except Exception:
+        orders = []
+
+    if not orders:
+        await tracked_admin_answer(
+            message,
+            rtl(f"<b>{section_title(last_section)}</b>\n\nאין הזמנות להצגה."),
+            reply_markup=orders_main_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    await tracked_admin_answer(
+        message,
+        rtl(
+            f"<b>{section_title(last_section)}</b>\n\n"
+            f"נמצאו {len(orders)} הזמנות.\n"
+            "בחר הזמנה מהרשימה."
+        ),
+        reply_markup=order_select_keyboard(orders),
+        parse_mode="HTML"
+    )
+
+
 @router.message(is_admin_active_step)
 async def admin_flow(message: Message):
     # PRIORITY CUSTOMER BROADCAST STATES
@@ -4865,7 +4922,7 @@ async def admin_flow(message: Message):
         )
 
         for order in reversed(orders):
-            await tracked_admin_answer(message, format_order(order), parse_mode="HTML")
+            await tracked_admin_answer(message, format_order(order), reply_markup=order_action_keyboard(order.get("status"), is_order_pickup(order)), parse_mode="HTML")
         return
 
     if txt == "🆕 הזמנות חדשות":
@@ -4882,7 +4939,7 @@ async def admin_flow(message: Message):
         )
 
         for order in reversed(orders):
-            await tracked_admin_answer(message, format_order(order), parse_mode="HTML")
+            await tracked_admin_answer(message, format_order(order), reply_markup=order_action_keyboard(order.get("status"), is_order_pickup(order)), parse_mode="HTML")
         return
 
     state = admin_states.get(uid) or {}
@@ -5590,7 +5647,7 @@ async def admin_flow(message: Message):
         )
 
         for order in orders:
-            await tracked_admin_answer(message, format_order(order), parse_mode="HTML")
+            await tracked_admin_answer(message, format_order(order), reply_markup=order_action_keyboard(order.get("status"), is_order_pickup(order)), parse_mode="HTML")
 
         return
 
