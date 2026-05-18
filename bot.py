@@ -3,7 +3,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.types import MenuButtonDefault
 
 from config import BOT_TOKEN
-from database import create_tables
+from database import create_tables, get_active_products
 from admin_handlers import router as admin_router
 from shop_handlers import router as shop_router
 from auto_backup_scheduler import automatic_backup_loop
@@ -55,6 +55,25 @@ async def global_recovery_error_handler(event):
     return True
 
 
+async def warmup_runtime_cache():
+    # PERFORMANCE_V17_CACHE_WARMUP
+    # חימום cache ראשוני אחרי Deploy.
+    # לא משנה לוגיקה עסקית — רק גורם לפתיחה הראשונה של חנות/מוצרים להיות מהירה יותר.
+    try:
+        await asyncio.to_thread(get_active_products)
+        log_info("Active products cache warmed", kind="performance")
+    except Exception as e:
+        log_error(e, context="warmup active products cache")
+
+    try:
+        from shop_handlers import load_banner_file_ids
+        load_banner_file_ids()
+        log_info("Banner file_id cache warmed", kind="performance")
+    except Exception as e:
+        log_error(e, context="warmup banner cache")
+
+
+
 async def main():
     try:
         log_info("Vendora startup started", kind="system")
@@ -62,6 +81,10 @@ async def main():
         create_tables()
         log_info("Database tables initialized", kind="system")
         log_info("Performance Safe V1 active", kind="system")
+
+        # PERFORMANCE_V17_CACHE_WARMUP
+        asyncio.create_task(warmup_runtime_cache())
+        log_info("Runtime cache warmup scheduled", kind="performance")
 
         # STABLE_UI_V2:
         # לא מגדירים פקודות קבועות בכפתור Menu הרשמי של Telegram.
