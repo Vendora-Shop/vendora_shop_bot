@@ -377,6 +377,70 @@ async def remove_admin_reply_keyboard(message: Message):
 
 
 router = Router()
+
+
+# ================== EXIT_ADMIN_KEYBOARD_FINAL_FIX ==================
+# חייב להיות לפני כל handler כללי של אדמין.
+@router.message(lambda message: is_admin(message.from_user.id) and clean_admin_text(message.text) in {
+    "יציאה מניהול",
+    "יציאה מניהול ⬅️",
+    "⬅️ יציאה מניהול",
+    "🚪 יציאה מניהול",
+    "יציאה מפאנל ניהול",
+})
+async def admin_exit_keyboard_final_fix(message: Message):
+    uid = message.from_user.id
+
+    try:
+        admin_states.pop(uid, None)
+    except Exception:
+        pass
+
+    try:
+        if "admin_set_area" in globals():
+            admin_set_area(uid, "admin")
+    except Exception:
+        pass
+
+    # מוחקים את הודעת הלחיצה עצמה, אבל לא את הודעת הסרת המקלדת.
+    try:
+        asyncio.create_task(_delete_admin_message_safely(message.bot, message.chat.id, message.message_id))
+    except Exception:
+        pass
+
+    # שלב קריטי: הסרת Reply Keyboard של האדמין.
+    # לא מוחקים את ההודעה הזאת מיד, כדי שטלגרם יספיק להסיר את המקלדת.
+    try:
+        await message.answer(
+            rtl("<b>✅ יצאת מפאנל הניהול.</b>"),
+            reply_markup=ReplyKeyboardRemove(),
+            parse_mode="HTML"
+        )
+    except Exception:
+        try:
+            await message.answer(
+                "✅ יצאת מפאנל הניהול.",
+                reply_markup=ReplyKeyboardRemove()
+            )
+        except Exception:
+            pass
+
+    # רק אחרי הסרת המקלדת — פתיחת תפריט לקוח.
+    try:
+        from shop_handlers import send_main_menu_greeting_banner_caption
+        await send_main_menu_greeting_banner_caption(message)
+        return
+    except Exception:
+        pass
+
+    try:
+        from shop_handlers import reset_customer_to_main_menu
+        await reset_customer_to_main_menu(message)
+        return
+    except Exception:
+        pass
+
+
 admin_states = {}
 
 
@@ -4536,52 +4600,6 @@ async def admin_area_tracker(message: Message):
 
     return await admin_flow(message)
 
-
-@router.message(F.text.in_({"יציאה מניהול", "🚪 יציאה מניהול"}))
-async def admin_exit_keyboard_fix(message: Message):
-    # EXIT_ADMIN_KEYBOARD_FIX
-    if not is_admin(message.from_user.id):
-        return
-
-    uid = message.from_user.id
-
-    try:
-        admin_states.pop(uid, None)
-    except Exception:
-        pass
-
-    try:
-        await remove_admin_reply_keyboard(message)
-    except Exception:
-        pass
-
-    try:
-        await tracked_admin_answer(
-            message,
-            rtl("<b>✅ יצאת מפאנל הניהול.</b>"),
-            reply_markup=ReplyKeyboardRemove(),
-            parse_mode="HTML"
-        )
-    except Exception:
-        try:
-            await message.answer(
-                rtl("<b>✅ יצאת מפאנל הניהול.</b>"),
-                reply_markup=ReplyKeyboardRemove(),
-                parse_mode="HTML"
-            )
-        except Exception:
-            pass
-
-    # פתיחת תפריט לקוח אחרי שהמקלדת של האדמין הוסרה.
-    try:
-        from shop_handlers import send_main_menu_greeting_banner_caption
-        await send_main_menu_greeting_banner_caption(message)
-    except Exception:
-        try:
-            from shop_handlers import reset_customer_to_main_menu
-            await reset_customer_to_main_menu(message)
-        except Exception:
-            pass
 
 
 @router.message(is_admin_active_step)
