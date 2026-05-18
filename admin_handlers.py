@@ -387,6 +387,16 @@ async def tracked_admin_answer(message: Message, *args, **kwargs):
     except Exception:
         pass
 
+    # SETTINGS_AND_INVALID_INPUT_FIX_REPLYMARKUP
+    try:
+        uid = message.from_user.id
+        state = admin_states.get(uid) or {}
+        step = state.get("step")
+        if kwargs.get("reply_markup") is None and step and step != "admin":
+            kwargs["reply_markup"] = admin_section_keyboard_for_step(step)
+    except Exception:
+        pass
+
     sent = await message.answer(*args, **kwargs)
 
     try:
@@ -755,10 +765,15 @@ def admin_marketing_back_keyboard():
 
 
 def admin_section_keyboard_for_step(step):
-    # PERFORMANCE_V11_NAV_STABILITY
+    # SETTINGS_AND_INVALID_INPUT_FIX
+    # מחזיר מקלדת לפי האזור הנוכחי, כדי שקלט לא תקין לא יחזיר לפאנל הראשי.
     step = str(step or "")
 
-    if step.startswith("orders") or step in {"order_actions", "status_value"}:
+    if step.startswith("orders") or step in {
+        "orders_select", "order_actions", "status_value",
+        "search_order", "search_phone", "order_status_number",
+        "status_order_number", "order_status_value",
+    }:
         return admin_orders_back_keyboard()
 
     if step.startswith("products") or step in {
@@ -781,18 +796,49 @@ def admin_section_keyboard_for_step(step):
     if "support" in step or step.startswith("ticket"):
         return admin_support_back_keyboard()
 
-    if step.startswith("broadcast") or step in {"marketing_section"}:
+    if step.startswith("broadcast") or step in {"marketing_section", "broadcast_text", "broadcast_confirm"}:
         return admin_marketing_back_keyboard()
 
-    if step.startswith("reports") or step.startswith("statistics"):
+    if step.startswith("reports") or step.startswith("statistics") or step in {
+        "statistics_date_input", "statistics_date", "date_statistics", "stats_date_input"
+    }:
         try:
             return admin_reports_back_keyboard()
         except Exception:
             return admin_reports_menu_keyboard()
 
+    if step.startswith("settings") or step in {
+        "settings_section",
+        "settings_menu",
+        "maintenance_mode",
+        "logs_menu",
+        "backup_menu",
+        "audit_logs_menu",
+        "audit_search_admin_select",
+        "audit_search_product_select",
+        "audit_search_action_select",
+    }:
+        try:
+            return admin_settings_back_keyboard()
+        except Exception:
+            return admin_settings_menu_keyboard()
+
     return admin_keyboard()
 
 
+def admin_settings_back_keyboard():
+    # SETTINGS_AND_INVALID_INPUT_FIX
+    # מקלדת פנימית להגדרות מערכת.
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🛠️ מצב תחזוקה")],
+            [KeyboardButton(text="📄 רשימת לוגים"), KeyboardButton(text="📥 הורד לוג אחרון")],
+            [KeyboardButton(text="💾 צור גיבוי DB"), KeyboardButton(text="📦 רשימת גיבויים")],
+            [KeyboardButton(text="📜 Audit Logs")],
+            [KeyboardButton(text="⬅️ חזרה לניהול")]
+        ],
+        resize_keyboard=True
+    )
 
 def support_reply_cancel_keyboard():
     return ReplyKeyboardMarkup(
@@ -880,6 +926,12 @@ def is_valid_admin_button_text(text):
         "📢 שיווק והודעות",
         "📊 סטטיסטיקה ודוחות",
         "⚙️ הגדרות מערכת",
+        "🛠️ מצב תחזוקה",
+        "📄 רשימת לוגים",
+        "📥 הורד לוג אחרון",
+        "💾 צור גיבוי DB",
+        "📦 רשימת גיבויים",
+        "📜 Audit Logs",
         "⬅️ יציאה מניהול",
         "⬅️ חזרה לניהול",
         "⬅️ חזרה לניהול מוצרים",
@@ -4513,26 +4565,19 @@ async def admin_category_nav_stability(message: Message):
 
 
 async def admin_unknown_text_same_place(message: Message, step: str):
-    # FULL_PANEL_SAFE_INPUT_FIX
-    # קלט לא מוכר באדמין: נשארים באותו מקום, לא עוברים ל-Start.
+    # SETTINGS_AND_INVALID_INPUT_FIX
+    # קלט לא מוכר באדמין: נשארים באותו מקום, לא עוברים ל-Start/פאנל ראשי.
     try:
         step = str(step or "")
-
-        if step == "admin":
-            await tracked_admin_answer(
-                message,
-                rtl("<b>⚠️ פעולה לא תקינה.</b>\n\nבחר פעולה מהתפריט למטה."),
-                reply_markup=admin_keyboard(),
-                parse_mode="HTML"
-            )
-            return
+        keyboard = admin_keyboard() if step == "admin" else admin_section_keyboard_for_step(step)
 
         await tracked_admin_answer(
             message,
             rtl("<b>⚠️ פעולה לא תקינה.</b>\n\nבחר פעולה מהתפריט למטה."),
-            reply_markup=admin_section_keyboard_for_step(step),
+            reply_markup=keyboard,
             parse_mode="HTML"
         )
+        return
     except Exception:
         try:
             await message.answer(
@@ -4542,7 +4587,6 @@ async def admin_unknown_text_same_place(message: Message, step: str):
             )
         except Exception:
             pass
-
 
 
 @router.message(F.text == "⬅️ חזרה לרשימת הזמנות")
@@ -4617,6 +4661,23 @@ async def admin_recent_orders_new_ui_fix(message: Message):
             "בחר הזמנה מהרשימה."
         ),
         reply_markup=order_select_keyboard(orders),
+        parse_mode="HTML"
+    )
+
+
+
+@router.message(F.text == "⚙️ הגדרות מערכת")
+async def admin_settings_menu_fix(message: Message):
+    # SETTINGS_AND_INVALID_INPUT_FIX
+    if not is_admin(message.from_user.id):
+        return
+
+    admin_states[message.from_user.id] = {"step": "settings_section"}
+
+    await tracked_admin_answer(
+        message,
+        rtl("<b>⚙️ הגדרות מערכת</b>\n\nבחר פעולה:"),
+        reply_markup=admin_settings_back_keyboard(),
         parse_mode="HTML"
     )
 
