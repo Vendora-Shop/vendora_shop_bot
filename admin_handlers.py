@@ -13,7 +13,7 @@ from pathlib import Path
 from config import ADMIN_ID
 from keyboards import admin_keyboard, main_keyboard, order_status_keyboard, broadcast_confirm_keyboard, customers_menu_keyboard, customer_actions_keyboard, customer_select_keyboard, support_tickets_menu_keyboard, support_ticket_actions_keyboard, closed_support_ticket_actions_keyboard, support_ticket_select_keyboard, admin_orders_menu_keyboard, admin_products_menu_keyboard, admin_stock_menu_keyboard, admin_customers_menu_root_keyboard, admin_coupons_root_keyboard, admin_marketing_menu_keyboard, admin_support_root_keyboard, admin_reports_menu_keyboard, admin_settings_menu_keyboard
 from backup_manager import create_db_backup, list_db_backups, format_backup_list
-from logger import log_admin_action, log_order_event, log_backup_event, log_error, list_log_files
+from logger import log_admin_action as _sync_log_admin_action, log_order_event as _sync_log_order_event, log_backup_event as _sync_log_backup_event, log_error, list_log_files
 from audit_logger import write_audit_event
 from audit_logs_ui import audit_logs_menu_keyboard, audit_search_back_keyboard, audit_select_keyboard, audit_select_prompt_text, audit_manual_input_text, parse_audit_selected_value, send_audit_logs_list, send_latest_audit_log, send_recent_audit_events, send_audit_search_results
 from maintenance_mode import is_maintenance_enabled, enable_maintenance, disable_maintenance
@@ -56,23 +56,67 @@ from database import (
 )
 
 
-def safe_write_audit_event(admin_id, action, entity_type="system", entity_id="", old_value=None, new_value=None, details=""):
-    # ADMIN_AUDIT_LOGGER_CONNECT_V1
+# ================== PERFORMANCE V12 BACKGROUND LOGS ==================
+# פעולות לוג/Audit אינן קריטיות למסך הנוכחי ולכן עוברות לרקע.
+# המטרה: לחיצה באדמין לא תחכה לכתיבה לקובץ.
+# לא נוגע בפעולות עסקיות כמו הזמנות/מלאי/תשלומים.
+
+
+def _run_background_io(func, *args, **kwargs):
     try:
-        write_audit_event(
-            admin_id=admin_id,
-            action=action,
-            entity_type=entity_type,
-            entity_id=entity_id,
-            old_value=old_value,
-            new_value=new_value,
-            details=details,
-        )
-    except Exception as e:
+        loop = asyncio.get_running_loop()
+        loop.create_task(asyncio.to_thread(func, *args, **kwargs))
+        return True
+    except Exception:
         try:
-            log_error(e, context=f"audit_event_failed action={action} entity={entity_type}:{entity_id}")
+            func(*args, **kwargs)
         except Exception:
             pass
+        return False
+
+
+def log_admin_action(admin_id, action, details=""):
+    # PERFORMANCE_V12_BACKGROUND_LOGS
+    return _run_background_io(_sync_log_admin_action, admin_id, action, details)
+
+
+def log_order_event(*args, **kwargs):
+    # PERFORMANCE_V12_BACKGROUND_LOGS
+    return _run_background_io(_sync_log_order_event, *args, **kwargs)
+
+
+def log_backup_event(*args, **kwargs):
+    # PERFORMANCE_V12_BACKGROUND_LOGS
+    return _run_background_io(_sync_log_backup_event, *args, **kwargs)
+
+
+
+def safe_write_audit_event(admin_id, action, entity_type="system", entity_id="", old_value=None, new_value=None, details=""):
+    # PERFORMANCE_V12_BACKGROUND_LOGS
+    # Audit נכתב ברקע כדי לא לעכב את פעולת האדמין.
+    def _write():
+        try:
+            write_audit_event(
+                admin_id=admin_id,
+                action=action,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                old_value=old_value,
+                new_value=new_value,
+                details=details,
+            )
+        except Exception as e:
+            try:
+                log_error(e, context=f"audit_event_failed action={action} entity={entity_type}:{entity_id}")
+            except Exception:
+                pass
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(asyncio.to_thread(_write))
+    except Exception:
+        _write()
+
 
 
 router = Router()
