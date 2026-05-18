@@ -871,17 +871,48 @@ async def delete_admin_message(message: Message):
 
 
 def is_admin_button_only_step(step):
+    # INVALID_INPUT_REOPEN_KEYBOARD_FIX
     return step in {
         "admin",
+
         "orders_section",
         "orders_select",
         "order_actions",
+        "status_value",
+
+        "products_section",
+        "product_select",
+        "product_active",
+        "product_delete",
+        "image_photo",
+
+        "stock_section",
+
         "customers_menu",
+        "customers_root",
         "customers_select",
         "customer_profile",
+
+        "coupons_menu",
+        "coupons_section",
+
+        "support_menu",
+        "support_section",
+        "support_ticket",
+        "ticket_actions",
+
+        "reports_section",
+        "statistics_section",
+
+        "settings_section",
+        "settings_menu",
+        "maintenance_mode",
+        "logs_menu",
+        "backup_menu",
+        "audit_logs_menu",
+
         "broadcast_confirm",
-        "status_value",
-        "image_photo",
+        "marketing_section",
     }
 
 
@@ -3667,7 +3698,7 @@ async def recent_orders(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    admin_states[message.from_user.id] = {"step": "admin"}
+    admin_states[message.from_user.id] = {"step": "orders_select", "orders_last_section": "recent"}
     orders = get_recent_orders(10)
 
     if not orders:
@@ -3692,7 +3723,7 @@ async def new_orders(message: Message):
     orders = get_orders_by_status("new", 20)
 
     if not orders:
-        await tracked_admin_answer(message, rtl("<b>🆕 הזמנות חדשות</b>\n\nאין הזמנות חדשות כרגע."), parse_mode="HTML")
+        await tracked_admin_answer(message, rtl("<b>🆕 הזמנות חדשות</b>\n\nאין הזמנות חדשות כרגע."), reply_markup=orders_main_keyboard(), parse_mode="HTML")
         return
 
     await tracked_admin_answer(message, 
@@ -4565,8 +4596,8 @@ async def admin_category_nav_stability(message: Message):
 
 
 async def admin_unknown_text_same_place(message: Message, step: str):
-    # SETTINGS_AND_INVALID_INPUT_FIX
-    # קלט לא מוכר באדמין: נשארים באותו מקום, לא עוברים ל-Start/פאנל ראשי.
+    # INVALID_INPUT_REOPEN_KEYBOARD_FIX
+    # קלט לא מוכר באדמין: נשארים באותו מקום ומחזירים מקלדת אוטומטית.
     try:
         step = str(step or "")
         keyboard = admin_keyboard() if step == "admin" else admin_section_keyboard_for_step(step)
@@ -5029,7 +5060,7 @@ async def admin_flow(message: Message):
         orders = get_orders_by_status("new", 30)
 
         if not orders:
-            await tracked_admin_answer(message, rtl("<b>🆕 הזמנות חדשות</b>\n\nאין הזמנות חדשות כרגע."), parse_mode="HTML")
+            await tracked_admin_answer(message, rtl("<b>🆕 הזמנות חדשות</b>\n\nאין הזמנות חדשות כרגע."), reply_markup=orders_main_keyboard(), parse_mode="HTML")
             return
 
         await tracked_admin_answer(message, 
@@ -5045,8 +5076,12 @@ async def admin_flow(message: Message):
     step = state.get("step")
 
     # ADMIN_FLOW_SAFE_DELETE_MARKER
+    # INVALID_INPUT_REOPEN_KEYBOARD_FIX
+    # קשקוש במסך כפתורים: מוחקים רק את הקשקוש,
+    # ומחזירים אוטומטית את המקלדת של אותו אזור.
     if is_admin_button_only_step(step) and not is_valid_admin_button_text(txt):
         await delete_admin_message(message)
+        await admin_unknown_text_same_place(message, step)
         return
 
     if step in {
