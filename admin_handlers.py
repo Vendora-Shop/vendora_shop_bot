@@ -4865,12 +4865,33 @@ async def admin_unknown_text_same_place(message: Message, step: str):
             keyboard = admin_section_keyboard_for_step(current_step)
             text_to_send = rtl("<b>בחר פעולה:</b>")
 
-        await tracked_admin_answer(
+
+        try:
+            last_menu_id = state.get("last_admin_reopen_menu_id")
+            if last_menu_id:
+                try:
+                    await message.bot.delete_message(
+                        chat_id=message.chat.id,
+                        message_id=last_menu_id
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        sent = await tracked_admin_answer(
             message,
             text_to_send,
             reply_markup=keyboard,
             parse_mode="HTML"
         )
+
+        try:
+            if sent:
+                state["last_admin_reopen_menu_id"] = sent.message_id
+                admin_states[uid] = state
+        except Exception:
+            pass
 
     except Exception:
         pass
