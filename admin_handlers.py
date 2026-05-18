@@ -4516,11 +4516,16 @@ async def admin_global_logic_guard(message: Message):
         pass
 
     if txt == "⬅️ חזרה לניהול":
-        set_admin_area(uid, "admin")
+        try:
+            set_admin_area(uid, "admin")
+        except Exception:
+            pass
+
         admin_states[uid] = {"step": "admin"}
+
         await tracked_admin_answer(
             message,
-            rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
+            rtl("<b>🔐 פאנל ניהול</b>\\n\\nבחר קטגוריה לניהול:"),
             reply_markup=admin_keyboard(),
             parse_mode="HTML"
         )
@@ -4599,6 +4604,36 @@ async def admin_area_tracker_guard(message: Message):
         pass
 
     return await admin_flow(message)
+
+
+
+@router.message(F.text == "⬅️ חזרה לניהול")
+async def admin_back_to_main_panel_fix(message: Message):
+    # BACK_TO_ADMIN_PANEL_FIX
+    # חזרה לניהול תמיד מחזירה לפאנל אדמין בלבד.
+    if not is_admin(message.from_user.id):
+        return
+
+    uid = message.from_user.id
+
+    try:
+        set_admin_area(uid, "admin")
+    except Exception:
+        pass
+
+    admin_states[uid] = {"step": "admin"}
+
+    try:
+        asyncio.create_task(_delete_admin_message_safely(message.bot, message.chat.id, message.message_id))
+    except Exception:
+        pass
+
+    await tracked_admin_answer(
+        message,
+        rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
+        reply_markup=admin_keyboard(),
+        parse_mode="HTML"
+    )
 
 
 @router.message(is_admin_active_step)
