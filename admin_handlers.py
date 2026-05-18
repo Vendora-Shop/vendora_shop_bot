@@ -4982,11 +4982,34 @@ async def admin_search_phone_input_stay_fix(message: Message):
         )
         return
 
-    # קלט לא תקין / קצר / קשקוש — לא מעבירים לסטטיסטיקה או פאנל ראשי.
+    # PHONE_SEARCH_VALIDATION_TEXT_FIX
+    # קלט לא תקין / קצר / קשקוש — נשארים בחיפוש טלפון,
+    # אבל מציגים הודעה מדויקת ולא "פעולה לא תקינה".
     digits = re.sub(r"\D+", "", txt or "")
     if len(digits) < 7:
         admin_states[uid] = {"step": "search_phone", "orders_last_section": "phone"}
-        await admin_unknown_text_same_place(message, "search_phone")
+
+        try:
+            await delete_previous_invalid_warning(message)
+        except Exception:
+            pass
+
+        sent = await tracked_admin_answer(
+            message,
+            rtl(
+                "<b>⚠️ מספר טלפון לא תקין.</b>\n\n"
+                "רשום מספר טלפון מלא לחיפוש.\n"
+                "לדוגמה: <code>0547937503</code>"
+            ),
+            reply_markup=admin_orders_back_keyboard(),
+            parse_mode="HTML"
+        )
+
+        try:
+            remember_invalid_warning_message(message, sent)
+        except Exception:
+            pass
+
         return
 
     orders = get_orders_by_phone(digits, 30)
