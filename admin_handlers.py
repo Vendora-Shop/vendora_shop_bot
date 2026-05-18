@@ -761,6 +761,45 @@ def admin_section_keyboard_for_step(step):
 
 
 
+def admin_safe_keyboard_for_current_step(step):
+    # ADMIN_UNKNOWN_TEXT_GUARD
+    # מחזיר מקלדת בטוחה לפי המיקום הנוכחי באדמין.
+    step = str(step or "")
+
+    try:
+        if step.startswith("orders") or step in {"search_order", "search_phone", "order_status_number", "status_order_number", "status_value"}:
+            return orders_main_keyboard() if "orders_main_keyboard" in globals() else admin_keyboard()
+    except Exception:
+        pass
+
+    try:
+        if step.startswith("reports") or step.startswith("statistics"):
+            return admin_reports_back_keyboard() if "admin_reports_back_keyboard" in globals() else admin_keyboard()
+    except Exception:
+        pass
+
+    try:
+        if step.startswith("coupon") or step.startswith("coupons"):
+            return admin_coupons_keyboard() if "admin_coupons_keyboard" in globals() else admin_keyboard()
+    except Exception:
+        pass
+
+    try:
+        if "support" in step or step.startswith("ticket"):
+            return support_reply_cancel_keyboard() if "support_reply_cancel_keyboard" in globals() else admin_keyboard()
+    except Exception:
+        pass
+
+    try:
+        if step.startswith("product") or step in {"price_name", "description_name", "image_name", "delete_name", "on_name", "off_name", "add_category", "add_stock_name", "stock_name"}:
+            return product_action_back_keyboard() if "product_action_back_keyboard" in globals() else admin_keyboard()
+    except Exception:
+        pass
+
+    return admin_keyboard()
+
+
+
 def support_reply_cancel_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -4449,6 +4488,75 @@ async def admin_category_nav_stability(message: Message):
         message,
         rtl(title),
         reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+
+
+
+@router.message(lambda message: is_admin(message.from_user.id) and bool(admin_states.get(message.from_user.id)) and not (message.text or "").startswith("/"))
+async def admin_unknown_text_guard(message: Message):
+    # ADMIN_UNKNOWN_TEXT_GUARD
+    # מגן מפני נפילה לצד לקוח/Start כאשר אדמין מקליד טקסט לא מוכר.
+    uid = message.from_user.id
+    txt = clean_admin_text(message.text)
+    state = admin_states.get(uid) or {}
+    step = state.get("step") or "admin"
+
+    # כפתורים כלליים שחייבים להמשיך לזרימה המקורית מטופלים כאן בבטחה.
+    if txt == "⬅️ חזרה לניהול":
+        admin_states[uid] = {"step": "admin"}
+        await tracked_admin_answer(
+            message,
+            rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    # אם זה אחד מכפתורי האדמין הידועים — לא חוסמים, נותנים ל-handler המקורי לעבוד.
+    known_admin_buttons = {
+        "📦 ניהול הזמנות", "🛍️ ניהול מוצרים", "📊 ניהול מלאי", "👥 ניהול לקוחות",
+        "🏷️ קופונים ומבצעים", "🎧 שירות לקוחות", "📢 שיווק והודעות",
+        "📊 סטטיסטיקה ודוחות", "⚙️ הגדרות מערכת",
+        "📋 הזמנות פתוחות", "🆕 הזמנות חדשות", "🧾 הזמנות אחרונות",
+        "🔎 חפש הזמנה", "📞 חפש לפי טלפון", "🔄 עדכן סטטוס הזמנה",
+        "📦 רשימת מוצרים", "➕ הוסף מוצר", "✏️ שנה מחיר", "📝 שנה תיאור",
+        "🖼️ עדכן תמונה", "🔴 כבה מוצר", "🟢 הפעל מוצר", "🗑️ מחק מוצר",
+        "📊 מצב העסק", "📅 סטטיסטיקה לפי תאריך",
+        "📜 Audit Logs", "📥 הורד Audit אחרון", "👤 חיפוש לפי אדמין",
+        "🛍️ חיפוש לפי מוצר", "⚙️ חיפוש לפי פעולה",
+    }
+
+    if txt in known_admin_buttons:
+        # לא אמור להגיע לכאן אם handler ספציפי קיים,
+        # אבל אם הגיע — נחזיר פאנל במקום להפיל ללקוח.
+        await tracked_admin_answer(
+            message,
+            rtl("<b>⚠️ הפעולה לא נתפסה נכון.</b>\n\nנסה ללחוץ שוב מהתפריט."),
+            reply_markup=admin_safe_keyboard_for_current_step(step),
+            parse_mode="HTML"
+        )
+        return
+
+    # אם אנחנו נמצאים בשלב שמצפה לקלט חופשי — לא חוסמים אותו.
+    free_input_steps = {
+        "search_order", "search_phone", "order_status_number", "status_order_number", "status_value",
+        "price_name", "description_name", "image_name", "delete_name", "on_name", "off_name",
+        "stock_name", "add_stock_name", "add_category",
+        "coupon_code", "coupon_disable_code", "coupon_enable_code",
+        "customers_search", "support_ticket_search",
+        "statistics_date_input", "statistics_date", "date_statistics", "stats_date_input",
+    }
+
+    if step in free_input_steps:
+        # נותנים ל-admin_flow המקורי לטפל בקלט.
+        return await admin_flow(message)
+
+    # ברירת מחדל בטוחה: נשארים באותו אזור אדמין ולא פותחים Start/לקוח.
+    await tracked_admin_answer(
+        message,
+        rtl("<b>⚠️ פעולה לא תקינה.</b>\n\nבחר פעולה מהתפריט למטה."),
+        reply_markup=admin_safe_keyboard_for_current_step(step),
         parse_mode="HTML"
     )
 
