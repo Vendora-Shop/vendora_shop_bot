@@ -812,20 +812,42 @@ def customer_row_to_dict(row):
 
 
 def get_customer_profile(telegram_id):
-    create_tables()
+    # PERFORMANCE_V14_CUSTOMER_CACHE_FIX
+    cache_key = f"{int(telegram_id)}:profile"
+    cached = _customer_cache_get(cache_key)
+    if cached is not None:
+        return cached
 
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        SELECT id, telegram_id, telegram_name, customer_name, phone, city,
-               street, floor, apartment, last_order_number, total_orders,
-               total_spent, created_at, updated_at
+        SELECT telegram_id, telegram_name, customer_name, phone, city, street, floor, apartment,
+               last_order_number, total_orders, total_spent, created_at, updated_at
         FROM customers
         WHERE telegram_id = ?
     """, (int(telegram_id),))
     row = cur.fetchone()
     conn.close()
-    return customer_row_to_dict(row)
+
+    if not row:
+        return _customer_cache_set(cache_key, None)
+
+    result = {
+        "telegram_id": row[0],
+        "telegram_name": row[1],
+        "customer_name": row[2],
+        "phone": row[3],
+        "city": row[4],
+        "street": row[5],
+        "floor": row[6],
+        "apartment": row[7],
+        "last_order_number": row[8],
+        "total_orders": row[9],
+        "total_spent": row[10],
+        "created_at": row[11],
+        "updated_at": row[12],
+    }
+    return _customer_cache_set(cache_key, result)
 
 
 def save_customer_profile(
@@ -1483,6 +1505,12 @@ def get_customer_by_id(customer_id):
 
 
 def get_orders_by_customer_telegram_id(telegram_id, limit=30):
+    # PERFORMANCE_V14_CUSTOMER_CACHE_FIX
+    cache_key = f"{int(telegram_id)}:orders:{int(limit)}"
+    cached = _customer_cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     # PERFORMANCE_V13_CUSTOMER_CACHE
     cache_key = f"{int(telegram_id)}:orders:{int(limit)}"
     cached = _customer_cache_get(cache_key)
