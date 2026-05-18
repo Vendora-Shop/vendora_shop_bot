@@ -75,6 +75,160 @@ def safe_write_audit_event(admin_id, action, entity_type="system", entity_id="",
             pass
 
 
+# ================== ADMIN_STATE_AREA_FIX ==================
+# שומר אזור אחרון באדמין כדי שטקסט לא תקין לא יחזיר לפאנל ראשי.
+ADMIN_LAST_AREA_BY_USER = {}
+
+
+def set_admin_area(uid, area):
+    try:
+        ADMIN_LAST_AREA_BY_USER[int(uid)] = str(area or "admin")
+    except Exception:
+        pass
+
+
+def get_admin_area(uid):
+    try:
+        return ADMIN_LAST_AREA_BY_USER.get(int(uid), "admin")
+    except Exception:
+        return "admin"
+
+
+def admin_keyboard_for_area(area):
+    area = str(area or "admin")
+
+    if area == "orders":
+        try:
+            return admin_orders_safe_keyboard()
+        except Exception:
+            try:
+                return orders_main_keyboard()
+            except Exception:
+                return admin_keyboard()
+
+    if area == "products":
+        try:
+            return admin_products_safe_keyboard()
+        except Exception:
+            return admin_keyboard()
+
+    if area == "stock":
+        try:
+            return admin_stock_safe_keyboard()
+        except Exception:
+            return admin_keyboard()
+
+    if area == "customers":
+        try:
+            return admin_customers_safe_keyboard()
+        except Exception:
+            return admin_keyboard()
+
+    if area == "reports":
+        try:
+            return admin_reports_safe_keyboard()
+        except Exception:
+            return admin_keyboard()
+
+    if area == "coupons":
+        try:
+            return admin_coupons_safe_keyboard()
+        except Exception:
+            return admin_keyboard()
+
+    if area == "support":
+        try:
+            return admin_support_safe_keyboard()
+        except Exception:
+            return admin_keyboard()
+
+    if area == "marketing":
+        try:
+            return admin_marketing_safe_keyboard()
+        except Exception:
+            return admin_keyboard()
+
+    if area == "settings":
+        try:
+            return admin_settings_safe_keyboard()
+        except Exception:
+            return admin_keyboard()
+
+    return admin_keyboard()
+
+
+def infer_admin_area_from_text(txt):
+    txt = str(txt or "").strip()
+
+    if txt in {
+        "📦 ניהול הזמנות", "📋 הזמנות פתוחות", "🆕 הזמנות חדשות", "🆕 חדשות",
+        "🧾 הזמנות אחרונות", "✅ אושרו", "📦 בטיפול", "🚚 במשלוח",
+        "🧾 הושלמו", "❌ בוטלו", "🔎 חפש הזמנה", "📞 חפש לפי טלפון",
+        "🔄 עדכן סטטוס הזמנה", "⬅️ חזרה לניהול הזמנות"
+    }:
+        return "orders"
+
+    if txt in {"🛍️ ניהול מוצרים", "📦 רשימת מוצרים", "➕ הוסף מוצר", "✏️ שנה מחיר", "📝 שנה תיאור", "🖼️ עדכן תמונה", "🔴 כבה מוצר", "🟢 הפעל מוצר", "🗑️ מחק מוצר", "⬅️ חזרה לניהול מוצרים"}:
+        return "products"
+
+    if txt in {"📊 ניהול מלאי", "✏️ אפס והגדר מלאי חדש", "➕ הגדל מלאי קיים"}:
+        return "stock"
+
+    if txt in {"👥 ניהול לקוחות", "📋 רשימת לקוחות", "🔎 חפש לקוח"}:
+        return "customers"
+
+    if txt in {"📊 סטטיסטיקה ודוחות", "📊 מצב העסק", "📅 סטטיסטיקה לפי תאריך"}:
+        return "reports"
+
+    if txt in {"🏷️ קופונים ומבצעים", "➕ צור קופון", "📋 רשימת קופונים", "🔴 כבה קופון", "🟢 הפעל קופון"}:
+        return "coupons"
+
+    if txt in {"🎧 שירות לקוחות", "📬 פניות פתוחות", "📁 פניות סגורות", "🔍 חיפוש פנייה"}:
+        return "support"
+
+    if txt in {"📢 שיווק והודעות", "📢 שלח הודעה ללקוחות"}:
+        return "marketing"
+
+    if txt in {"⚙️ הגדרות מערכת", "🛠 מצב תחזוקה", "📜 לוגים", "📜 Audit Logs"}:
+        return "settings"
+
+    return None
+
+
+def infer_admin_area_from_step(step):
+    step = str(step or "")
+
+    if step.startswith("orders") or step.startswith("order_") or step in {"search_order", "search_phone", "order_status_number", "status_order_number", "status_value", "order_status_value"}:
+        return "orders"
+
+    if step.startswith("products") or step in {"price_name", "price_value", "description_name", "description_value", "image_name", "image_photo", "delete_name", "on_name", "off_name"}:
+        return "products"
+
+    if step.startswith("stock") or step in {"stock_name", "stock_value", "add_stock_name", "add_stock_value"}:
+        return "stock"
+
+    if step.startswith("customers") or step in {"customers_menu", "customers_root", "customers_search", "customer_profile"}:
+        return "customers"
+
+    if step.startswith("reports") or step.startswith("statistics"):
+        return "reports"
+
+    if step.startswith("coupon") or step.startswith("coupons"):
+        return "coupons"
+
+    if "support" in step or step.startswith("ticket"):
+        return "support"
+
+    if step.startswith("broadcast") or step == "marketing_section":
+        return "marketing"
+
+    if step.startswith("settings") or step == "maintenance_mode":
+        return "settings"
+
+    return None
+
+
+
 router = Router()
 admin_states = {}
 
@@ -301,18 +455,21 @@ async def cleanup_admin_previous_screen(bot, admin_id, chat_id):
 
 async def tracked_admin_answer(message: Message, *args, **kwargs):
     """
-    STABLE_ADMIN_LOGIC_FINAL
-    כל הודעת אדמין מקבלת מקלדת לפי ה-state הנוכחי אם לא הוגדרה מקלדת.
-    זה מונע נפילה ל-Start / פאנל ראשי / תפריט ישן.
+    ADMIN_STATE_AREA_FIX
+    שומר הודעת אדמין ומחזיר מקלדת לפי האזור האחרון, לא רק לפי step.
     """
     try:
         uid = message.from_user.id
         state = admin_states.get(uid) or {}
         step = str(state.get("step") or "")
+        area = infer_admin_area_from_step(step) or get_admin_area(uid)
+
+        if area and area != "admin":
+            set_admin_area(uid, area)
+
+        current_markup = kwargs.get("reply_markup")
 
         if step and step != "admin":
-            current_markup = kwargs.get("reply_markup")
-
             if current_markup is None:
                 kwargs["reply_markup"] = admin_safe_keyboard_for_step(step)
             else:
@@ -321,6 +478,17 @@ async def tracked_admin_answer(message: Message, *args, **kwargs):
                         kwargs["reply_markup"] = admin_safe_keyboard_for_step(step)
                 except Exception:
                     pass
+        elif area and area != "admin":
+            # גם אם step בטעות חזר ל-admin אחרי תוצאה, נשמור את האזור האחרון.
+            if current_markup is None:
+                kwargs["reply_markup"] = admin_keyboard_for_area(area)
+            else:
+                try:
+                    if str(current_markup) == str(admin_keyboard()):
+                        kwargs["reply_markup"] = admin_keyboard_for_area(area)
+                except Exception:
+                    pass
+
     except Exception:
         pass
 
@@ -333,6 +501,7 @@ async def tracked_admin_answer(message: Message, *args, **kwargs):
         pass
 
     return sent
+
 
 
 
@@ -4328,16 +4497,26 @@ async def admin_coupon_flow(message: Message):
 
 @router.message(lambda message: is_admin(message.from_user.id) and bool(admin_states.get(message.from_user.id)) and not (message.text or "").startswith("/"))
 async def admin_global_logic_guard(message: Message):
-    # STABLE_ADMIN_LOGIC_FINAL
-    # מגן כללי לכל הפאנל:
-    # קשקוש = נשארים באותו state עם אותה מקלדת.
-    # כפתורים ידועים = עוברים ל-admin_flow המקורי.
+    # ADMIN_STATE_AREA_FIX
+    # קלט לא תקין באדמין נמחק, ונשארים באותו אזור לפי area אחרון.
     uid = message.from_user.id
     txt = clean_admin_text(message.text)
     state = admin_states.get(uid) or {}
     step = str(state.get("step") or "admin")
 
+    # שומר אזור לפי הכפתור שנלחץ או לפי ה-step.
+    inferred_area = infer_admin_area_from_text(txt) or infer_admin_area_from_step(step)
+    if inferred_area:
+        set_admin_area(uid, inferred_area)
+
+    # מוחקים את הקשקוש/הודעת המשתמש ברקע.
+    try:
+        asyncio.create_task(_delete_admin_message_safely(message.bot, message.chat.id, message.message_id))
+    except Exception:
+        pass
+
     if txt == "⬅️ חזרה לניהול":
+        set_admin_area(uid, "admin")
         admin_states[uid] = {"step": "admin"}
         await tracked_admin_answer(
             message,
@@ -4347,7 +4526,8 @@ async def admin_global_logic_guard(message: Message):
         )
         return
 
-    if txt in {"⬅️ חזרה לניהול הזמנות"}:
+    if txt == "⬅️ חזרה לניהול הזמנות":
+        set_admin_area(uid, "orders")
         admin_states[uid] = {"step": "orders_section"}
         await tracked_admin_answer(
             message,
@@ -4357,7 +4537,8 @@ async def admin_global_logic_guard(message: Message):
         )
         return
 
-    if txt in {"⬅️ חזרה לניהול מוצרים"}:
+    if txt == "⬅️ חזרה לניהול מוצרים":
+        set_admin_area(uid, "products")
         admin_states[uid] = {"step": "products_section"}
         await tracked_admin_answer(
             message,
@@ -4367,7 +4548,8 @@ async def admin_global_logic_guard(message: Message):
         )
         return
 
-    if txt in {"⬅️ חזרה לניהול קופונים"}:
+    if txt == "⬅️ חזרה לניהול קופונים":
+        set_admin_area(uid, "coupons")
         admin_states[uid] = {"step": "coupons_menu"}
         await tracked_admin_answer(
             message,
@@ -4377,22 +4559,47 @@ async def admin_global_logic_guard(message: Message):
         )
         return
 
-    # כפתור אמיתי מתוך התפריט — נותנים ל-admin_flow המקורי לטפל.
+    # כפתור אמיתי — קודם שומרים area, ואז נותנים ללוגיקה המקורית לעבוד.
     if txt in admin_known_button_texts():
         return await admin_flow(message)
 
-    # שלבים שמצפים לקלט חופשי — נותנים ללוגיקה המקורית לטפל.
-    # אם הקלט לא תקין, tracked_admin_answer ידאג להשאיר מקלדת נכונה.
+    # אם זה שלב קלט חופשי — נותנים ללוגיקה המקורית לטפל.
     if admin_is_free_input_step(step):
         return await admin_flow(message)
 
-    # כל קשקוש אחר: לא מעבירים מקום, לא פותחים Start, לא פאנל ראשי.
+    # ברירת מחדל: לא עוברים מסך. נשארים באותו אזור אחרון.
+    area = infer_admin_area_from_step(step) or get_admin_area(uid)
+    keyboard = admin_keyboard_for_area(area)
+
     await tracked_admin_answer(
         message,
         rtl("<b>⚠️ פעולה לא תקינה.</b>\n\nבחר פעולה מהתפריט למטה."),
-        reply_markup=admin_safe_keyboard_for_step(step),
+        reply_markup=keyboard,
         parse_mode="HTML"
     )
+
+
+
+
+
+@router.message(lambda message: is_admin(message.from_user.id) and infer_admin_area_from_text(clean_admin_text(message.text)) is not None)
+async def admin_area_tracker_guard(message: Message):
+    # ADMIN_STATE_AREA_FIX
+    uid = message.from_user.id
+    txt = clean_admin_text(message.text)
+    area = infer_admin_area_from_text(txt)
+
+    if area:
+        set_admin_area(uid, area)
+
+    # מחיקת הודעת הכפתור של המשתמש כדי שלא יצטברו קשקושים.
+    try:
+        asyncio.create_task(_delete_admin_message_safely(message.bot, message.chat.id, message.message_id))
+    except Exception:
+        pass
+
+    return await admin_flow(message)
+
 
 @router.message(is_admin_active_step)
 async def admin_flow(message: Message):
