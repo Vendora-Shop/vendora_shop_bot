@@ -1047,7 +1047,7 @@ async def open_broadcast_screen(message: Message):
     customer_ids = get_all_customer_telegram_ids()
 
     if not customer_ids:
-        admin_states[message.from_user.id] = {"step": "admin"}
+        admin_states[message.from_user.id] = {"step": "orders_section"}
         await tracked_admin_answer(message, 
             rtl(
                 "<b>📢 שליחת הודעה ללקוחות</b>\n\n"
@@ -1090,7 +1090,7 @@ async def handle_broadcast_text_screen(message: Message):
     # אם האדמין לוחץ בטעות על כפתור ניהול בזמן שהמערכת מחכה לטקסט הודעה,
     # לא משתמשים בכפתור הזה כתוכן הודעה לשליחה.
     if broadcast_text == "⬅️ חזרה לניהול":
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
         await tracked_admin_answer(message, 
             rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
             reply_markup=admin_keyboard(),
@@ -1126,7 +1126,7 @@ async def handle_broadcast_text_screen(message: Message):
     customer_ids = get_all_customer_telegram_ids()
 
     if not customer_ids:
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
         await tracked_admin_answer(message, 
             rtl(
                 "<b>⚠️ אין לקוחות לשליחה</b>\n\n"
@@ -1157,7 +1157,7 @@ async def handle_broadcast_confirm_screen(message: Message):
         return
 
     if txt == "❌ בטל שליחה":
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
         await tracked_admin_answer(message, 
             rtl(
                 "<b>✅ השליחה בוטלה</b>\n\n"
@@ -1194,7 +1194,7 @@ async def handle_broadcast_confirm_screen(message: Message):
         return
 
     if state.get("broadcast_sent"):
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
         await tracked_admin_answer(message, 
             rtl(
                 "<b>⚠️ הפעולה כבר בוצעה</b>\n\n"
@@ -1209,7 +1209,7 @@ async def handle_broadcast_confirm_screen(message: Message):
     customer_ids = state.get("broadcast_customer_ids") or []
 
     if not broadcast_text or not customer_ids:
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
         await tracked_admin_answer(message, 
             rtl(
                 "<b>⚠️ לא ניתן לבצע שליחה</b>\n\n"
@@ -1236,7 +1236,7 @@ async def handle_broadcast_confirm_screen(message: Message):
         except Exception:
             failed_count += 1
 
-    admin_states[uid] = {"step": "admin"}
+    admin_states[uid] = {"step": "orders_section"}
 
     await tracked_admin_answer(message, 
         rtl(
@@ -1677,8 +1677,12 @@ def is_admin_active_step(message: Message):
 
     step = state.get("step")
 
+    # ADMIN_PANEL_MAIN_STATE_FIX
+    # כשהאדמין נמצא בפאנל הראשי,
+    # admin_flow עדיין חייב לתפוס טקסטים וקשקושים.
+    # אחרת ההודעה נופלת ל-shop/start handlers.
     if step == "admin":
-        return False
+        return True
 
     # כפתורי פעולת הזמנה באדמין חופפים לכפתורי לקוח.
     # כשהאדמין נמצא בכרטיס הזמנה, חייבים לתת עדיפות ל-admin_flow.
@@ -2289,7 +2293,7 @@ async def cancel_support_reply(message: Message):
             )
             return
 
-        admin_states[message.from_user.id] = {"step": "admin"}
+        admin_states[message.from_user.id] = {"step": "orders_section"}
 
         await tracked_admin_answer(message, 
             rtl("<b>✅ התשובה בוטלה.</b>"),
@@ -2304,7 +2308,7 @@ async def global_admin_back_guard(message: Message):
     # ADMIN_GLOBAL_BACK_STATE_FIX
     # חייב להיות לפני handlers של states כמו פניות שירות,
     # כדי שכפתור חזרה לניהול לא ייתפס בטעות כבחירת פנייה/טקסט.
-    admin_states[message.from_user.id] = {"step": "admin"}
+    admin_states[message.from_user.id] = {"step": "orders_section"}
 
     await tracked_admin_answer(message, 
         rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
@@ -2320,7 +2324,7 @@ async def send_support_reply_to_customer(message: Message):
     reply_text = (message.text or "").strip()
 
     if not customer_id:
-        admin_states[message.from_user.id] = {"step": "admin"}
+        admin_states[message.from_user.id] = {"step": "orders_section"}
         await tracked_admin_answer(message, 
             rtl("<b>⚠️ לא נמצא לקוח לשליחת תשובה.</b>"),
             reply_markup=admin_keyboard(),
@@ -2340,7 +2344,7 @@ async def send_support_reply_to_customer(message: Message):
         parse_mode="HTML"
     )
 
-    admin_states[message.from_user.id] = {"step": "admin"}
+    admin_states[message.from_user.id] = {"step": "orders_section"}
 
     await tracked_admin_answer(message, 
         rtl("<b>✅ התשובה נשלחה ללקוח.</b>"),
@@ -2354,7 +2358,7 @@ async def admin_panel_button(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    admin_states[message.from_user.id] = {"step": "admin"}
+    admin_states[message.from_user.id] = {"step": "orders_section"}
 
     await tracked_admin_answer(message, 
         rtl("<b>🔐 פאנל ניהול Vendora</b>\n\nבחר פעולה מהתפריט למטה."),
@@ -2368,7 +2372,7 @@ async def admin_panel(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    admin_states[message.from_user.id] = {"step": "admin"}
+    admin_states[message.from_user.id] = {"step": "orders_section"}
 
     await tracked_admin_answer(message, 
         rtl(
@@ -2453,7 +2457,7 @@ def broadcast_text_input_keyboard():
 
 # ================== ADMIN CATEGORIZED PANEL ==================
 async def show_admin_root_menu(message: Message):
-    admin_states[message.from_user.id] = {"step": "admin"}
+    admin_states[message.from_user.id] = {"step": "orders_section"}
     await tracked_admin_answer(message, 
         rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
         reply_markup=admin_keyboard(),
@@ -2777,7 +2781,7 @@ async def admin_download_selected_log(message: Message):
         return
 
     if txt == "⬅️ חזרה לניהול":
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
         await tracked_admin_answer(message, 
             rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
             reply_markup=admin_keyboard(),
@@ -3174,7 +3178,7 @@ async def search_support_ticket_run(message: Message):
     txt = clean_admin_text(message.text)
 
     if txt == "⬅️ חזרה לניהול":
-        admin_states[message.from_user.id] = {"step": "admin"}
+        admin_states[message.from_user.id] = {"step": "orders_section"}
         await tracked_admin_answer(message, 
             rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
             reply_markup=admin_keyboard(),
@@ -3211,7 +3215,7 @@ async def open_support_ticket_from_list(message: Message):
     txt = clean_admin_text(message.text)
 
     if txt == "⬅️ חזרה לניהול":
-        admin_states[message.from_user.id] = {"step": "admin"}
+        admin_states[message.from_user.id] = {"step": "orders_section"}
         await tracked_admin_answer(message, 
             rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
             reply_markup=admin_keyboard(),
@@ -3294,7 +3298,7 @@ async def send_support_ticket_reply(message: Message):
         return
 
     if not ticket:
-        admin_states[message.from_user.id] = {"step": "admin"}
+        admin_states[message.from_user.id] = {"step": "orders_section"}
         await tracked_admin_answer(message, 
             rtl("<b>⚠️ הפנייה לא נמצאה.</b>"),
             reply_markup=admin_keyboard(),
@@ -3472,7 +3476,7 @@ async def cancel_clear_all_orders(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    admin_states[message.from_user.id] = {"step": "admin"}
+    admin_states[message.from_user.id] = {"step": "orders_section"}
 
     await tracked_admin_answer(message, 
         rtl("<b>✅ המחיקה בוטלה.</b>"),
@@ -3509,7 +3513,7 @@ async def confirm_clear_all_orders(message: Message):
         details="admin_confirm_clear_all_orders",
     )
 
-    admin_states[message.from_user.id] = {"step": "admin"}
+    admin_states[message.from_user.id] = {"step": "orders_section"}
 
     await tracked_admin_answer(message, 
         rtl(
@@ -3527,7 +3531,7 @@ async def back_admin(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    admin_states[message.from_user.id] = {"step": "admin"}
+    admin_states[message.from_user.id] = {"step": "orders_section"}
 
     await tracked_admin_answer(message, 
         rtl("<b>🔐 חזרת לפאנל הניהול.</b>"),
@@ -3557,7 +3561,7 @@ async def recent_orders(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    admin_states[message.from_user.id] = {"step": "admin"}
+    admin_states[message.from_user.id] = {"step": "orders_section"}
     orders = get_recent_orders(10)
 
     if not orders:
@@ -3578,7 +3582,7 @@ async def new_orders(message: Message):
     if not is_admin(message.from_user.id):
         return
 
-    admin_states[message.from_user.id] = {"step": "admin"}
+    admin_states[message.from_user.id] = {"step": "orders_section"}
     orders = get_orders_by_status("new", 20)
 
     if not orders:
@@ -3863,7 +3867,7 @@ async def handle_photo(message: Message):
     old_image_file_id = before_product.get("image_file_id") if before_product else None
 
     ok = set_product_image(product_name, file_id)
-    admin_states[uid] = {"step": "admin"}
+    admin_states[uid] = {"step": "orders_section"}
 
     if ok:
         log_admin_action(uid, "product_image_changed", f"product={product_name}")
@@ -4106,7 +4110,7 @@ async def admin_coupon_flow(message: Message):
     step = state.get("step")
 
     if txt in {"⬅️ חזרה לניהול", "⬅️ יציאה מניהול"}:
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
         await tracked_admin_answer(message, 
             rtl("<b>🔐 פאנל ניהול</b>\n\nבחר פעולה:"),
             reply_markup=admin_keyboard(),
@@ -4349,7 +4353,7 @@ async def admin_statistics_date_input_result_fix(message: Message):
     txt = clean_admin_text(message.text)
 
     if txt == "⬅️ חזרה לניהול":
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
         await tracked_admin_answer(
             message,
             rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
@@ -4604,7 +4608,7 @@ async def admin_flow(message: Message):
             return
 
         if txt == "⬅️ חזרה לניהול":
-            admin_states[uid] = {"step": "admin"}
+            admin_states[uid] = {"step": "orders_section"}
             await tracked_admin_answer(
                 message,
                 rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
@@ -4755,7 +4759,7 @@ async def admin_flow(message: Message):
             details="admin_reset_orders_flow",
         )
 
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
 
         await tracked_admin_answer(message, 
             rtl(
@@ -4770,7 +4774,7 @@ async def admin_flow(message: Message):
     if txt == "❌ בטל איפוס":
         state = admin_states.get(uid) or {}
         if state.get("step") == "confirm_reset_orders":
-            admin_states[uid] = {"step": "admin"}
+            admin_states[uid] = {"step": "orders_section"}
             await tracked_admin_answer(message, 
                 rtl("<b>❌ איפוס ההזמנות בוטל.</b>"),
                 reply_markup=admin_reports_back_keyboard(),
@@ -4779,7 +4783,7 @@ async def admin_flow(message: Message):
             return
 
     if txt == "🧾 הזמנות אחרונות":
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
         orders = get_recent_orders(20)
 
         if not orders:
@@ -4796,7 +4800,7 @@ async def admin_flow(message: Message):
         return
 
     if txt == "🆕 הזמנות חדשות":
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
         orders = get_orders_by_status("new", 30)
 
         if not orders:
@@ -5108,7 +5112,7 @@ async def admin_flow(message: Message):
         broadcast_text = clean_broadcast_text(txt)
 
         if broadcast_text == "⬅️ חזרה לניהול":
-            admin_states[uid] = {"step": "admin"}
+            admin_states[uid] = {"step": "orders_section"}
             await tracked_admin_answer(message, 
                 rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
                 reply_markup=admin_reports_back_keyboard(),
@@ -5144,7 +5148,7 @@ async def admin_flow(message: Message):
         customer_ids = get_all_customer_telegram_ids()
 
         if not customer_ids:
-            admin_states[uid] = {"step": "admin"}
+            admin_states[uid] = {"step": "orders_section"}
             await tracked_admin_answer(message, 
                 rtl(
                     "<b>⚠️ אין לקוחות לשליחה</b>\n\n"
@@ -5168,7 +5172,7 @@ async def admin_flow(message: Message):
 
     if step == "broadcast_confirm":
         if txt == "❌ בטל שליחה":
-            admin_states[uid] = {"step": "admin"}
+            admin_states[uid] = {"step": "orders_section"}
             await tracked_admin_answer(message, 
                 rtl(
                     "<b>✅ השליחה בוטלה</b>\n\n"
@@ -5214,14 +5218,14 @@ async def admin_flow(message: Message):
                 reply_markup=admin_keyboard(),
                 parse_mode="HTML"
             )
-            admin_states[uid] = {"step": "admin"}
+            admin_states[uid] = {"step": "orders_section"}
             return
 
         broadcast_text = state.get("broadcast_text")
         customer_ids = state.get("broadcast_customer_ids") or []
 
         if not broadcast_text or not customer_ids:
-            admin_states[uid] = {"step": "admin"}
+            admin_states[uid] = {"step": "orders_section"}
             await tracked_admin_answer(message, 
                 rtl(
                     "<b>⚠️ לא ניתן לבצע שליחה</b>\n\n"
@@ -5249,7 +5253,7 @@ async def admin_flow(message: Message):
             customer_ids
         )
 
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
 
         await tracked_admin_answer(message, 
             rtl(
@@ -5399,7 +5403,7 @@ async def admin_flow(message: Message):
                 reply_markup=admin_keyboard(),
                 parse_mode="HTML"
             )
-            admin_states[uid] = {"step": "admin"}
+            admin_states[uid] = {"step": "orders_section"}
             return
 
         current_status = order_before.get("status")
@@ -5437,7 +5441,7 @@ async def admin_flow(message: Message):
                 reply_markup=admin_keyboard(),
                 parse_mode="HTML"
             )
-            admin_states[uid] = {"step": "admin"}
+            admin_states[uid] = {"step": "orders_section"}
             return
 
         client_msg = CLIENT_STATUS_MESSAGE.get(new_status, "סטטוס ההזמנה שלך עודכן.")
@@ -5484,7 +5488,7 @@ async def admin_flow(message: Message):
     if step == "search_order":
         order = get_order_by_number(txt)
 
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
 
         if not order:
             await tracked_admin_answer(message, 
@@ -5500,7 +5504,7 @@ async def admin_flow(message: Message):
     if step == "search_phone":
         orders = get_orders_by_phone(txt, 20)
 
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
 
         if not orders:
             await tracked_admin_answer(message, 
@@ -5558,7 +5562,7 @@ async def admin_flow(message: Message):
         order_before = get_order_by_number(order_number)
 
         if not order_before:
-            admin_states[uid] = {"step": "admin"}
+            admin_states[uid] = {"step": "orders_section"}
             await tracked_admin_answer(message, 
                 rtl("<b>⚠️ ההזמנה לא נמצאה במערכת.</b>"),
                 reply_markup=admin_reports_back_keyboard(),
@@ -5595,7 +5599,7 @@ async def admin_flow(message: Message):
                 details="manual_status_update_flow",
             )
 
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
 
         if not ok or not order:
             await tracked_admin_answer(message, 
@@ -5722,7 +5726,7 @@ async def admin_flow(message: Message):
             },
         )
 
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
 
         text = (
             "<b>✅ המוצר נוסף בהצלחה</b>\n\n"
@@ -5891,7 +5895,7 @@ async def admin_flow(message: Message):
                 old_value={"stock": old_stock},
                 new_value={"stock": new_stock},
             )
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
 
         text = f"<b>✅ המלאי עודכן</b>\n\n{field('מלאי חדש', txt)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
         await tracked_admin_answer(message, rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
@@ -5938,7 +5942,7 @@ async def admin_flow(message: Message):
                 old_value={"stock": old_stock},
                 new_value={"stock": new_stock, "added": amount},
             )
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
 
         text = f"<b>✅ המלאי עודכן</b>\n\n{field('נוספו יחידות', txt)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
         await tracked_admin_answer(message, rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
@@ -5979,7 +5983,7 @@ async def admin_flow(message: Message):
                 old_value={"active": old_active},
                 new_value={"active": 0},
             )
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
 
         text = f"<b>🔴 המוצר כובה</b>\n\n{field('מוצר', product_name)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
         await tracked_admin_answer(message, rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
@@ -6001,7 +6005,7 @@ async def admin_flow(message: Message):
                 old_value={"active": old_active},
                 new_value={"active": 1},
             )
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
 
         text = f"<b>🟢 המוצר הופעל</b>\n\n{field('מוצר', product_name)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
         await tracked_admin_answer(message, rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
@@ -6023,7 +6027,7 @@ async def admin_flow(message: Message):
                 old_value=old_value,
                 new_value=None,
             )
-        admin_states[uid] = {"step": "admin"}
+        admin_states[uid] = {"step": "orders_section"}
 
         text = f"<b>🗑️ המוצר נמחק</b>\n\n{field('מוצר', product_name)}" if ok else "<b>⚠️ המוצר לא נמצא.</b>"
         await tracked_admin_answer(message, rtl(text), reply_markup=admin_keyboard(), parse_mode="HTML")
