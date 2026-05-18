@@ -122,6 +122,21 @@ def safe_write_audit_event(admin_id, action, entity_type="system", entity_id="",
 router = Router()
 
 
+# ================== ADMIN_STATES_NAMEERROR_FIX ==================
+def get_admin_states_store():
+    global admin_states
+    try:
+        admin_states
+    except NameError:
+        admin_states = {}
+    return admin_states
+
+
+
+# ADMIN_STATES_NAMEERROR_FIX
+admin_states = {}
+
+
 # ================== ORDERS AREA LOCK FIX ==================
 # חייב להיות לפני כל handlers האחרים.
 # כל כפתור מתוך ניהול הזמנות שומר state של ניהול הזמנות,
