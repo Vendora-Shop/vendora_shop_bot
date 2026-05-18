@@ -4487,6 +4487,98 @@ async def admin_back_to_orders_section_from_status(message: Message):
     )
 
 
+
+@router.message(lambda message: is_admin(message.from_user.id) and (admin_states.get(message.from_user.id) or {}).get("step") in {
+    "order_status_number",
+    "order_status_value",
+    "status_order_number",
+    "status_value",
+    "update_order_status",
+    "order_status_update",
+})
+async def admin_order_status_input_safe_flow(message: Message):
+    # ORDER_STATUS_INVALID_FIX
+    # כל קלט בשלב עדכון סטטוס שומר מקלדת יציאה.
+    uid = message.from_user.id
+    txt = clean_admin_text(message.text)
+
+    if txt == "⬅️ חזרה לניהול הזמנות":
+        admin_states[uid] = {"step": "orders_section"}
+        await tracked_admin_answer(
+            message,
+            rtl("<b>📦 ניהול הזמנות</b>\n\nבחר פעולה:"),
+            reply_markup=admin_orders_back_keyboard() if "admin_orders_back_keyboard" in globals() else admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if txt == "⬅️ חזרה לניהול":
+        admin_states[uid] = {"step": "admin"}
+        await tracked_admin_answer(
+            message,
+            rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    if txt == "🔄 פתח תפריט מחדש":
+        admin_states[uid] = {"step": "admin"}
+        await tracked_admin_answer(
+            message,
+            rtl("<b>🔐 פאנל ניהול</b>\n\nבחר קטגוריה לניהול:"),
+            reply_markup=admin_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    state = admin_states.get(uid) or {}
+    step = state.get("step")
+
+    # שלב 1: קבלת מספר הזמנה
+    if step in {"order_status_number", "status_order_number", "update_order_status", "order_status_update"}:
+        try:
+            order = get_order_by_number(txt)
+        except Exception:
+            order = None
+
+        if not order:
+            # נשארים באותו שלב, עם מקלדת חזרה.
+            admin_states[uid] = {"step": step}
+            await tracked_admin_answer(
+                message,
+                rtl(
+                    "<b>⚠️ ההזמנה לא נמצאה.</b>\n\n"
+                    "רשום מספר הזמנה תקין.\n"
+                    "לדוגמה: <code>V1001</code>"
+                ),
+                reply_markup=admin_order_status_input_keyboard(),
+                parse_mode="HTML"
+            )
+            return
+
+        admin_states[uid] = {
+            "step": "status_value",
+            "order_number": txt
+        }
+
+        await tracked_admin_answer(
+            message,
+            rtl(
+                "<b>🔄 עדכון סטטוס הזמנה</b>\n\n"
+                f"{field('מספר הזמנה', h(txt))}\n\n"
+                "שלח סטטוס חדש או בחר חזרה."
+            ),
+            reply_markup=admin_order_status_input_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    # שלב 2: קבלת סטטוס חדש — לא משנים כאן את הלוגיקה המקורית.
+    # כדי לא לשבור עדכון סטטוס קיים, מעבירים הלאה ל-admin_flow המקורי.
+    return
+
+
 @router.message(is_admin_active_step)
 async def admin_flow(message: Message):
     # PRIORITY CUSTOMER BROADCAST STATES
@@ -5376,6 +5468,7 @@ async def admin_flow(message: Message):
         if not order:
             await tracked_admin_answer(message, 
                 rtl("<b>⚠️ ההזמנה לא נמצאה.</b>\nבחר הזמנה מהרשימה."),
+                reply_markup=admin_order_status_input_keyboard(),
                 parse_mode="HTML"
             )
             return
@@ -5584,7 +5677,8 @@ async def admin_flow(message: Message):
         order = get_order_by_number(txt)
 
         if not order:
-            await tracked_admin_answer(message, rtl("<b>⚠️ ההזמנה לא נמצאה.</b>\nרשום מספר הזמנה תקין."), parse_mode="HTML")
+            await tracked_admin_answer(message, rtl("<b>⚠️ ההזמנה לא נמצאה.</b>\nרשום מספר הזמנה תקין."), reply_markup=admin_order_status_input_keyboard(),
+                parse_mode="HTML")
             return
 
         state["order_number"] = txt
