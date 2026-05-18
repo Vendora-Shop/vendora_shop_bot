@@ -130,6 +130,30 @@ def get_admin_states_store():
     except NameError:
         admin_states = {}
 
+# ================== REOPEN MENU SINGLE INSTANCE FIX ==================
+# שומר את הודעת פתיחת התפריט האחרונה, כדי שתהיה רק אחת.
+ADMIN_REOPEN_MENU_MESSAGES = {}
+
+
+async def delete_previous_reopen_menu(message: Message):
+    try:
+        uid = message.from_user.id
+        old_id = ADMIN_REOPEN_MENU_MESSAGES.pop(uid, None)
+        if old_id:
+            await _delete_admin_message_safely(message.bot, message.chat.id, old_id)
+    except Exception:
+        pass
+
+
+def remember_reopen_menu(message: Message, sent):
+    try:
+        if sent:
+            ADMIN_REOPEN_MENU_MESSAGES[message.from_user.id] = sent.message_id
+    except Exception:
+        pass
+
+
+
 # ================== DUPLICATE HANDLER CLEAN FIX ==================
 LAST_INVALID_WARNING = {}
 
@@ -639,6 +663,14 @@ class AdminPanelSafeCleanupMiddleware(BaseMiddleware):
                             old_warn = ADMIN_INVALID_WARNING_MESSAGES.pop(user.id, None)
                             if old_warn:
                                 asyncio.create_task(_delete_admin_message_safely(event.bot, event.chat.id, old_warn))
+                        except Exception:
+                            pass
+
+                        # REOPEN_MENU_SINGLE_INSTANCE_FIX_CLEAR
+                        try:
+                            old_reopen = ADMIN_REOPEN_MENU_MESSAGES.pop(user.id, None)
+                            if old_reopen:
+                                asyncio.create_task(_delete_admin_message_safely(event.bot, event.chat.id, old_reopen))
                         except Exception:
                             pass
 
@@ -4821,22 +4853,23 @@ async def admin_category_nav_stability(message: Message):
 
 
 
+
 async def admin_unknown_text_same_place(message: Message, step: str):
-    # NO_GENERIC_WARNING_REOPEN_MENU_FIX
-    # במסכים של כפתורים בלבד:
-    # 1. מוחקים את הקשקוש בשקט
-    # 2. פותחים מחדש את אותה מקלדת, בלי הודעת שגיאה
+    # REOPEN_MENU_SINGLE_INSTANCE_FIX
+    # במסכי כפתורים:
+    # מוחקים קשקוש + מוחקים תפריט פתיחה קודם + שולחים תפריט אחד חדש.
     try:
         await delete_admin_message(message)
     except Exception:
         try:
-            await _delete_admin_message_safely(
-                message.bot,
-                message.chat.id,
-                message.message_id
-            )
+            await _delete_admin_message_safely(message.bot, message.chat.id, message.message_id)
         except Exception:
             pass
+
+    try:
+        await delete_previous_reopen_menu(message)
+    except Exception:
+        pass
 
     try:
         uid = message.from_user.id
@@ -4865,20 +4898,6 @@ async def admin_unknown_text_same_place(message: Message, step: str):
             keyboard = admin_section_keyboard_for_step(current_step)
             text_to_send = rtl("<b>בחר פעולה:</b>")
 
-
-        try:
-            last_menu_id = state.get("last_admin_reopen_menu_id")
-            if last_menu_id:
-                try:
-                    await message.bot.delete_message(
-                        chat_id=message.chat.id,
-                        message_id=last_menu_id
-                    )
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
         sent = await tracked_admin_answer(
             message,
             text_to_send,
@@ -4886,12 +4905,7 @@ async def admin_unknown_text_same_place(message: Message, step: str):
             parse_mode="HTML"
         )
 
-        try:
-            if sent:
-                state["last_admin_reopen_menu_id"] = sent.message_id
-                admin_states[uid] = state
-        except Exception:
-            pass
+        remember_reopen_menu(message, sent)
 
     except Exception:
         pass
