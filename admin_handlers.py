@@ -625,6 +625,22 @@ async def tracked_admin_answer(message: Message, *args, **kwargs):
     except Exception:
         pass
 
+    
+    # REOPEN_MENU_TRACK_FIRST_FIX
+    # גם התפריט הראשון שנפתח רגיל נשמר, כדי שלא יישאר כפול אחרי קשקוש.
+    try:
+        raw_text = ""
+        if args:
+            raw_text = str(args[0] or "")
+        if (
+            "ניהול הזמנות" in raw_text
+            and "בחר פעולה" in raw_text
+            and "ADMIN_REOPEN_MENU_MESSAGES" in globals()
+        ):
+            ADMIN_REOPEN_MENU_MESSAGES[message.from_user.id] = sent.message_id
+    except Exception:
+        pass
+
     return sent
 
 
