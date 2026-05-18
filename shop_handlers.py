@@ -3748,9 +3748,11 @@ async def show_reorder_choose_inline(callback: CallbackQuery):
 
 async def send_inline_screen_replace(callback: CallbackQuery, text, reply_markup=None, parse_mode="HTML"):
     """
-    PERFORMANCE_V5_CALLBACKS
-    שולח מסך Inline חדש, זוכר אותו לניקוי מלא,
-    ומוחק גם מסכים קודמים שלא היו ב-temp_bot_messages.
+    PERFORMANCE_V16_SMART_INLINE_EDIT
+    במסכי Inline טקסטואליים מנסים קודם edit_text במקום למחוק ולשלוח הודעה חדשה.
+    זה מפחית flicker, עומס Telegram API ודיליי ויזואלי.
+    אם אי אפשר לערוך — חוזרים אוטומטית ל-send חדש כמו קודם.
+    לא נוגע בבאנרים/תמונות.
     """
     await force_close_callback_phone_keyboard(callback)
     uid = callback.from_user.id
@@ -3759,15 +3761,51 @@ async def send_inline_screen_replace(callback: CallbackQuery, text, reply_markup
     if data.pop("_suppress_next_screen_send", False):
         return None
 
+    prepared_text = widen_inline_screen_text(text)
     old_ids = collect_customer_screen_message_ids(uid, data)
 
+    # ניסיון בטוח לערוך את אותה הודעה.
+    # מתאים רק להודעות טקסט, לא לתמונות/באנרים.
+    try:
+        msg = callback.message
+        has_photo = bool(getattr(msg, "photo", None))
+        has_document = bool(getattr(msg, "document", None))
+        current_text = getattr(msg, "text", None)
+
+        if msg and current_text and not has_photo and not has_document:
+            edited = await msg.edit_text(
+                prepared_text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode
+            )
+
+            remember_customer_screen_message(uid, edited, key="last_inline_screen_message_id")
+            data["temp_bot_messages"] = [edited.message_id]
+
+            cleanup_ids = [
+                mid for mid in old_ids
+                if str(mid) != str(edited.message_id)
+            ]
+
+            if cleanup_ids:
+                try:
+                    asyncio.create_task(_delete_messages_safely(callback.message.bot, uid, cleanup_ids[-25:]))
+                except Exception:
+                    pass
+
+            return edited
+
+    except Exception:
+        pass
+
+    # fallback מלא — ההתנהגות הישנה והיציבה.
     try:
         delete_message_now_background(callback.message.bot, uid, callback.message.message_id)
     except Exception:
         pass
 
     sent = await callback.message.answer(
-        widen_inline_screen_text(text),
+        prepared_text,
         reply_markup=reply_markup,
         parse_mode=parse_mode
     )
